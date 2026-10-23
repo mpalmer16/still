@@ -1,3 +1,4 @@
+import {WritingFocus} from "./writing_focus"
 import {FileRecovery} from "./file_recovery"
 import "phoenix_html"
 import {Socket} from "phoenix"
@@ -401,7 +402,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, FileRecovery},
+  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, FileRecovery, WritingFocus},
 })
 
 liveSocket.connect()

@@ -55,7 +55,7 @@ defmodule StillWeb.WritingLive do
            recovery_waiting: false,
            resume_active: resume?,
            beside: beside,
-           page_title: if(editing, do: "Now", else: piece.title || "Writing"),
+           page_title: if(editing, do: "Now", else: Poems.display_title(piece)),
            delete_confirm: false
          )
          |> maybe_reset_field(same_editor?)
@@ -429,14 +429,19 @@ defmodule StillWeb.WritingLive do
           data-recovery-safe="false"
           phx-mounted={JS.ignore_attributes(["data-unsaved", "data-recovery-safe"])}
         >
-          <div id={"file-fields-#{@piece.id}"} phx-update="ignore">
+          <div
+            id={"file-fields-#{@piece.id}"}
+            phx-update="ignore"
+            phx-hook="WritingFocus"
+            class="file-page"
+          >
             <label for="file-writing-title" class="sr-only">Title (optional)</label>
             <input
               id="file-writing-title"
               name="writing[title]"
               value={@draft.title}
               class="title-input"
-              placeholder="A title, if you like."
+              placeholder="A title, if you like. Otherwise, the first line."
               autocomplete="off"
               phx-debounce="700"
             />
@@ -455,7 +460,7 @@ defmodule StillWeb.WritingLive do
               spellcheck="true"
               autocapitalize="off"
               autocorrect="off"
-              wrap="off"
+              wrap="soft"
               placeholder="Begin anywhere."
               autofocus
               phx-debounce="700"

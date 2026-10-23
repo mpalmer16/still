@@ -3,6 +3,20 @@ defmodule Still.PoemsTest do
 
   alias Still.{Poems, Storage}
 
+  test "untitled labels use the first written line without changing the writing" do
+    body = "\n  First line stays here  \r\n\tSecond line\n"
+    piece = %{title: nil, body: body}
+    assert Poems.display_title(piece) == "First line stays here"
+    assert piece.body == body
+    assert Poems.display_title(%{piece | title: "Chosen title"}) == "Chosen title"
+    assert Poems.display_title(%{piece | title: "  "}) == "First line stays here"
+    assert Poems.display_title(%{piece | body: "\n  \t"}) == "Untitled"
+    long = String.duplicate("é", 61)
+    label = Poems.display_title(%{title: nil, body: long <> "\nsecond"})
+    assert String.length(label) == 60
+    assert label == String.duplicate("é", 59) <> "…"
+  end
+
   setup do
     root = Path.join(System.tmp_dir!(), "still-poems-test-#{System.unique_integer([:positive])}")
     folder = Path.join(root, "collection")

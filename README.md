@@ -272,3 +272,15 @@ and established databases, occupied ports, rapid reopening and backend owner
 cleanup. Pure Swift lifecycle/location checks and actual UI checks are described
 in the native notes. Source and data must remain separate; see
 [PUBLISHING.md](PUBLISHING.md) for the reviewed publishing procedure.
+
+### The writing page
+
+Now offers a wider page with inner margins. Long lines wrap on screen; Save retains the
+line breaks and indentation you actually entered. A title is always optional. Saved writing
+without one is listed by its first nonblank line (up to 60 characters, including an ellipsis).
+The label does not change the text or fill in an explicit title.
+
+While you type in the body, the title and room controls fade. Move the pointer, press
+Escape, or focus a control to bring them back. Escape moves to Save; Tab within the body
+continues to indent. Warnings and recovery notices stay visible, and older Lists can still
+appear beside the page. Reduced-motion preferences remove the fade animation.

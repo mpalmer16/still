@@ -127,7 +127,7 @@ defmodule StillWeb.SavedLive do
           aria-label="Permanently delete writing?"
         >
           <p>
-            Permanently delete <strong>{@confirmation.title || "Untitled"}</strong>
+            Permanently delete <strong>{Poems.display_title(@confirmation)}</strong>
             and all its earlier words? This cannot be undone in Still.
           </p>
           <button id="confirm-purge-file" phx-click="confirm_purge" class="quiet-link">Delete permanently</button>
@@ -136,15 +136,11 @@ defmodule StillWeb.SavedLive do
         <div id="writing-shelf" class="file-shelf">
           <article :for={piece <- @pieces} id={"saved-#{piece.id}"} class="file-piece">
             <.link :if={!@trash?} navigate={~p"/writing/#{piece.id}"}>
-              <span class="file-piece-title">{if piece.title in [nil, ""],
-                do: "Untitled",
-                else: piece.title}</span>
+              <span class="file-piece-title">{Poems.display_title(piece)}</span>
               <span class="file-opening">{opening(piece.body)}</span>
             </.link>
             <div :if={@trash?}>
-              <span class="file-piece-title">{if piece.title in [nil, ""],
-                do: "Untitled",
-                else: piece.title}</span>
+              <span class="file-piece-title">{Poems.display_title(piece)}</span>
               <span class="file-opening">{opening(piece.body)}</span>
               <div class="file-trash-actions">
                 <button phx-click="restore_file" phx-value-id={piece.id} class="quiet-link">Restore</button>

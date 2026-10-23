@@ -13,6 +13,26 @@ defmodule StillWeb.WritingLiveTest do
     %{folder: folder, root: root}
   end
 
+  test "untitled pages wrap visually and remain discoverable without rewriting their title", %{
+    conn: conn,
+    folder: folder
+  } do
+    {:ok, _} = Storage.set_folder(folder)
+    {:ok, view, _} = live(conn, ~p"/writing/new")
+    assert has_element?(view, "#file-writing-body[wrap='soft']")
+    assert has_element?(view, "#file-writing-title", "")
+    body = "  First words\n\n" <> String.duplicate("long line ", 80)
+    view |> form("#file-writing-form", writing: %{body: body, title: ""}) |> render_submit()
+    {:ok, [saved]} = Poems.list(Storage.collection_location())
+    assert saved.title == nil
+    assert File.read!(saved.path) == body
+    {:ok, shelf, _} = live(conn, ~p"/writing")
+    assert has_element?(shelf, "#saved-#{saved.id} .file-piece-title", "First words")
+    {:ok, edit, _} = live(conn, ~p"/writing/#{saved.id}/edit")
+    assert has_element?(edit, "#file-writing-title[value='']")
+    assert Writing.list_entries() == []
+  end
+
   test "blank local draft works without configuring or silently creating a collection", %{
     conn: conn,
     folder: folder

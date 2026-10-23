@@ -14,6 +14,25 @@ defmodule Still.Poems do
   @metadata "metadata.json"
   @journal ".save-journal.json"
 
+  @doc "A display label only; untitled writing retains its exact body and optional title."
+  def display_title(%{title: title, body: body}) do
+    if is_binary(title) && String.trim(title) != "" do
+      title
+    else
+      line =
+        body
+        |> String.split(~r/\r\n|\r|\n/)
+        |> Enum.find("", &(String.trim(&1) != ""))
+        |> String.trim()
+
+      cond do
+        line == "" -> "Untitled"
+        String.length(line) > 60 -> String.slice(line, 0, 59) <> "…"
+        true -> line
+      end
+    end
+  end
+
   def new(location),
     do: %{
       id: Ecto.UUID.generate(),
