@@ -21,6 +21,7 @@ final class Backend {
     let port: Int
     let url: URL
     let release: URL
+    let controlToken = UUID().uuidString
     private let guardURL: URL
     private var log: FileHandle?
 
@@ -102,6 +103,7 @@ final class Backend {
         env["PHX_HOST"] = "localhost"
         env["PHX_SERVER"] = "true"
         env["STILL_NATIVE"] = "true"
+        env["STILL_NATIVE_CONTROL_TOKEN"] = controlToken
         env["PORT"] = String(port)
         env["RELEASE_DISTRIBUTION"] = "none"
         env["RELEASE_TMP"] = work.path
@@ -154,6 +156,40 @@ final class Backend {
         try? log?.close()
         if lock >= 0 { flock(lock, LOCK_UN); close(lock); lock = -1 }
     }
+
+    func storageRequest(_ method: String, path: String = "/native/storage", body: [String: Any]? = nil) async throws -> Data {
+        var request = URLRequest(url: URL(string: path, relativeTo: url)!.absoluteURL)
+        request.httpMethod = method
+        request.timeoutInterval = 15
+        request.setValue(controlToken, forHTTPHeaderField: "x-still-native-token")
+        if let body {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
+            let detail = (try? JSONDecoder().decode([String: String].self, from: data))?["error"] ??
+                (String(data: data, encoding: .utf8) ?? "")
+            throw StillError.message(detail.isEmpty ? "Still could not update backup settings." : detail)
+        }
+        return data
+    }
+
+    func storageStatus() async throws -> StorageStatus {
+        let data = try await storageRequest("GET")
+        do { return try JSONDecoder().decode(StorageStatus.self, from: data) }
+        catch { throw StillError.message("Still received an unreadable backup status.") }
+    }
+}
+
+struct StorageStatus: Decodable {
+    struct Backup: Decodable { let path: String; let at: String }
+    let configured: Bool
+    let folder: String?
+    let available: Bool
+    let last_backup: Backup?
+    let changed: Bool
+    let error: String?
 }
 
 @MainActor
@@ -163,6 +199,8 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
     var backend: Backend?
     private var openingRoom = false
     private var choosingFolder = false
+    private var closeInProgress = false
+    private var backingUp = false
     var quitting = false
 
     private func generousFrame(on screen: NSScreen?) -> NSRect {
@@ -246,15 +284,130 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if quitting { return .terminateNow }
-        quitting = true
-        // Flush through the editor's recovery hook before stopping its local
-        // backend. A still-new draft leaves a local path cursor for reopening.
-        Task {
-            await prepareToLeave(wait: 900_000_000)
-            await backend?.stop()
-            NSApp.reply(toApplicationShouldTerminate: true)
+        if backingUp {
+            showStorageNotice("A backup is in progress. Wait for it to finish before closing Still.")
+            return .terminateCancel
         }
+        beginCloseFlow()
         return .terminateLater
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !quitting else { return true }
+        NSApp.terminate(nil)
+        return false
+    }
+
+    private func beginCloseFlow() {
+        guard !closeInProgress else { return }
+        closeInProgress = true
+        Task {
+            do {
+                await setEditorFrozen(true)
+                // Give the editor recovery hook its normal window before
+                // checking changed state, since that flush can save new text.
+                await prepareToLeave(wait: 900_000_000)
+                let editorReady = await editorReadyForBackup()
+                let status = try? await backend?.storageStatus()
+                if status?.changed != false || !editorReady {
+                    let choice = await askCloseChoice(hasFolder: status?.configured == true && status?.available == true)
+                    switch ClosePolicy.resolve(changed: status?.changed != false, editorReady: editorReady, choice: choice,
+                                                hasBackupFolder: status?.configured == true && status?.available == true) {
+                    case .cancel: cancelClose(); return
+                    case .close: await finishClose(); return
+                    case .backUp: break
+                    case .chooseBackupFolder:
+                        showCloseError("Choose a backup folder from File → Choose Backup Folder… before backing up and closing.")
+                        cancelClose(); return
+                    case .askForChoice: break
+                    }
+                    guard status != nil else {
+                        showCloseError("Still cannot reach its local backup settings. You can close without a backup or cancel and try again.")
+                        cancelClose(); return
+                    }
+                    guard editorReady else {
+                        showCloseError("Some words are still waiting to be saved. Save or recover them before backing up and closing.")
+                        cancelClose(); return
+                    }
+                    let backupData = try await backend!.storageRequest("POST", path: "/native/backup")
+                    let backedUp = try JSONDecoder().decode(StorageStatus.self, from: backupData)
+                    let result = ClosePolicy.backupResult(editorReady: editorReady,
+                        backupConfirmed: true, stillChanged: backedUp.changed)
+                    guard result == .close else {
+                        throw StillError.message("A newer writing change arrived during the backup. Run Back Up Now again before closing.")
+                    }
+                    await finishClose()
+                    return
+                }
+                await finishClose()
+            } catch {
+                showCloseError(error.localizedDescription)
+                cancelClose()
+            }
+        }
+    }
+
+    private func askCloseChoice(hasFolder: Bool) async -> CloseChoice {
+        await withCheckedContinuation { continuation in
+            let alert = NSAlert()
+            alert.messageText = "Back up your writing before closing?"
+            alert.informativeText = hasFolder
+                ? "Your collection has changed since its last backup."
+                : "Your collection has changed and has no available backup folder. You can close now and choose a folder later."
+            alert.addButton(withTitle: "Back Up & Close")
+            alert.addButton(withTitle: "Close Without Backing Up")
+            alert.addButton(withTitle: "Cancel")
+            alert.beginSheetModal(for: window) { response in
+                continuation.resume(returning: response == .alertFirstButtonReturn ? .backUpAndClose :
+                                    response == .alertSecondButtonReturn ? .closeWithoutBackingUp : .cancel)
+            }
+        }
+    }
+
+    private func editorReadyForBackup() async -> Bool {
+        guard let webView else { return true }
+        let script = """
+        (() => { const form = document.getElementById('writing-form');
+          return !form || (form.dataset.unsaved !== 'true' && form.dataset.saveBlocked !== 'true'); })()
+        """
+        for _ in 0..<12 {
+            let value: Any? = await withCheckedContinuation { done in
+                webView.evaluateJavaScript(script) { value, _ in done.resume(returning: value) }
+            }
+            if value as? Bool == true { return true }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        return false
+    }
+
+    private func setEditorFrozen(_ frozen: Bool) async {
+        guard let webView else { return }
+        let script = frozen
+            ? "window.__stillHadEditorFocus = document.activeElement?.id === 'writing-body'; document.body.inert = true; true"
+            : "document.body.inert = false; if (window.__stillHadEditorFocus) document.getElementById('writing-body')?.focus({preventScroll:true}); delete window.__stillHadEditorFocus; true"
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            webView.evaluateJavaScript(script) { _, _ in done.resume() }
+        }
+    }
+
+    private func finishClose() async {
+        quitting = true
+        await backend?.stop()
+        NSApp.reply(toApplicationShouldTerminate: true)
+    }
+
+    private func cancelClose() {
+        closeInProgress = false
+        quitting = false
+        Task { await setEditorFrozen(false) }
+        NSApp.reply(toApplicationShouldTerminate: false)
+    }
+
+    private func showCloseError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Still could not complete that backup action."
+        alert.informativeText = message
+        alert.beginSheetModal(for: window, completionHandler: nil)
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -276,7 +429,12 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if closeInProgress || backingUp { return false }
         if item.action == #selector(chooseWritingFolder(_:)) { return !quitting && !openingRoom && !choosingFolder }
+        if item.action == #selector(chooseBackupFolder(_:)) || item.action == #selector(clearBackupFolder(_:)) ||
+            item.action == #selector(backupNow(_:)) || item.action == #selector(showBackupFolder(_:)) {
+            return !quitting && !openingRoom && !choosingFolder
+        }
         if item.action == #selector(fullscreen(_:)) {
             item.title = window?.styleMask.contains(.fullScreen) == true ? "Exit Full Screen" : "Enter Full Screen"
         }
@@ -407,8 +565,95 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         if let directory = backend?.dataDirectory { NSWorkspace.shared.open(directory) }
     }
 
+    @objc func openStorageSettings(_ sender: Any?) { navigate(to: "/storage") }
+
+    @objc func chooseBackupFolder(_ sender: Any?) {
+        guard !quitting, !closeInProgress, !choosingFolder else { return }
+        choosingFolder = true
+        let panel = NSOpenPanel()
+        panel.title = "Choose Still’s backup folder"
+        panel.message = "Choose a separate synchronized folder for verified backups of this collection."
+        panel.prompt = "Use This Folder"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            self.choosingFolder = false
+            guard response == .OK, let folder = panel.url else { return }
+            Task { await self.updateBackupFolder(folder.path) }
+        }
+    }
+
+    @objc func clearBackupFolder(_ sender: Any?) { Task { await updateBackupFolder(nil) } }
+
+    private func updateBackupFolder(_ folder: String?) async {
+        guard !backingUp, !closeInProgress, let backend else { return }
+        do {
+            if let folder { _ = try await backend.storageRequest("PUT", body: ["folder": folder]) }
+            else { _ = try await backend.storageRequest("DELETE") }
+            showStorageNotice(folder == nil
+                ? "Backup folder cleared. Existing backups are unchanged."
+                : "Backup folder updated.")
+        } catch { showCloseError(error.localizedDescription) }
+    }
+
+    @objc func backupNow(_ sender: Any?) {
+        Task {
+            guard !backingUp, !closeInProgress else { return }
+            backingUp = true
+            defer { backingUp = false }
+            await setEditorFrozen(true)
+            await prepareToLeave(wait: 900_000_000)
+            guard await editorReadyForBackup() else {
+                await setEditorFrozen(false)
+                showCloseError("Some words are still waiting to be saved. Save or recover them before backing up.")
+                return
+            }
+            do {
+                guard let backend else { throw StillError.message("Still’s local room is not ready.") }
+                let data = try await backend.storageRequest("POST", path: "/native/backup")
+                let status = try JSONDecoder().decode(StorageStatus.self, from: data)
+                await setEditorFrozen(false)
+                showStorageNotice(status.changed
+                    ? "A newer writing change arrived during the backup. Run Back Up Now again."
+                    : "Backup completed.")
+            } catch {
+                await setEditorFrozen(false)
+                showCloseError(error.localizedDescription)
+            }
+        }
+    }
+
+    @objc func showBackupFolder(_ sender: Any?) {
+        Task {
+            do {
+                guard let status = try await backend?.storageStatus(),
+                      status.configured, let folder = status.folder else {
+                    showStorageNotice("Choose a backup folder first.")
+                    return
+                }
+                guard status.available else {
+                    showStorageNotice(status.error ?? "The backup folder is unavailable.")
+                    return
+                }
+                guard NSWorkspace.shared.open(URL(fileURLWithPath: folder, isDirectory: true)) else {
+                    showStorageNotice("Still could not open the backup folder.")
+                    return
+                }
+            } catch { showCloseError(error.localizedDescription) }
+        }
+    }
+
+    private func showStorageNotice(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.beginSheetModal(for: window, completionHandler: nil)
+    }
+
     @objc func chooseWritingFolder(_ sender: Any?) {
-        guard !quitting, !openingRoom, !choosingFolder else { return }
+        guard !quitting, !openingRoom, !choosingFolder, !backingUp, !closeInProgress else { return }
         choosingFolder = true
         let panel = NSOpenPanel()
         panel.title = "Choose Still’s writing folder"
@@ -513,6 +758,17 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         choose.target = self
         let show = file.addItem(withTitle: "Show Writing Folder", action: #selector(showWritingFolder(_:)), keyEquivalent: "")
         show.target = self
+        file.addItem(.separator())
+        let storage = file.addItem(withTitle: "Storage & Backups…", action: #selector(openStorageSettings(_:)), keyEquivalent: "")
+        storage.target = self
+        let chooseBackup = file.addItem(withTitle: "Choose Backup Folder…", action: #selector(chooseBackupFolder(_:)), keyEquivalent: "")
+        chooseBackup.target = self
+        let clearBackup = file.addItem(withTitle: "Clear Backup Folder", action: #selector(clearBackupFolder(_:)), keyEquivalent: "")
+        clearBackup.target = self
+        let backup = file.addItem(withTitle: "Back Up Now", action: #selector(backupNow(_:)), keyEquivalent: "")
+        backup.target = self
+        let showBackup = file.addItem(withTitle: "Show Backup Folder", action: #selector(showBackupFolder(_:)), keyEquivalent: "")
+        showBackup.target = self
         let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         bar.addItem(editItem)
         let edit = NSMenu(title: "Edit")

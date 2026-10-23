@@ -1,5 +1,8 @@
 import Config
 
+# Tests never read the user's machine-local backup settings.
+config :still, :storage_state_directory, Path.expand("../tmp/storage-test-state", __DIR__)
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used

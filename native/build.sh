@@ -45,7 +45,7 @@ fi
 
 swiftc -swift-version 5 -warnings-as-errors -parse-as-library -O -module-cache-path "$still_native_build/module-cache" \
   -framework AppKit -framework WebKit -framework Security \
-  native/Still.swift native/WritingLocation.swift -o "$still_bundle/Contents/MacOS/$still_executable_name"
+  native/Still.swift native/WritingLocation.swift native/BackupClose.swift -o "$still_bundle/Contents/MacOS/$still_executable_name"
 swiftc -swift-version 5 -warnings-as-errors -O -module-cache-path "$still_native_build/module-cache" \
   native/BackendGuard.swift -o "$still_bundle/Contents/MacOS/StillBackend"
 swiftc -swift-version 5 -warnings-as-errors -O -module-cache-path "$still_native_build/module-cache" \

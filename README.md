@@ -72,6 +72,93 @@ STILL_DATABASE_PATH="$PWD/data/still.db" mix still.import data/lists.json
 
 The importer skips source pieces that already live in Still. Running it again preserves your edits. The manifest and local extraction files are ignored by Git. The original files remain in the selected source folder.
 
+## Storage and manual backups
+
+Your active SQLite database stays in its existing writing folder. A synchronized
+backup folder is a separate destination; choosing one does not move, migrate, or
+make the database read-only. Do not put the live `still.db` in Google Drive or any
+other synchronized folder.
+
+In the Mac app, choose **File → Choose Backup Folder…** and select any existing
+local folder. It can be a folder synchronized by Google Drive or another service;
+Still does not connect to that service. Use **File → Back Up Now** to create a
+verified snapshot and **File → Show Backup Folder** to reveal the destination.
+**File → Storage & Backups…** shows the last successful backup and whether the
+database has changed. **Clear Backup Folder** forgets the destination without
+moving or deleting the database or any backup.
+
+In a browser, open **Find → Storage & Backups** (or `/storage`). Enter an absolute
+folder path on the computer running Still, choose **Use This Folder**, and use
+**Back Up Now**. **Refresh Status** checks again after changes in another window.
+**Open Backup Folder** opens the folder on that computer when a desktop opener is
+available; on a headless server/container, use the displayed path to open its host
+folder yourself. Browser close events do not trigger backups or reminders.
+
+No folder is configured by default; normal writing still works. If a chosen folder
+or drive becomes unavailable, Still retains that destination and reports the
+problem. Reconnect the drive or explicitly choose another folder. It never
+creates a replacement destination or falls back to another folder.
+
+Backup settings and success records are machine-local JSON, separate from the
+writing database and backup files. By default they live under `~/.config/still/`,
+scoped to the active database path. `STILL_LOCAL_STATE_DIRECTORY` can choose another
+local state directory. Keep that directory outside source control, synchronized
+folders, and portable writing records. Docker uses `/app/data/local-state` in its
+existing local data volume. Moving the active database to a different path starts
+with separate backup settings; choose the destination again there.
+
+For Docker, explicitly mount an existing host destination with the optional file:
+
+```sh
+STILL_BACKUP_DIRECTORY="/path/to/local-synchronized-folder" \
+  docker compose -f compose.yaml -f compose.backups.yaml up --build
+```
+
+Then enter `/app/backup-destination` in Storage & Backups. The optional mount refuses
+a missing host path rather than creating one. Stop it using the same two Compose
+files. Plain `docker compose up --build` continues to work without a backup folder.
+
+Each completed backup is a uniquely named folder containing `still.db`. Still uses
+SQLite `VACUUM INTO`, verifies integrity, flushes the file, and publishes it from a
+private staging folder before recording success. It keeps earlier completed
+backups; there is no automatic retention, background backup service, or scheduler.
+An interrupted `.partial` folder is not a completed backup. On failure, Still
+reports the problem and retains previous completed backups. A finished snapshot
+whose success record could not be saved is reported as an error, not a confirmed
+current backup.
+
+Freshness compares logical schema and table contents against the actual completed
+snapshot, including entries, revisions, and reading/navigation state. It does not
+use modification timestamps. A deleted or altered last backup makes the status
+unverified. New reading activity or room settings can make the database changed,
+even when the words are the same. A concurrent edit after a snapshot needs another
+backup. Unsent recovery copies remain in their browser or WebKit profile; they
+are included only after their writing is saved to the database.
+
+On Mac window close or Quit, changes since the last verified backup trigger
+**Back Up & Close**, **Close Without Backing Up**, or **Cancel**. Still waits for
+the editor's save acknowledgment before checking. Back Up & Close requires an
+available folder and successful verification; a failure or newer change keeps
+the app open. Without a folder you can close without backing up, or cancel and
+choose one. A manual backup in progress must finish before closing.
+
+“Backup completed” confirms a local file only. Check your synchronization service
+separately before relying on a cloud copy. Still cannot confirm cloud upload.
+Use the completed snapshot's `still.db` with the restore procedure below, after
+stopping every process using the collection.
+
+### Future storage boundary
+
+The existing SQLite database continues to hold historical Lists, all existing
+writing and revisions, provenance, notebook relationships, and internal reading
+state. No existing writing is migrated in this milestone.
+
+A later milestone may store new poetry, prose, manuscript metadata, journals,
+submissions, responses, and frozen submission packets as ordinary synchronized
+files. Those formats will be independent of Google Drive or any other provider.
+That file storage is not implemented here; the synchronized folder currently
+receives database backup snapshots only.
+
 ## Preserve and move your writing
 
 From the repository, the host tools can create a consistent SQLite backup of the native collection:
@@ -96,7 +183,7 @@ docker compose exec -T still /app/bin/still rpc 'Still.Preservation.backup!()'
 docker compose exec -T still /app/bin/still rpc 'Still.Preservation.export!()'
 ```
 
-Backups appear under `./data/backups/`; JSON copies appear under `./data/exports/`. Writing can continue while the copies are made. Copy a `.db` backup to another drive to protect against loss of this computer. The JSON includes List titles, source relationships, notebook context, and earlier words. Historical authored dates remain unknown; import time is recorded separately. JSON contains plain-text writing and is for reading or migration; use the SQLite backup to restore Still itself.
+These explicit preservation commands put backups under `./data/backups/` and JSON copies under `./data/exports/`. The Back Up Now interface instead uses your configured backup destination. Writing can continue while the copies are made. Copy a `.db` backup to another drive to protect against loss of this computer. The JSON includes List titles, source relationships, notebook context, and earlier words. Historical authored dates remain unknown; import time is recorded separately. JSON contains plain-text writing and is for reading or migration; use the SQLite backup to restore Still itself.
 
 To restore a backup, quit Still.app. If using Docker, also run `docker compose down`. Then replace the database; the commands below preserve the previous one in case you change your mind:
 

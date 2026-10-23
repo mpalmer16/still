@@ -1,0 +1,9 @@
+# Optional host backup destination. Keep the live database in the normal data volume.
+services:
+  still:
+    volumes:
+      - type: bind
+        source: ${STILL_BACKUP_DIRECTORY:?Set STILL_BACKUP_DIRECTORY to an existing local folder}
+        target: /app/backup-destination
+        bind:
+          create_host_path: false
