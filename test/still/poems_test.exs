@@ -37,12 +37,13 @@ defmodule Still.PoemsTest do
     %{folder: folder, root: root}
   end
 
-  test "creates, lists, reopens and preserves exact text", %{folder: folder} do
+  test "creates, lists, reopens and preserves exact text" do
     poem = Poems.new(nil)
     text = "  First line\r\n\tSecond line\n\n"
     assert {:ok, saved} = Poems.save(nil, poem, %{title: nil, body: text})
     assert saved.body == text
-    assert saved.title == nil
+    assert saved.title == "First line"
+    assert saved.title_source == "first_line"
     assert saved.created_at
     assert saved.updated_at
     assert {:ok, [listed]} = Poems.list(nil)
@@ -50,7 +51,8 @@ defmodule Still.PoemsTest do
     assert {:ok, reopened} = Poems.get(nil, poem.id)
     assert reopened.body == text
     assert reopened.token == saved.token
-    assert File.regular?(Path.join([folder, "poems", poem.id, "poem.txt"]))
+    assert File.regular?(saved.path)
+    assert Path.basename(Path.dirname(saved.path)) == "First line -- #{poem.id}"
   end
 
   test "empty poem can be saved and title changes keep its stable filename" do
@@ -58,7 +60,10 @@ defmodule Still.PoemsTest do
     assert {:ok, saved} = Poems.save(nil, poem, %{title: "Untitled", body: ""})
     assert saved.path =~ "/poem.txt"
     assert {:ok, titled} = Poems.save(nil, saved, %{title: "A new title", body: ""})
-    assert titled.path == saved.path
+    assert titled.id == saved.id
+    assert Path.basename(titled.path) == "poem.txt"
+    refute File.exists?(saved.path)
+    assert Path.basename(Path.dirname(titled.path)) == "A new title -- #{saved.id}"
     assert titled.title == "A new title"
     assert {:ok, [revision]} = Poems.revisions(nil, poem.id)
     assert revision.title == "Untitled"
@@ -304,7 +309,7 @@ defmodule Still.PoemsTest do
     poem = Poems.new(nil)
     assert {:ok, created} = Poems.save(nil, poem, %{title: "Before", body: "old words"})
     assert {:ok, saved} = Poems.save(nil, created, %{title: "After", body: "current words"})
-    revisions_dir = Path.join([folder, "poems", poem.id, "revisions"])
+    revisions_dir = Path.join(Path.dirname(saved.path), "revisions")
     [revision_name] = File.ls!(revisions_dir)
     revision_body = Path.join([revisions_dir, revision_name, "poem.txt"])
 
@@ -312,7 +317,7 @@ defmodule Still.PoemsTest do
     assert {:error, stale_trash_message} = Poems.trash(nil, saved)
     assert stale_trash_message =~ "changed on disk"
     assert File.read!(revision_body) == "external revision edit"
-    assert File.dir?(Path.join([folder, "poems", poem.id]))
+    assert File.dir?(Path.dirname(saved.path))
 
     assert {:ok, refreshed} = Poems.get(nil, poem.id)
     assert {:ok, trashed} = Poems.trash(nil, refreshed)
@@ -383,6 +388,153 @@ defmodule Still.PoemsTest do
 
     assert {:error, _} = Poems.list_trash(nil)
     assert File.read!(Path.join(outside, "keep.txt")) == "untouched"
+  end
+
+  test "automatic titles follow the first written line until explicitly named" do
+    body = "\r\n  First opening\r\n\tindented stanza\r\n"
+    assert {:ok, first} = Poems.save(nil, Poems.new(nil), %{title: nil, body: body})
+    assert first.title == "First opening"
+    assert first.title_source == "first_line"
+    assert Poems.explicit_title(first) == nil
+
+    assert Jason.decode!(File.read!(Path.join(Path.dirname(first.path), "metadata.json")))[
+             "title"
+           ] == "First opening"
+
+    assert File.read!(first.path) == body
+    assert {:ok, next} = Poems.save(nil, first, %{title: nil, body: "Second opening\nrest"})
+    assert next.id == first.id
+    assert next.title == "Second opening"
+    assert Path.basename(Path.dirname(next.path)) == "Second opening -- #{first.id}"
+    assert {:ok, [old]} = Poems.revisions(nil, next.id)
+    assert old.body == body and old.title == "First opening"
+    assert old.title_source == "first_line"
+    assert {:ok, named} = Poems.save(nil, next, %{title: "Chosen title", body: next.body})
+
+    assert {:ok, changed} =
+             Poems.save(nil, named, %{title: "Chosen title", body: "New first line"})
+
+    assert changed.title == "Chosen title" and changed.title_source == "explicit"
+    assert Poems.explicit_title(changed) == "Chosen title"
+    assert {:ok, automatic} = Poems.save(nil, changed, %{title: "  ", body: changed.body})
+    assert automatic.title == "New first line" and automatic.title_source == "first_line"
+  end
+
+  test "readable folders disambiguate equal titles and safely bound unusual names" do
+    title = "../A: title / with \\ forbidden? symbols*" <> String.duplicate("🪶", 80)
+    assert {:ok, first} = Poems.save(nil, Poems.new(nil), %{title: title, body: "one"})
+    assert {:ok, second} = Poems.save(nil, Poems.new(nil), %{title: title, body: "two"})
+    assert first.path != second.path
+    name = Path.basename(Path.dirname(first.path))
+    assert String.starts_with?(name, "A title with forbidden symbols")
+    assert byte_size(name) <= 200
+    refute String.contains?(name, ["/", "\\", ":", "?", "*", "\n"])
+    assert first.title == title
+    assert {:ok, poems} = Poems.list(nil)
+    assert Enum.sort(Enum.map(poems, & &1.body)) == ["one", "two"]
+  end
+
+  test "legacy UUID collections stay untouched on read and gain readable names only on Save", %{
+    folder: folder
+  } do
+    assert {:ok, saved} =
+             Poems.save(nil, Poems.new(nil), %{title: "Older page", body: "old words"})
+
+    poems = Path.join(folder, "poems")
+    legacy = Path.join(poems, saved.id)
+    File.rename!(Path.dirname(saved.path), legacy)
+    metadata = Path.join(legacy, "metadata.json")
+
+    File.write!(
+      metadata,
+      Jason.encode!(Map.delete(Jason.decode!(File.read!(metadata)), "title_source"))
+    )
+
+    File.write!(Path.join(poems, ".still-poems.json"), ~s({"format":"still-poems-v1"}))
+    bytes_before = files_under(poems)
+    assert {:ok, [listed]} = Poems.list(nil)
+    assert {:ok, current} = Poems.get(nil, listed.id)
+    assert files_under(poems) == bytes_before
+    assert current.path == Path.join(legacy, "poem.txt")
+    assert {:ok, renamed} = Poems.save(nil, current, %{title: "Older page", body: current.body})
+    assert renamed.id == saved.id
+    assert Path.basename(Path.dirname(renamed.path)) == "Older page -- #{saved.id}"
+    assert {:ok, []} = Poems.revisions(nil, saved.id)
+
+    assert Jason.decode!(File.read!(Path.join(poems, ".still-poems.json")))["format"] ==
+             "still-poems-v2"
+
+    assert File.read!(renamed.path) == "old words"
+  end
+
+  test "duplicate folder identities refuse ambiguous reads or writes without losing either copy",
+       %{folder: folder} do
+    assert {:ok, saved} = Poems.save(nil, Poems.new(nil), %{title: "Original", body: "keep"})
+    copy = Path.join([folder, "poems", "Conflict -- #{saved.id}"])
+    File.cp_r!(Path.dirname(saved.path), copy)
+    assert {:error, message} = Poems.list(nil)
+    assert message =~ "Multiple writing folders"
+    assert {:error, _} = Poems.get(nil, saved.id)
+    assert {:error, _} = Poems.save(nil, saved, %{title: "Change", body: "different"})
+    assert File.read!(saved.path) == "keep"
+    assert File.read!(Path.join(copy, "poem.txt")) == "keep"
+  end
+
+  test "directory labels may be changed externally while retaining the identifier" do
+    assert {:ok, saved} = Poems.save(nil, Poems.new(nil), %{title: "First", body: "unchanged"})
+    renamed = Path.join(Path.dirname(Path.dirname(saved.path)), "Finder label -- #{saved.id}")
+    File.rename!(Path.dirname(saved.path), renamed)
+    assert {:ok, current} = Poems.get(nil, saved.id)
+    assert current.id == saved.id and current.token == saved.token
+    assert {:ok, final} = Poems.save(nil, current, %{title: "Final title", body: current.body})
+    assert File.read!(final.path) == "unchanged"
+    assert Path.basename(Path.dirname(final.path)) == "Final title -- #{saved.id}"
+  end
+
+  test "case-only title changes rename a folder without losing words or identity" do
+    assert {:ok, first} =
+             Poems.save(nil, Poems.new(nil), %{title: "Paper", body: "keep exactly\n"})
+
+    assert {:ok, next} = Poems.save(nil, first, %{title: "paper", body: first.body})
+    assert next.id == first.id
+    assert Path.basename(Path.dirname(next.path)) == "paper -- #{first.id}"
+    assert File.read!(next.path) == "keep exactly\n"
+    assert {:ok, [revision]} = Poems.revisions(nil, next.id)
+    assert revision.title == "Paper" and revision.body == first.body
+  end
+
+  test "a legacy untitled file acquires an automatic title on Save without removing its opening",
+       %{folder: folder} do
+    body = "\n  Older untitled opening\n\tstanza\n"
+    assert {:ok, created} = Poems.save(nil, Poems.new(nil), %{title: nil, body: body})
+    legacy = Path.join([folder, "poems", created.id])
+    File.rename!(Path.dirname(created.path), legacy)
+    metadata = Path.join(legacy, "metadata.json")
+
+    File.write!(
+      metadata,
+      Jason.encode!(
+        File.read!(metadata)
+        |> Jason.decode!()
+        |> Map.put("title", nil)
+        |> Map.delete("title_source")
+      )
+    )
+
+    File.write!(
+      Path.join([folder, "poems", ".still-poems.json"]),
+      ~s({"format":"still-poems-v1"})
+    )
+
+    assert {:ok, old} = Poems.get(nil, created.id)
+    assert old.title == nil
+    assert Poems.display_title(old) == "Older untitled opening"
+    assert {:ok, saved} = Poems.save(nil, old, %{title: nil, body: body})
+    assert saved.title == "Older untitled opening"
+    assert saved.title_source == "first_line"
+    assert File.read!(saved.path) == body
+    assert {:ok, [earlier]} = Poems.revisions(nil, saved.id)
+    assert earlier.title == nil and earlier.body == body
   end
 
   defp files_under(root) do

@@ -137,12 +137,16 @@ export const FileRecovery = {
       catch { this.problem() }
       this.flags()
       this.fit()
+      this.form.dispatchEvent(new Event("still:writing-display-changed"))
     }
     this.submitWriting = read => {
       this.capture(); this.keepPosition()
       this.pushEvent("save_file", {writing: this.words(), draft_key: this.key, read})
     }
     this.save = () => this.submitWriting(false)
+    this.newButton = this.form.querySelector("#new-file")
+    this.onNew = () => { this.capture(); this.keepPosition(); this.pushEvent("new_file", {writing: this.words()}) }
+    this.newButton?.addEventListener("click", this.onNew)
     this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); this.submitWriting(event.submitter?.id === "read-file") }
     this.onKey = event => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
@@ -273,6 +277,7 @@ export const FileRecovery = {
   destroyed() {
     window.removeEventListener("click", this.onLeavingClick, true)
     window.removeEventListener("beforeunload", this.onUnload)
+    this.newButton?.removeEventListener("click", this.onNew)
     this.form.removeEventListener("input", this.onInput)
     this.form.removeEventListener("submit", this.onSubmit)
     this.form.removeEventListener("keydown", this.onKey)

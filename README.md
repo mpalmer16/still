@@ -57,26 +57,29 @@ root refuse writes after a switch; reopen the desired collection through Saved
 writing. Missing folders produce guidance and never trigger a fallback save.
 Changing or clearing the setting leaves existing files untouched.
 
-The first file format keeps its original disk names for compatibility:
+Portable writing retains the original `poems/` and `poem.txt` names, with readable containing folders:
 
 ```text
 chosen-root/
   poems/
     .still-poems.json
-    <stable-uuid>/
+    <title> -- <stable-uuid>/
       poem.txt
       metadata.json
-      revisions/<timestamp>-<uuid>/
+      revisions/<timestamp>-<revision-uuid>/
         poem.txt
         metadata.json
     .trash/<stable-uuid>/             # same complete directory after Delete
 ```
 
-These names do not assign a type to the writing. No existing file needs to be
-moved or migrated. Text is UTF-8 and independently readable; metadata holds an
-optional title, stable identity, creation/modification dates and relative
-filename. Renaming a title retains the UUID. An externally renamed single
-`.txt` file is recognized; keep its UUID directory and metadata together.
+These names do not assign a type to the writing. Opening an existing collection
+never renames its files. Text is UTF-8 and independently readable; metadata holds
+the explicit or automatic first-line title, its source, stable identity,
+creation/modification dates and relative filename. Renaming a title retains the
+UUID and renames its containing folder. UUID-only folders from older versions
+remain readable; an explicit Save gives that writing its readable folder name.
+An externally renamed single `.txt` file is recognized; keep its directory,
+full ID suffix, and metadata together.
 Synchronize the complete tree, including marker, history and Trash.
 
 Saves compare a token covering file names, directory structure and bytes,
@@ -278,9 +281,23 @@ in the native notes. Source and data must remain separate; see
 Now offers a wider page with inner margins. Long lines wrap on screen; Save retains the
 line breaks and indentation you actually entered. A title is always optional. Saved writing
 without one is listed by its first nonblank line (up to 60 characters, including an ellipsis).
-The label does not change the text or fill in an explicit title.
+The first line remains in the body exactly as written. Save records the automatic
+title separately in metadata with `title_source: "first_line"`; the optional title
+input shows it as a hint. Editing the first line updates an automatic title on
+Save. An explicit title stays unchanged when the body changes. Folder names begin
+with this title and retain a full UUID suffix so duplicate titles are safe.
 
 While you type in the body, the title and room controls fade. Move the pointer, press
 Escape, or focus a control to bring them back. Escape moves to Save; Tab within the body
 continues to indent. Warnings and recovery notices stay visible, and older Lists can still
 appear beside the page. Reduced-motion preferences remove the fade animation.
+
+**New**, beside Save, opens a blank page after the current words are saved. If there are
+unsaved changes, it keeps them on the page and asks you to Save first; it never silently
+discards them or writes to an unconfigured collection.
+
+Readable folder names use the `still-poems-v2` collection marker. This version still reads
+original v1/UUID-only collections without modifying them. An explicit Save (or Restore
+from Trash) enables v2 before publishing readable names; older applications then refuse
+the newer format instead of silently overlooking its writing. Keep the full ID suffix
+and metadata when renaming a folder outside Still.

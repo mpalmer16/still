@@ -53,7 +53,10 @@ defmodule StillWeb.SavedWritingTest do
     assert {:ok, renamed} = Poems.get(Storage.collection_location(), saved.id)
     assert renamed.title == "Renamed notes"
     assert renamed.body == renamed_body
-    assert renamed.path == Path.join([folder, "poems", saved.id, "poem.txt"])
+
+    assert renamed.path ==
+             Path.join([folder, "poems", "Renamed notes -- #{saved.id}", "poem.txt"])
+
     assert {:ok, [revision]} = Poems.revisions(Storage.collection_location(), saved.id)
     assert revision.title == "Notes:" and revision.body == body
     assert Writing.list_entries() == []

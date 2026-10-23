@@ -13,7 +13,7 @@ defmodule StillWeb.WritingLiveTest do
     %{folder: folder, root: root}
   end
 
-  test "untitled pages wrap visually and remain discoverable without rewriting their title", %{
+  test "automatic titles use the first line while preserving exact writing and optional input", %{
     conn: conn,
     folder: folder
   } do
@@ -24,13 +24,43 @@ defmodule StillWeb.WritingLiveTest do
     body = "  First words\n\n" <> String.duplicate("long line ", 80)
     view |> form("#file-writing-form", writing: %{body: body, title: ""}) |> render_submit()
     {:ok, [saved]} = Poems.list(Storage.collection_location())
-    assert saved.title == nil
+    assert saved.title == "First words"
+    assert saved.title_source == "first_line"
     assert File.read!(saved.path) == body
     {:ok, shelf, _} = live(conn, ~p"/writing")
     assert has_element?(shelf, "#saved-#{saved.id} .file-piece-title", "First words")
     {:ok, edit, _} = live(conn, ~p"/writing/#{saved.id}/edit")
     assert has_element?(edit, "#file-writing-title[value='']")
     assert Writing.list_entries() == []
+  end
+
+  test "New protects the latest unsaved words and opens a blank page after Save", %{
+    conn: conn,
+    folder: folder
+  } do
+    {:ok, _} = Storage.set_folder(folder)
+    {:ok, view, _} = live(conn, ~p"/writing/new")
+    assert has_element?(view, "#new-file", "New")
+
+    # New receives the current input directly from the recovery hook, even before phx-change debounce.
+    render_click(view, "new_file", %{"writing" => %{"body" => "Latest words", "title" => ""}})
+    assert has_element?(view, "#file-save-status", "Save these words")
+    assert {:ok, []} = Poems.list(nil)
+
+    render_submit(element(view, "#file-writing-form"), %{
+      "writing" => %{"body" => "Latest words", "title" => ""}
+    })
+
+    assert {:ok, [saved]} = Poems.list(nil)
+    assert saved.title == "Latest words"
+    render_click(view, "new_file", %{"writing" => %{"body" => "Typed after Save", "title" => ""}})
+    assert has_element?(view, "#file-save-status", "Save these words")
+    render_click(view, "new_file", %{"writing" => %{"body" => "Latest words", "title" => ""}})
+    assert_redirect(view, ~p"/?new=1")
+    {:ok, reopened} = Poems.get(nil, saved.id)
+    assert reopened.body == "Latest words"
+    {:ok, reading, _} = live(conn, ~p"/writing/#{saved.id}")
+    assert has_element?(reading, "h1.file-title", "Latest words")
   end
 
   test "blank local draft works without configuring or silently creating a collection", %{
@@ -98,7 +128,9 @@ defmodule StillWeb.WritingLiveTest do
     |> render_submit()
 
     {:ok, renamed} = Poems.get(Storage.collection_location(), saved.id)
-    assert renamed.id == saved.id and renamed.path == saved.path
+    assert renamed.id == saved.id
+    assert Path.basename(renamed.path) == "poem.txt"
+    refute File.exists?(saved.path)
     assert renamed.created_at == saved.created_at
     assert renamed.title == "Synthetic title"
     {:ok, read, _} = live(conn, ~p"/writing/#{saved.id}")
@@ -127,7 +159,8 @@ defmodule StillWeb.WritingLiveTest do
     )
     |> render_submit()
 
-    assert File.read!(saved.path) == text
+    {:ok, renamed} = Poems.get(location, saved.id)
+    assert File.read!(renamed.path) == text
     assert Writing.current_writing() == before
     assert Writing.list_entries() == [entry]
     assert Writing.list_versions(entry) == []
