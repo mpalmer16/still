@@ -91,4 +91,34 @@ defmodule StillWeb.StorageLiveTest do
     assert Storage.status().folder == folder
     refute File.exists?(missing)
   end
+
+  test "destination warnings appear once while distinct action errors remain visible", %{
+    conn: conn,
+    folder: folder
+  } do
+    {:ok, _} = Storage.set_folder(folder)
+    File.rmdir!(folder)
+    {:ok, view, _} = live(conn, ~p"/storage")
+    assert has_element?(view, "#storage-guidance", "Reconnect its drive")
+
+    for action <- ["#backup-now", "#open-backup-folder"] do
+      view |> element(action) |> render_click()
+      assert view |> element(".storage-room [role='alert']") |> render() =~ "Reconnect its drive"
+      assert has_element?(view, "#storage-problem", "Reconnect its drive")
+      refute has_element?(view, "#storage-guidance")
+    end
+
+    view
+    |> form("#backup-folder-form", storage: %{folder: "relative-folder"})
+    |> render_submit()
+
+    assert has_element?(view, "#storage-problem", "must be absolute")
+    assert has_element?(view, "#storage-guidance", "Reconnect its drive")
+
+    view |> element("#refresh-backup-status") |> render_click()
+    refute has_element?(view, "#storage-problem")
+    assert view |> element(".storage-room [role='alert']") |> render() =~ "Reconnect its drive"
+    assert Storage.status().folder == folder
+    refute File.exists?(folder)
+  end
 end

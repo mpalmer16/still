@@ -91,7 +91,9 @@ defmodule StillWeb.StorageLive do
         </p>
         <p :if={@notice} id="storage-notice" role="status">{@notice}</p>
         <p :if={@problem} id="storage-problem" role="alert">{@problem}</p>
-        <p :if={@storage.error} id="storage-guidance" role="alert">{@storage.error}</p>
+        <p :if={@storage.error && @storage.error != @problem} id="storage-guidance" role="alert">
+          {@storage.error}
+        </p>
 
         <section aria-labelledby="backup-folder-heading">
           <h2 id="backup-folder-heading">Backup folder</h2>
