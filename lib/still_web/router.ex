@@ -18,14 +18,22 @@ defmodule StillWeb.Router do
     pipe_through :browser
 
     live_session :room, on_mount: [{StillWeb.Room, :default}] do
-      live "/", EntryLive, :new
-      live "/list", EntryLive, :list
+      live "/", WritingLive, :now
+      live "/list", WritingLive, :new
       live "/w/:id", EntryLive, :show
       live "/before", EntryLive, :before
       live "/wander", EntryLive, :wander
       live "/pages", ArchiveLive, :index
       live "/notebooks", NotebookLive, :index
       live "/storage", StorageLive, :index
+      live "/writing", SavedLive, :index
+      live "/writing/new", WritingLive, :new
+      live "/writing/:id/edit", WritingLive, :edit
+      live "/writing/:id", WritingLive, :show
+      live "/poems", SavedLive, :index
+      live "/poems/new", WritingLive, :new
+      live "/poems/:id/edit", WritingLive, :edit
+      live "/poems/:id", WritingLive, :show
     end
 
     get "/healthz", HealthController, :index

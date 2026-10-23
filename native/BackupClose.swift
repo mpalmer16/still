@@ -40,3 +40,12 @@ enum ClosePolicy {
         return .close
     }
 }
+
+// A database snapshot cannot rescue writing that exists only in the WebView.
+enum FileLeavePolicy {
+    static func allowsLeaving(hasFile: Bool, authoritative: Bool, unsaved: Bool,
+                              hasContent: Bool, recoverySafe: Bool) -> Bool {
+        !hasFile || (authoritative && !unsaved) ||
+            (!authoritative && !unsaved && !hasContent) || recoverySafe
+    }
+}

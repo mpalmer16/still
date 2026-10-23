@@ -16,7 +16,14 @@ STILL_BUNDLE_EXECUTABLE=StillPreview \
 STILL_NATIVE_PORT=4044 \
 STILL_DATA_DIRECTORY="$PWD/tmp/preview-writing" \
 ./native/build.sh
+open --env STILL_DATA_DIRECTORY="$PWD/tmp/preview-writing" \
+  --env STILL_LOCAL_STATE_DIRECTORY="$PWD/tmp/preview-local-state" \
+  --env STILL_NATIVE_PORT=4044 "$PWD/dist/Still Preview.app"
 ```
+
+Use the explicit launch overrides for a preview; build-time values alone are not
+runtime overrides when the disposable database does not exist yet. Launching a
+preview without them can open the normal default writing folder.
 
 This example uses a separate disposable collection. Do not point development or
 verification builds at personal writing. For an intentional shared collection,
@@ -41,7 +48,7 @@ Fullscreen entry and exit update `html[data-native-fullscreen]` for the room's l
 The shell starts its own bundled backend at `127.0.0.1:4040`. This stable origin keeps WebKit's local recovery storage available across launches. The native WebKit profile is separate from a browser profile; unsent browser copies therefore remain in that browser. `STILL_NATIVE_PORT` can override the port for scratch tests. An occupied port is rejected rather than treated as Still. The availability check uses the backend’s address-reuse behavior, so a recently closed connection cannot be mistaken for a listening application during immediate reopening.
 Each chosen collection has a distinct persistent WebKit profile, so a scratch collection cannot share draft recovery copies with the real collection. Quit Still before switching launch environments. For example: `open --env STILL_DATA_DIRECTORY=/private/tmp/still-native-room --env STILL_NATIVE_PORT=4041 dist/Still.app`.
 
-Native launches opt into `STILL_NATIVE=true`; Docker's existing runtime behavior is unchanged. Erlang distribution is disabled. The shell locks `data/native/backend.lock` to avoid two native owners, rotates a local startup log, and creates or reuses `data/.secret_key_base`. Quit and New/Open/Find dispatch the editor-recovery flush event before leaving. File → Save dispatches a save event through that same recovery hook without leaving the editor. Quitting gives the save pause time to finish, then stops only the backend the shell started. If a new draft still lacks a server ID, a data-directory-specific local URL cursor reopens that fresh/beside writer next time; the writing itself stays in WebKit's recovery storage. A separate small guard also stops that BEAM if the window process crashes.
+Native launches opt into `STILL_NATIVE=true`; Docker's existing runtime behavior is unchanged. Erlang distribution is disabled. The shell locks `data/native/backend.lock` to avoid two native owners, rotates a local startup log, and creates or reuses `data/.secret_key_base`. Quit and New/Open/Find dispatch the editor-recovery flush event before leaving. File → Save dispatches a save event through that same recovery hook without leaving the editor. Quitting gives the save pause time to finish, then stops only the backend the shell started. Now reopens through the shared machine-local Desk cursor; unsent words and editor position stay in the profile’s file recovery store. Legacy experimental SQLite drafts are not reopened automatically. A separate small guard also stops that BEAM if the window process crashes.
 
 `python3 native/smoke.py` checks the packaged backend through the native controller using a disposable empty collection and an established collection populated with fabricated records, with Homebrew removed from PATH. Use `python3 native/smoke.py --bundle "dist/Still Preview.app"` to check the separate preview; the check reads its executable name from Info.plist. It also verifies immediate repeated launches after a server-closed connection, refusal of an occupied port, and that an abrupt parent exit closes the backend listener. It never reads a personal collection and does not open a window.
 
@@ -92,3 +99,30 @@ folder, failed backup, and a concurrent change. They supplement headless backend
 checks; physical AppKit dialogs and window cancellation should also be checked
 with a separately identified disposable build. No browser close handler or
 background backup task is added.
+
+
+
+## Unified Now writing
+
+Now uses the shared Phoenix file editor for any new writing. File → Open Writing
+opens `/writing`; New Writing opens `/?new=1`. There is no separate Poems menu.
+The historical reading screens keep their SQLite behavior. The same peripheral
+echo markup and gravity context draw only historical candidates around Now.
+
+The native shell flushes local file recovery before navigation, backup readiness,
+folder switching and close; it never turns a file draft into a SQLite entry.
+`FileLeavePolicy` allows a saved, blank, or safely recovered editor to leave.
+Changed words without verified recovery block leaving. The database close-time
+reminder explicitly distinguishes the historical SQLite snapshot from new files.
+The shared Desk cursor now resumes the current document through `/` on launch;
+the shell no longer maintains separate new-List and poem editor URL cursors.
+
+The synchronized root selected through Choose Backup Folder also contains the
+existing `poems/` file format. That on-disk name is retained to avoid migration;
+the interface has no writing types. Choosing a root from the menu while drafting
+a new page requires Refresh folder choice in the editor’s Save location details.
+
+Use only disposable data for checks. The README describes deliberate historical
+cleanup, Trash, permanent deletion, profile-local recovery, and file-lock limits.
+The clean-slate tool is never invoked by native startup. No installation or real
+collection transition is part of development verification.

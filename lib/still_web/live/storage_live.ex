@@ -89,6 +89,12 @@ defmodule StillWeb.StorageLive do
         <p>
           Choose any local folder, including one synchronized by a service you use. Still does not contact that service.
         </p>
+        <p>
+          New writing uses a <code>poems/</code>
+          directory inside this chosen folder. Changing or clearing the folder changes which writing collection opens; existing writing files stay where they are. Database backups contain the historical SQLite collection only. <.link navigate={
+            ~p"/writing"
+          }>Open Saved writing</.link>.
+        </p>
         <p :if={@notice} id="storage-notice" role="status">{@notice}</p>
         <p :if={@problem} id="storage-problem" role="alert">{@problem}</p>
         <p :if={@storage.error && @storage.error != @problem} id="storage-guidance" role="alert">

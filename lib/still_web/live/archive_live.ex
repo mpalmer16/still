@@ -15,6 +15,9 @@ defmodule StillWeb.ArchiveLive do
   end
 
   @impl true
+  def handle_params(%{"written" => "1"}, _uri, socket),
+    do: {:noreply, push_navigate(socket, to: ~p"/writing")}
+
   def handle_params(params, _uri, socket) do
     query = Writing.search_query(params["q"])
     earlier = params["earlier"] == "1"
@@ -130,7 +133,7 @@ defmodule StillWeb.ArchiveLive do
           >All writing</.link>
           <.link
             id="saved-writing"
-            patch={~p"/pages?written=1"}
+            navigate={~p"/writing"}
             aria-current={if @written, do: "page"}
             class="quiet-link"
           >Saved writing</.link>

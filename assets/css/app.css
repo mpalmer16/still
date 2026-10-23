@@ -476,3 +476,68 @@ mark { background: hsl(var(--hue, 218) 18% 25%); color: var(--ink); text-decorat
 .storage-room button:disabled { opacity: .55; cursor: default; }
 .storage-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
 #storage-problem, #storage-guidance { border-inline-start: 2px solid currentColor; padding-inline-start: .8rem; }
+
+/* Saved file writing shares the room; the shelf and history stay quiet. */
+.file-library { width: min(100%, 850px); margin: 0 auto; padding-top: clamp(36px, 7vh, 85px); }
+.file-heading h1 { margin: 15px 0 28px; font: 400 clamp(46px, 5vw, 64px)/1.1 var(--serif); letter-spacing: -.045em; }
+.file-link { font: 18px/1.5 var(--serif); color: var(--warm); }
+.file-shelf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 70px; margin: 65px 0; }
+.file-piece { display: block; min-height: 130px; padding: 18px 0; border-top: 1px solid #b7c7dd20; }
+.file-piece-title { display: block; font: 24px/1.4 var(--serif); color: var(--ink); }
+.file-opening { display: block; margin-top: 15px; white-space: pre-wrap; tab-size: 4; font: 17px/1.7 var(--serif); color: var(--muted); overflow-wrap: anywhere; }
+.file-empty { margin: 65px 0 110px; font: 22px/1.6 var(--serif); color: var(--soft); }
+.file-note { margin: 24px 0; color: var(--soft); font-size: 14px; line-height: 1.8; }
+.file-note[role="alert"] { padding-left: 14px; border-left: 1px solid var(--warm); }
+.file-note a { text-decoration: underline; text-underline-offset: 4px; }
+.file-collection-note { margin-top: 45px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.file-collection-note > .quiet-link { margin-right: 28px; }
+.file-collection-note code { overflow-wrap: anywhere; }
+.file-collection-note summary { min-height: 44px; cursor: pointer; }
+.file-lines { font-family: var(--serif); font-size: calc(19px + var(--letters, .5) * 8px); line-height: 1.85; tab-size: 4; letter-spacing: 0; }
+.file-lines { white-space: pre; overflow-wrap: normal; overflow-x: auto; min-height: 1.85em; }
+.file-title { margin: 0 0 45px; font: 400 34px/1.4 var(--serif); letter-spacing: -.02em; }
+.file-history { margin-top: 70px; }
+.file-history h2 { color: var(--muted); font-size: 12px; font-weight: 400; }
+.file-history details { padding: 18px 0; border-bottom: 1px solid #b7c7dd20; }
+.file-history summary { color: var(--soft); font: 16px/1.8 var(--serif); cursor: pointer; min-height: 44px; }
+.file-history h3 { font: 400 24px/1.5 var(--serif); }
+.file-history .file-lines { margin: 25px 0; font-size: 20px; }
+@media (max-width: 600px) { .file-shelf { grid-template-columns: 1fr; gap: 15px; } }
+
+/* Now keeps the familiar room and writing measure; portable files are an internal boundary. */
+.site-frame:has(.file-now) { --writing-measure: min(1080px, calc(100vw - 480px)); }
+.writing-room.file-now { padding-top: clamp(24px, 4vh, 60px); }
+.file-now .editor-form { margin-top: 24px; }
+.file-page { padding: clamp(20px, 2.5vw, 38px); border: 1px solid rgb(177 195 221 / .09); background: rgb(177 195 221 / .018); }
+.file-now .file-editor { min-height: 57vh; white-space: pre-wrap; overflow-x: hidden; overflow-wrap: anywhere; }
+.file-now .file-editor:focus-visible, .file-now .title-input:focus-visible { box-shadow: none; }
+.file-now .file-writing-footer { margin-top: 24px; }
+.site-frame:has(.file-now) .gravity-presence { width: clamp(140px, calc((100vw - var(--writing-measure)) / 2 - 90px), 230px); }
+.site-frame:has(.file-now) .field-left { right: calc(50% + var(--writing-measure) / 2 + 40px); }
+.site-frame:has(.file-now) .field-right { left: calc(50% + var(--writing-measure) / 2 + 40px); }
+/* Opacity leaves the page, caret, and echoes in place. Warnings never fade. */
+.site-frame:has(.file-now) :is(.site-header, .room-intro, .title-input, .file-writing-footer, .file-location, .room-light-control, .place-whisper) { transition: opacity .6s ease; }
+html[data-still-writing-focus] .site-frame:has(.file-now):not(:has([role="alert"], #file-recovery)) :is(.site-header, .room-intro, .title-input, .file-writing-footer, .file-location, .room-light-control, .place-whisper) { opacity: 0; }
+@media (max-width: 1279px), (max-height: 620px) {
+  .site-frame:has(.file-now) { --writing-measure: min(960px, calc(100vw - 48px)); }
+  .site-frame:has(.file-now) .gravity-presence { position: relative; left: auto; right: auto; width: min(100%, var(--writing-measure)); }
+}
+@media (max-width: 650px) {
+  .writing-room.file-now { padding-top: 20px; }
+  .file-page { padding: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-frame:has(.file-now) :is(.site-header, .room-intro, .title-input, .file-writing-footer, .file-location, .room-light-control, .place-whisper) { transition: none; }
+}
+.file-now .title-input { font-size: 23px; }
+.file-now .title-input::placeholder { color: var(--muted); font-size: 16px; }
+.file-writing-footer { flex-wrap: wrap; }
+.file-storage-note { font-size: 12px; margin-top: 22px; }
+.file-location { margin-top: 28px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.file-location summary { cursor: pointer; min-height: 32px; }
+.file-location code { overflow-wrap: anywhere; }
+.file-location .quiet-link { margin-right: 24px; }
+.file-reading { padding-top: clamp(65px, 10vh, 120px); }
+.file-reading-actions, .file-trash-actions { display: flex; gap: 26px; margin-top: 30px; flex-wrap: wrap; }
+.file-reading .file-lines { font-size: calc(19px + var(--letters, .5) * 8px); }
+@media (max-width: 600px) { .file-writing-footer .footer-actions { gap: 20px; flex-wrap: wrap; } }
