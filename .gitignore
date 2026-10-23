@@ -1,0 +1,98 @@
+# The directory Mix will write compiled artifacts to.
+/_build/
+
+# If you run "mix test --cover", coverage assets end up here.
+/cover/
+
+# The directory Mix downloads your dependencies sources to.
+/deps/
+
+# Where 3rd-party dependencies like ExDoc output generated docs.
+/doc/
+
+# Ignore .fetch files in case you like to edit your project deps locally.
+/.fetch
+
+# If the VM crashes, it generates a dump, let's ignore it too.
+erl_crash.dump
+
+# Also ignore archive artifacts (built via "mix archive.build").
+*.ez
+
+# Temporary files, for example, from tests.
+/tmp/
+
+# Ignore package tarball (built via "mix hex.build").
+still-*.tar
+
+# Ignore assets that are produced by build tools.
+/priv/static/assets/
+
+# Ignore digested assets cache.
+/priv/static/cache_manifest.json
+
+# In case you use Node.js/npm, you want to ignore these.
+npm-debug.log
+/assets/node_modules/
+
+# Database files
+*.db
+*.db-*
+
+# Private writing and local backups
+/data/
+
+# Locally assembled native macOS application (no writing is bundled).
+/dist/
+/native/__pycache__/
+
+# Finder metadata stays local.
+.DS_Store
+
+# Private configuration, credentials, and per-machine state.
+.env
+.env.*
+!.env.example
+.secret_key_base
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+
+# SQLite files and sidecars, regardless of the selected collection location.
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db3
+*.db3-*
+
+# Collection material belongs outside the source tree.
+/collection/
+/collections/
+/private/
+/writing/
+/Writing/
+/Lists/
+backups/
+exports/
+lists.json
+still-writing-*.json
+*.doc
+*.docx
+*.odt
+*.pdf
+*.rtf
+
+# Local logs, development tools, packaging, and test output.
+*.log
+*.log.*
+*.partial
+__pycache__/
+*.py[cod]
+.elixir_ls/
+/verification/
+*.app/
+*.dmg
+*.pkg

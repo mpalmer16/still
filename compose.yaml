@@ -1,0 +1,29 @@
+name: still
+
+services:
+  still:
+    build: .
+    ports:
+      - "127.0.0.1:${STILL_PORT:-4000}:4000"
+    environment:
+      DATABASE_PATH: /app/data/still.db
+      PHX_HOST: localhost
+      PHX_SERVER: "true"
+      PORT: "4000"
+    volumes:
+      - ${STILL_DATA_DIRECTORY:-./data}:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:4000/healthz"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5

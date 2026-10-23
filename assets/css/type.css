@@ -1,0 +1,103 @@
+/* The writing changes most; nearby language changes more gently. Room furniture
+   stays quiet at every position of the Letters control. */
+.site-frame {
+  --letter-growth: max(0, calc(var(--letters, .5) - .5));
+  --writing-size: calc(17px + var(--letters, .5) * 8px + var(--letter-growth) * 16px);
+  --writing-measure: min(820px, calc(var(--writing-size) * 32));
+  --list-title-size: calc(24px + var(--letters, .5) * 8px);
+  --secondary-size: calc(16px + var(--letters, .5) * 4px + var(--letter-growth) * 8px);
+  --peripheral-size: calc(13.5px + var(--letters, .5) * 3px + var(--letter-growth) * 6px);
+}
+
+.site-frame .writing-input {
+  font-size: var(--writing-size);
+  /* WebKit's native caret follows the line box. Keep the editable page's
+     leading comfortable without giving that insertion point extra height. */
+  line-height: 1.52;
+  caret-color: var(--soft);
+}
+
+.site-frame .list-body {
+  font-size: var(--writing-size);
+  line-height: 1.72;
+}
+
+.site-frame .list-title { font-size: var(--list-title-size); line-height: 1.32; }
+.site-frame .title-input { font-size: calc(22px + var(--letters, .5) * 8px); line-height: 1.35; }
+.site-frame .threshold-body,
+.site-frame .sibling-peek .threshold-body,
+.site-frame .sibling-link,
+.site-frame .beside-title,
+.site-frame .source-preamble > div { font-size: var(--secondary-size); }
+.site-frame .threshold-body { line-height: 1.65; }
+.site-frame .threshold-title,
+.site-frame .left-open-link > span:last-child,
+.site-frame .original-title { font-size: calc(14px + var(--letters, .5) * 4px); }
+.site-frame .echo-phrase { font-size: var(--secondary-size); }
+.site-frame .door-title { font-size: calc(19px + var(--letters, .5) * 5px); }
+
+.site-frame .gravity-words { font-size: var(--peripheral-size); line-height: 1.6; }
+.site-frame .gravity-title { font-size: calc(12px + var(--letters, .5) * 2px); line-height: 1.5; }
+
+.site-frame .archive-heading h1 { font-size: calc(40px + var(--letters, .5) * 12px); }
+.site-frame .search-input { font-size: calc(17px + var(--letters, .5) * 4px); }
+.site-frame .entry-opening { font-size: calc(18px + var(--letters, .5) * 6px); line-height: 1.4; }
+.site-frame .entry-excerpt { font-size: calc(15px + var(--letters, .5) * 3px); }
+.site-frame .archive-empty { font-size: calc(18px + var(--letters, .5) * 5px); }
+.site-frame .version-row summary { font-size: calc(15px + var(--letters, .5) * 3px); }
+.site-frame .version-title { font-size: calc(17px + var(--letters, .5) * 6px); }
+.site-frame .version-body { font-size: calc(16px + var(--letters, .5) * 6px); }
+.site-frame .recovery-note,
+.site-frame .muted { font-size: calc(12.5px + var(--letters, .5) * 2.5px); }
+
+.letters-adjustment {
+  position: absolute;
+  left: 0;
+  bottom: 44px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.letters-adjustment input[type=range] {
+  display: block;
+  width: clamp(135px, calc((100vw - 748px) / 2 - 125px), 250px);
+  height: 26px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: ew-resize;
+  accent-color: var(--warm);
+}
+.letters-adjustment input[type=range]::-webkit-slider-runnable-track {
+  height: 1px;
+  background: var(--muted);
+  opacity: .65;
+}
+.letters-adjustment input[type=range]::-webkit-slider-thumb {
+  appearance: none;
+  height: 9px;
+  width: 9px;
+  margin-top: -4px;
+  border: 1px solid var(--warm);
+  border-radius: 50%;
+  background: var(--night);
+}
+.letters-adjustment input[type=range]::-moz-range-track { height: 1px; background: var(--muted); }
+.letters-adjustment input[type=range]::-moz-range-thumb {
+  height: 8px;
+  width: 8px;
+  border: 1px solid var(--warm);
+  border-radius: 50%;
+  background: var(--night);
+}
+.letters-adjustment button { font-size: 12px; }
+
+@media (max-width: 650px) {
+  .letters-adjustment { gap: 14px; }
+  .letters-adjustment input[type=range] { width: 140px; }
+  .room-light-control:has(.letters-adjustment) ~ .place-whisper {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+}
