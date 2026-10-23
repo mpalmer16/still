@@ -48,9 +48,6 @@ config :still, StillWeb.Endpoint,
 # configured to run both http and https servers on
 # different ports.
 
-# Enable dev routes for dashboard and mailbox
-config :still, dev_routes: true
-
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"
 

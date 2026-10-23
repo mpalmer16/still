@@ -67,8 +67,6 @@ if config_env() == :prod do
   host = System.get_env("PHX_HOST") || "localhost"
   native? = System.get_env("STILL_NATIVE") == "true"
 
-  config :still, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
-
   config :still, StillWeb.Endpoint,
     url: [
       host: host,

@@ -81,7 +81,7 @@ defmodule StillWeb.StorageLiveTest do
     File.rmdir!(folder)
     {:ok, view, _} = live(conn, ~p"/storage")
     assert has_element?(view, "#backup-folder-path", folder)
-    assert has_element?(view, "#storage-guidance")
+    assert has_element?(view, "#storage-guidance", "Reconnect its drive")
     html = view |> element("#backup-now") |> render_click()
     assert html =~ "storage-problem"
     refute html =~ "Backup completed on this computer"

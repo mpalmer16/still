@@ -176,8 +176,9 @@ defmodule Still.Storage do
                 {:error, "Backup failed: #{inspect({kind, reason})}"}
             end
 
-          {:error, _reason} ->
-            {:error, "Could not reserve a unique backup staging folder."}
+          {:error, reason} ->
+            {:error,
+             "Could not create a backup in the selected folder: #{:file.format_error(reason)}. Check available space and folder permissions."}
         end
 
       {:error, reason} ->
@@ -202,7 +203,7 @@ defmodule Still.Storage do
       available: available,
       last_backup: state.last_backup,
       changed: changed or state.corrupt?,
-      error: state.error || proof_error || folder_error
+      error: state.error || folder_error || proof_error
     }
   end
 
@@ -212,7 +213,8 @@ defmodule Still.Storage do
         {:error, "The backup folder path must be absolute."}
 
       not File.dir?(path) ->
-        {:error, "The backup folder must already exist."}
+        {:error,
+         "The backup folder is unavailable. Reconnect its drive or choose an existing folder."}
 
       true ->
         case File.stat(path) do
@@ -220,7 +222,8 @@ defmodule Still.Storage do
             :ok
 
           {:ok, %{type: :directory}} ->
-            {:error, "The backup folder is not writable."}
+            {:error,
+             "The backup folder is not writable. Check its permissions or choose another folder."}
 
           _ ->
             {:error, "The backup folder is unavailable."}

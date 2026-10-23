@@ -21,8 +21,8 @@ STILL_DATA_DIRECTORY="$PWD/tmp/preview-writing" \
 This example uses a separate disposable collection. Do not point development or
 verification builds at personal writing. For an intentional shared collection,
 quit the other native app first; the collection lock permits one native owner.
-Use SQLite's backup API when preparing an established disposable collection. Do not copy a running database
-without its WAL; use SQLite's backup API. Neither packaging nor headless backend
+Use SQLite's backup API when preparing an established disposable collection. Do
+not copy a running database directly. Neither packaging nor headless backend
 checks need to launch a window. Without these options, the normal build path,
 identity, executable and port remain unchanged.
 
