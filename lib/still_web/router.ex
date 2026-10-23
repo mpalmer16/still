@@ -26,6 +26,10 @@ defmodule StillWeb.Router do
       live "/pages", ArchiveLive, :index
       live "/notebooks", NotebookLive, :index
       live "/storage", StorageLive, :index
+      live "/poems", PoemsLive, :index
+      live "/poems/new", PoemLive, :new
+      live "/poems/:id/edit", PoemLive, :edit
+      live "/poems/:id", PoemLive, :show
     end
 
     get "/healthz", HealthController, :index

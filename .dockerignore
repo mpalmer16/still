@@ -77,3 +77,8 @@ verification
 **/*.app
 **/*.dmg
 **/*.pkg
+
+# Never package a poem collection selected inside the checkout.
+/poems
+/.still-poems-lock
+/.still-poems.json

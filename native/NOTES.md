@@ -16,7 +16,14 @@ STILL_BUNDLE_EXECUTABLE=StillPreview \
 STILL_NATIVE_PORT=4044 \
 STILL_DATA_DIRECTORY="$PWD/tmp/preview-writing" \
 ./native/build.sh
+open --env STILL_DATA_DIRECTORY="$PWD/tmp/preview-writing" \
+  --env STILL_LOCAL_STATE_DIRECTORY="$PWD/tmp/preview-local-state" \
+  --env STILL_NATIVE_PORT=4044 "$PWD/dist/Still Preview.app"
 ```
+
+Use the explicit launch overrides for a preview; build-time values alone are not
+runtime overrides when the disposable database does not exist yet. Launching a
+preview without them can open the normal default writing folder.
 
 This example uses a separate disposable collection. Do not point development or
 verification builds at personal writing. For an intentional shared collection,
@@ -92,3 +99,26 @@ folder, failed backup, and a concurrent change. They supplement headless backend
 checks; physical AppKit dialogs and window cancellation should also be checked
 with a separately identified disposable build. No browser close handler or
 background backup task is added.
+
+
+## Poetry in the shared interface
+
+File → Poems opens `/poems` in the same Phoenix interface used by a browser.
+There is no native poem editor or second persistence implementation. Cmd+S
+requests an explicit poem-file save while its editor is active; navigation and
+close flush local recovery only. Poem files use the separately chosen Storage &
+Backups destination, not the SQLite writing-folder bookmark.
+
+The native shell remembers the last poem editor address per WebKit collection
+profile. Close readiness, menu navigation and SQLite writing-folder switching
+check poem recovery safety. An unrecoverable dirty poem keeps its current window
+and backend open, independently of the database backup choice. A clean saved
+poem, an empty new page, and a dirty poem with a verified local recovery write can
+leave. Pending poem recovery keys also prevent silently switching WebKit profiles.
+The existing Lists recovery, reading position and save hook remain independent.
+
+The `BackupClose` Foundation checks now include this poem-leave policy. Exercise
+typing, reload/recovery, explicit saving, empty poems, file conflicts and close /
+reopen in a separately identified disposable bundle; verify ordinary browser
+operation against a separate synthetic collection as well. Database snapshot
+success never claims that a poem's local draft was saved as a file.

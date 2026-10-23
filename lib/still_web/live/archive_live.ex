@@ -134,6 +134,7 @@ defmodule StillWeb.ArchiveLive do
             aria-current={if @written, do: "page"}
             class="quiet-link"
           >Saved writing</.link>
+          <.link id="poems-collection" navigate={~p"/poems"} class="quiet-link">Poems</.link>
           <.link id="storage-settings" navigate={~p"/storage"} class="quiet-link">Storage &amp; Backups</.link>
         </nav>
         <.form for={@form} id="search-form" phx-change="search" class="search-form" role="search">

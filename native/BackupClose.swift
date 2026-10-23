@@ -40,3 +40,12 @@ enum ClosePolicy {
         return .close
     }
 }
+
+// A database snapshot cannot rescue a poem that exists only in the WebView.
+enum PoemLeavePolicy {
+    static func allowsLeaving(hasPoem: Bool, authoritative: Bool, unsaved: Bool,
+                              hasContent: Bool, recoverySafe: Bool) -> Bool {
+        !hasPoem || (authoritative && !unsaved) ||
+            (!authoritative && !unsaved && !hasContent) || recoverySafe
+    }
+}

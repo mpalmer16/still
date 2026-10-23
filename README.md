@@ -147,17 +147,103 @@ separately before relying on a cloud copy. Still cannot confirm cloud upload.
 Use the completed snapshot's `still.db` with the restore procedure below, after
 stopping every process using the collection.
 
-### Future storage boundary
+### Poems as portable files
 
-The existing SQLite database continues to hold historical Lists, all existing
-writing and revisions, provenance, notebook relationships, and internal reading
-state. No existing writing is migrated in this milestone.
+Open **Find → Poems**, or **File → Poems** in the Mac app. Choose **A blank page**
+to transcribe or compose. The body starts empty; the title is optional. Save is
+explicit: **Save poem** or Cmd/Ctrl+S writes the displayed file destination.
+Open a poem to read it; **Edit poem or title** revises the words or renames its
+optional title. Earlier words appear beneath the saved poem. Nothing interprets,
+extracts, or reformats the poem into List items.
 
-A later milestone may store new poetry, prose, manuscript metadata, journals,
-submissions, responses, and frozen submission packets as ordinary synchronized
-files. Those formats will be independent of Google Drive or any other provider.
-That file storage is not implemented here; the synchronized folder currently
-receives database backup snapshots only.
+Poems use the same explicitly chosen folder as Storage & Backups, in a separate
+`poems/` directory. In the Mac app use **File → Choose Backup Folder…**; in a
+browser enter an existing local folder in **Storage & Backups**. This can be an
+ordinary local folder before you configure any synchronization provider. Keep
+the active SQLite database in its existing local folder. Choose the destination
+before saving; the editor displays its collection path. If you choose a folder
+from the native menu while a new draft is open, use **Refresh folder choice**
+before Save. **Save location** reveals the complete text-file path. Changing or clearing
+that setting changes the open poem collection without moving or deleting files.
+A page opened against the previous destination refuses to save into a different
+collection; return through Poems to open the newly selected destination.
+
+Before a folder is chosen, the blank editor still works as a **local draft**.
+Typing keeps recovery copies in the current browser or native WebKit profile;
+these are clearly distinguished from a saved collection file. **A blank page**
+also offers recovery of that browser/profile's previous new-poem draft. Choose a
+folder, return to the blank page, bring back the recovery copy, and explicitly
+save it. Existing poems offer local recovery when reopened for editing. If browser
+capacity prevents moving a new draft's recovery key after its first successful
+save, any newer unsaved words remain reachable through **A blank page**. A
+recovery copy does not overwrite a file until you choose Save. Distinct pending
+copies are retained when a save response arrives after further typing.
+
+Browser and Mac profiles have separate recovery stores. Do not clear site data
+while relying on one. If browser storage is unavailable, Still shows a warning;
+keep the page open and save the poem or copy its words elsewhere. In-page
+navigation is blocked for an unsecured changed draft; browser close/back/crash
+behavior cannot guarantee recovery when browser storage itself is unavailable. The Mac app
+refuses to close or switch its writing folder while a poem's only unsaved words
+lack a safe recovery copy. A safely retained local draft can close without
+forcing folder setup. Native reopening returns to its last poem editor. Browser
+sessions can reopen `/poems/new` or the saved poem's edit address.
+
+The portable collection format is:
+
+```text
+chosen-folder/
+  poems/
+    .still-poems.json                 # format marker
+    <stable-uuid>/
+      poem.txt                        # authoritative UTF-8 body
+      metadata.json                   # id, optional title, creation/modification dates, filename
+      revisions/
+        <timestamp>-<revision-uuid>/
+          poem.txt                    # earlier body, readable independently
+          metadata.json               # earlier title and capture date
+```
+
+The title is separate from the body. Renaming a title retains the identifier and
+text filename. You may rename a poem's single `.txt` file outside Still; keep its
+UUID directory and metadata together, then reopen it. More than one text file,
+missing metadata, unknown collection formats, or unsafe symlinks produce a
+visible error and leave files in place. Synchronize the complete `poems/` tree,
+including its marker, metadata and revisions. No database or cloud-specific
+record is required to reconstruct the collection.
+
+The context preserves text bytes, including tabs, blank stanzas and final
+newlines. New browser input uses LF line endings; an unchanged body or title-only
+edit preserves an existing body's CRLF bytes. Editing text in a browser follows
+the browser's newline convention. It never trims whitespace or guesses a title.
+Each changed Still save first captures the prior body and title in a readable
+immutable revision. External edits made wholly outside Still have no automatic
+revision capture; reopen them before further editing in Still.
+
+Saves compare content and metadata tokens, not modification timestamps, and
+reject a stale edit. Interrupted two-file saves retain a verification journal;
+Still completes only recognized old/new file states. Ambiguous external changes
+are left untouched with an error. Temporary files and revision staging are not
+completed saves. Files are flushed and published with local atomic renames;
+unsupported directory-flush operations remain a filesystem limitation.
+
+An exclusive `.still-poems-lock` directory prevents independent local Still
+processes from writing the collection at once. It is transient and is not a
+synchronization engine. A process crash can leave the lock behind. Close **all**
+Still processes using the destination before removing only that lock directory,
+then reopen; keep any `.save-journal.json` and writing files for verified recovery.
+Never remove a lock while another process is writing. Use one editing computer
+at a time, let folder synchronization settle before switching, and avoid editing
+outside Still during a Save. An external editor that ignores the lock can still
+race the final filesystem rename. Still does not confirm cloud upload.
+
+SQLite backups and JSON exports still contain only the existing database
+writing. They do **not** contain poem files or browser recovery copies. Preserve
+or synchronize the complete poem tree separately. The existing SQLite database
+continues to hold historical Lists, all prior writing, provenance, revisions,
+notebook relationships, and reading state. No entry is migrated or linked into
+the poem collection. Future manuscript metadata, journals, submissions,
+responses and frozen packets remain a later milestone; they are not implemented.
 
 ## Preserve and move your writing
 
@@ -229,3 +315,10 @@ Use `PORT=4001` as well if Docker is running on 4000. Host development binds to 
 The local importer tests run with `python3 -m unittest discover -s scripts -p 'test_*.py'`. All collection fixtures are synthetic and run without private documents or an import manifest. After building the native app, `python3 native/smoke.py` exercises its backend with disposable empty and fabricated established collections; it never reads a personal database. Foundation-only writing-location checks are described in [native/NOTES.md](native/NOTES.md).
 
 The app has no deletion action. Earlier words are retained when an existing page is changed in a new session. The local JSON export is intentionally a command instead of a browser download route.
+
+
+The separate poem recovery helpers have dependency-free Node checks:
+
+```sh
+node --test scripts/test_poem_recovery.mjs
+```

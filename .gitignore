@@ -96,3 +96,8 @@ __pycache__/
 *.app/
 *.dmg
 *.pkg
+
+# File-based poems belong to the chosen collection, never the source repository.
+/poems/
+/.still-poems-lock/
+/.still-poems.json

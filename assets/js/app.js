@@ -1,3 +1,4 @@
+import {PoemRecovery} from "./poem_recovery"
 import "phoenix_html"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
@@ -400,7 +401,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery},
+  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, PoemRecovery},
 })
 
 liveSocket.connect()

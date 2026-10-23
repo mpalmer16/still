@@ -6,6 +6,34 @@ defmodule Still.Storage do
 
   def status, do: with_state(&status_for/1)
 
+  @doc "The explicitly chosen local root shared by database snapshots and poem files."
+  def collection_location do
+    with_state(fn state ->
+      db = Path.expand(Repo.config()[:database])
+      folder_result = if state.folder, do: validate_folder(state.folder), else: :ok
+
+      folder_error =
+        case folder_result do
+          {:error, message} -> message
+          :ok -> nil
+        end
+
+      %{
+        configured: state.folder != nil,
+        available: state.folder != nil and folder_result == :ok and not state.corrupt?,
+        folder: state.folder,
+        scope: local_scope({db, state.folder}),
+        draft_scope: local_scope({db, :local_poem_draft}),
+        error: state.error || folder_error
+      }
+    end)
+  end
+
+  defp local_scope(value) do
+    :crypto.hash(:sha256, :erlang.term_to_binary(value))
+    |> Base.encode16(case: :lower)
+  end
+
   def set_folder(path) when is_binary(path) do
     with_state(fn state ->
       case validate_folder(path) do
