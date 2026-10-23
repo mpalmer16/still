@@ -193,7 +193,7 @@ struct StorageStatus: Decodable {
 }
 
 @MainActor
-final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation, WKNavigationDelegate, WKUIDelegate {
+final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     var window: NSWindow!
     var webView: WKWebView!
     var backend: Backend?
@@ -201,6 +201,11 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private var choosingFolder = false
     private var closeInProgress = false
     private var backingUp = false
+    private struct PendingManuscriptDownload {
+        let destination: URL
+        let staging: URL
+    }
+    private var manuscriptDownloads: [ObjectIdentifier: PendingManuscriptDownload] = [:]
     var quitting = false
 
     private func generousFrame(on screen: NSScreen?) -> NSRect {
@@ -468,10 +473,176 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let address = navigationAction.request.url, let room = backend,
-              address.scheme == "http", ["localhost", "127.0.0.1"].contains(address.host ?? ""),
-              address.port == room.port else { decisionHandler(.cancel); return }
-        decisionHandler(.allow)
+        let userInitiated = navigationAction.navigationType == .linkActivated
+        let choice = CorrespondenceNavigationPolicy.decide(
+            navigationAction.request.url,
+            localPort: backend?.port ?? -1,
+            userInitiated: userInitiated
+        )
+
+        switch choice {
+        case .allowInApp:
+            decisionHandler(.allow)
+        case .openExternal:
+            decisionHandler(.cancel)
+            if let address = navigationAction.request.url, !NSWorkspace.shared.open(address) {
+                showStorageNotice("Still could not open that website in your default browser.")
+            }
+        case .cancel:
+            decisionHandler(.cancel)
+        }
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        guard let address = navigationResponse.response.url,
+              CorrespondenceNavigationPolicy.isLocalRoom(address, port: backend?.port ?? -1) else {
+            decisionHandler(.cancel)
+            return
+        }
+
+        let response = navigationResponse.response as? HTTPURLResponse
+        if CorrespondenceNavigationPolicy.shouldDownloadResponse(
+            url: address,
+            localPort: backend?.port ?? -1,
+            statusCode: response?.statusCode,
+            contentDisposition: response?.value(forHTTPHeaderField: "Content-Disposition")
+        ) {
+            decisionHandler(.download)
+        } else {
+            decisionHandler(.allow)
+        }
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        guard let address = navigationAction.request.url,
+              CorrespondenceNavigationPolicy.isLocalRoom(address, port: backend?.port ?? -1),
+              CorrespondenceNavigationPolicy.isManuscriptExport(address) else {
+            download.cancel(nil)
+            return
+        }
+        download.delegate = self
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        guard let address = navigationResponse.response.url,
+              CorrespondenceNavigationPolicy.isLocalRoom(address, port: backend?.port ?? -1),
+              CorrespondenceNavigationPolicy.isManuscriptExport(address) else {
+            download.cancel(nil)
+            return
+        }
+        download.delegate = self
+    }
+
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
+                  suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        guard let window else { completionHandler(nil); return }
+        let panel = NSSavePanel()
+        panel.title = "Save manuscript"
+        panel.message = "Choose where to save this manuscript."
+        panel.prompt = "Save"
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = URL(fileURLWithPath: suggestedFilename).lastPathComponent
+        panel.beginSheetModal(for: window) { [weak self] result in
+            guard let self, result == .OK, let destination = panel.url else {
+                completionHandler(nil)
+                return
+            }
+
+            let parent = destination.deletingLastPathComponent()
+            guard FileManager.default.fileExists(atPath: parent.path),
+                  let parentValues = try? parent.resourceValues(forKeys: [.isDirectoryKey]),
+                  parentValues.isDirectory == true,
+                  self.isSafeDownloadDestination(destination) else {
+                self.showDownloadError("Choose a writable folder and a regular file name.")
+                completionHandler(nil)
+                return
+            }
+
+            let staging = parent.appendingPathComponent(
+                ".\(destination.lastPathComponent).still-\(UUID().uuidString).partial"
+            )
+            self.manuscriptDownloads[ObjectIdentifier(download)] =
+                PendingManuscriptDownload(destination: destination, staging: staging)
+            completionHandler(staging)
+        }
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        guard let pending = manuscriptDownloads.removeValue(forKey: ObjectIdentifier(download)) else { return }
+        do {
+            guard isRegularFile(pending.staging) else {
+                throw StillError.message("The downloaded manuscript is missing or unsafe.")
+            }
+            if try publishDownload(from: pending.staging, to: pending.destination) {
+                showStorageNotice("Manuscript saved as \(pending.destination.lastPathComponent).")
+            } else {
+                showDownloadError("The manuscript is present, but Still could not confirm that the folder entry is durable. Check the selected folder before continuing.")
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: pending.staging)
+            showDownloadError(error.localizedDescription)
+        }
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        guard let pending = manuscriptDownloads.removeValue(forKey: ObjectIdentifier(download)) else { return }
+        try? FileManager.default.removeItem(at: pending.staging)
+        let nsError = error as NSError
+        if nsError.code != NSURLErrorCancelled {
+            showDownloadError("The manuscript download did not finish. \(error.localizedDescription)")
+        }
+    }
+
+    private func isSafeDownloadDestination(_ url: URL) -> Bool {
+        var info = stat()
+        let result = url.path.withCString { lstat($0, &info) }
+        if result == 0 { return (info.st_mode & S_IFMT) == S_IFREG }
+        return errno == ENOENT
+    }
+
+    private func isRegularFile(_ url: URL) -> Bool {
+        var info = stat()
+        return url.path.withCString { lstat($0, &info) } == 0 && (info.st_mode & S_IFMT) == S_IFREG
+    }
+
+    private func publishDownload(from staging: URL, to destination: URL) throws -> Bool {
+        guard isSafeDownloadDestination(destination) else {
+            throw StillError.message("The chosen destination changed or is not a regular file. The existing item was left untouched.")
+        }
+        let file = staging.path.withCString { open($0, O_RDWR) }
+        guard file >= 0 else {
+            throw StillError.message("Still could not prepare the downloaded manuscript for saving.")
+        }
+        let fileReady = fchmod(file, 0o600) == 0 && fsync(file) == 0
+        close(file)
+        guard fileReady else {
+            throw StillError.message("Still could not sync the downloaded manuscript. The existing file was left untouched.")
+        }
+        let result = staging.path.withCString { source in
+            destination.path.withCString { target in Darwin.rename(source, target) }
+        }
+        guard result == 0 else {
+            let reason = String(cString: strerror(errno))
+            throw StillError.message("Still could not save the completed manuscript: \(reason)")
+        }
+        return syncDirectory(destination.deletingLastPathComponent())
+    }
+
+    private func syncDirectory(_ directory: URL) -> Bool {
+        let descriptor = directory.path.withCString { open($0, O_RDONLY) }
+        guard descriptor >= 0 else { return false }
+        let result = fsync(descriptor)
+        close(descriptor)
+        return result == 0
+    }
+
+    private func showDownloadError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Still could not save the manuscript."
+        alert.informativeText = message
+        alert.beginSheetModal(for: window, completionHandler: nil)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -485,6 +656,21 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        let choice = CorrespondenceNavigationPolicy.decide(
+            navigationAction.request.url,
+            localPort: backend?.port ?? -1,
+            userInitiated: navigationAction.navigationType == .linkActivated
+        )
+        switch choice {
+        case .allowInApp:
+            webView.load(navigationAction.request)
+        case .openExternal:
+            if let address = navigationAction.request.url, !NSWorkspace.shared.open(address) {
+                showStorageNotice("Still could not open that website in your default browser.")
+            }
+        case .cancel:
+            break
+        }
         return nil
     }
 

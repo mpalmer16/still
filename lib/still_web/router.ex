@@ -26,6 +26,15 @@ defmodule StillWeb.Router do
       live "/pages", ArchiveLive, :index
       live "/notebooks", NotebookLive, :index
       live "/storage", StorageLive, :index
+      live "/correspondence", CorrespondenceLive, :home
+      live "/correspondence/writing", CorrespondenceLive, :collection
+      live "/correspondence/writing/:id", CorrespondenceLive, :piece
+      live "/correspondence/journals", CorrespondenceLive, :journals
+      live "/correspondence/journals/new", CorrespondenceLive, :new_journal
+      live "/correspondence/journals/:id", CorrespondenceLive, :journal
+      live "/correspondence/packets", CorrespondenceLive, :packets
+      live "/correspondence/packets/new", CorrespondenceLive, :new_packet
+      live "/correspondence/packets/:id", CorrespondenceLive, :packet
       live "/writing", SavedLive, :index
       live "/writing/new", WritingLive, :new
       live "/writing/:id/edit", WritingLive, :edit
@@ -36,6 +45,7 @@ defmodule StillWeb.Router do
       live "/poems/:id", WritingLive, :show
     end
 
+    get "/correspondence/packets/:id/export/:format", ManuscriptController, :show
     get "/healthz", HealthController, :index
   end
 
