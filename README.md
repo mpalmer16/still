@@ -45,7 +45,7 @@ Docker publishes on `127.0.0.1` only. The native app uses a separate stable loca
 
 ## Where the writing lives
 
-Writing lives in `still.db`, an SQLite database inside the chosen writing folder, alongside `.secret_key_base`, backups, and exports. On the first launch of an updated build, Still adopts the existing `./data` collection when available and remembers it with a filesystem bookmark. Fresh builds without an existing collection start in `~/Library/Application Support/Still/Writing`. The File menu can choose another folder at any time after pending words are saved or recovered.
+Writing lives in `still.db`, an SQLite database inside the chosen writing folder, alongside its local `.secret_key_base`. Manual preservation commands keep backups and exports in that folder; **Back Up Now** uses the separately configured destination described below. On the first launch of an updated build, Still adopts the existing `./data` collection when available and remembers it with a filesystem bookmark. Fresh builds without an existing collection start in `~/Library/Application Support/Still/Writing`. The File menu can choose another folder at any time after pending words are saved or recovered.
 
 Moving Still.app does not move its writing or require a rebuild. Renaming a chosen writing folder keeps its remembered WebKit recovery identity. If the remembered folder or drive is unavailable, Still asks you to choose it rather than silently opening an empty collection. Choosing a different folder opens that folder's collection; it does not copy or move any words.
 

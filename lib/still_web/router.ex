@@ -39,9 +39,4 @@ defmodule StillWeb.Router do
     delete "/storage", NativeStorageController, :delete
     post "/backup", NativeStorageController, :backup
   end
-
-  # Other scopes may use custom stacks.
-  # scope "/api", StillWeb do
-  #   pipe_through :api
-  # end
 end

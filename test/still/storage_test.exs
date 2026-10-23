@@ -100,6 +100,36 @@ defmodule Still.StorageTest do
     end
   end
 
+  test "an unavailable destination retains its proof and works again when reconnected", %{
+    folder: folder
+  } do
+    assert {:ok, _} = Storage.set_folder(folder)
+    assert {:ok, backed} = Storage.backup()
+    original = File.read!(backed.last_backup.path)
+    disconnected = folder <> "-disconnected"
+    File.rename!(folder, disconnected)
+
+    unavailable = Storage.status()
+    assert unavailable.folder == folder
+    refute unavailable.available
+    assert unavailable.changed
+    assert unavailable.last_backup == backed.last_backup
+    assert unavailable.error =~ "Reconnect its drive"
+    assert {:error, message} = Storage.backup()
+    assert message =~ "Reconnect its drive"
+    assert {:error, _} = Storage.set_folder(folder <> "-missing")
+    assert Storage.status().folder == folder
+    refute File.exists?(folder)
+
+    File.rename!(disconnected, folder)
+    reconnected = Storage.status()
+    assert reconnected.available
+    refute reconnected.changed
+    assert reconnected.error == nil
+    assert reconnected.last_backup == backed.last_backup
+    assert File.read!(backed.last_backup.path) == original
+  end
+
   test "changing or clearing a destination clears only its associated success proof", %{
     folder: folder
   } do
