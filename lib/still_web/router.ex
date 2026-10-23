@@ -25,9 +25,19 @@ defmodule StillWeb.Router do
       live "/wander", EntryLive, :wander
       live "/pages", ArchiveLive, :index
       live "/notebooks", NotebookLive, :index
+      live "/storage", StorageLive, :index
     end
 
     get "/healthz", HealthController, :index
+  end
+
+  scope "/native", StillWeb do
+    pipe_through :api
+
+    get "/storage", NativeStorageController, :show
+    put "/storage", NativeStorageController, :update
+    delete "/storage", NativeStorageController, :delete
+    post "/backup", NativeStorageController, :backup
   end
 
   # Other scopes may use custom stacks.

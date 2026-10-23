@@ -7,6 +7,7 @@ services:
       - "127.0.0.1:${STILL_PORT:-4000}:4000"
     environment:
       DATABASE_PATH: /app/data/still.db
+      STILL_LOCAL_STATE_DIRECTORY: /app/data/local-state
       PHX_HOST: localhost
       PHX_SERVER: "true"
       PORT: "4000"

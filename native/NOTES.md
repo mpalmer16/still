@@ -56,3 +56,39 @@ These check explicit overrides, legacy adoption, a renamed folder's bookmark, mi
 
 Packaging follows [Elixir releases](https://hexdocs.pm/mix/Mix.Tasks.Release.html), which bundle the runtime for a matching target, and uses Apple's [WKWebView](https://developer.apple.com/documentation/webkit/wkwebview) and [deferred application termination](https://developer.apple.com/documentation/appkit/nsapplicationdelegate/applicationshouldterminate(_:)) APIs.
 Native zoom uses [the standard frame delegate](https://developer.apple.com/documentation/appkit/nswindowdelegate/windowwillusestandardframe(_:defaultframe:)); titlebar double-click choices remain under [Desktop & Dock](https://support.apple.com/en-gb/guide/mac-help/mchlp1119/mac).
+
+## Backup destination and closing
+
+File → Choose Backup Folder… selects a separate local destination through the
+native folder picker. File → Clear Backup Folder forgets it; File → Show Backup
+Folder reveals it or explains why it is unavailable. Storage & Backups… opens the
+same server-backed settings/status page available in a browser. These actions do
+not change the active writing folder. Settings are machine-local, scoped to the
+active database path, and stored outside the writing database and destination.
+
+Back Up Now freezes the editor, dispatches the existing recovery/save flush, and
+waits for acknowledgment. It requests a verified SQLite snapshot through a narrow
+localhost control route authenticated with an ephemeral per-launch token. The
+token is never stored in writing or exported records.
+
+Window close and Cmd+Q share deferred termination. The window remains present
+until the choice succeeds. After saving settles, a changed/unverified database
+asks Back Up & Close / Close Without Backing Up / Cancel. The first choice needs
+an available destination, successful backup, and no newer database change. On
+failure it keeps the app open; Cancel restores interaction and focus. No folder
+is forced on the user: close without a backup or cancel and choose a folder later.
+Unsettled words are never treated as included in a database snapshot. Manual
+backup and close operations do not overlap.
+
+The policy helper has Foundation-only tests (use a disposable output path):
+
+```sh
+swiftc -swift-version 5 -warnings-as-errors native/BackupClose.swift native/tests/BackupCloseTests.swift -o /tmp/still-backup-close-tests
+/tmp/still-backup-close-tests
+```
+
+These assertions cover clean/changed/unsettled state, all three choices, missing
+folder, failed backup, and a concurrent change. They supplement headless backend
+checks; physical AppKit dialogs and window cancellation should also be checked
+with a separately identified disposable build. No browser close handler or
+background backup task is added.

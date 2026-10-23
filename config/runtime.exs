@@ -1,5 +1,8 @@
 import Config
 
+# A per-launch native control key is never persisted in writing or exports.
+config :still, :native_control_token, System.get_env("STILL_NATIVE_CONTROL_TOKEN")
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration
