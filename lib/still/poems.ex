@@ -2,7 +2,8 @@ defmodule Still.Poems do
   @moduledoc """
   File-backed writing in the currently selected Still collection.
 
-  The initial poems/ directory and format name remain stable for existing collections.
+  Original UUID folders remain readable. Explicit saves enable the v2 marker before
+  publishing readable folder names, so older app versions refuse this newer collection safely.
 
   A collection lock left by a crashed process is never removed automatically. Close all Still
   instances before manually removing `.still-poems-lock` from the selected collection folder.
@@ -10,12 +11,18 @@ defmodule Still.Poems do
   """
 
   @marker ".still-poems.json"
-  @marker_contents Jason.encode!(%{"format" => "still-poems-v1"}, pretty: true) <> "\n"
+  @marker_contents Jason.encode!(%{"format" => "still-poems-v2"}, pretty: true) <> "\n"
   @metadata "metadata.json"
   @journal ".save-journal.json"
 
-  @doc "A display label only; untitled writing retains its exact body and optional title."
-  def display_title(%{title: title, body: body}) do
+  @doc "The optional title supplied by the writer; automatic titles leave this empty."
+  def explicit_title(%{title_source: "first_line"}), do: nil
+  def explicit_title(piece), do: piece.title
+
+  @doc "The explicit title or a shortened first written line, without changing the body."
+  def display_title(%{body: body} = piece) do
+    title = explicit_title(piece)
+
     if is_binary(title) && String.trim(title) != "" do
       title
     else
@@ -146,7 +153,7 @@ defmodule Still.Poems do
                {:ok, poems} <- poems_root(root, false),
                {:ok, source} <- poem_dir(root, id),
                {:ok, trash} <- trash_root(poems, true),
-               :ok <- ensure_absent(Path.join(trash, id)),
+               :ok <- identifier_available(trash, id),
                :ok <- token_still_current(root, id, expected) do
             case File.rename(source, Path.join(trash, id)) do
               :ok -> finish_trash_move(poems, trash, id, scope)
@@ -172,9 +179,13 @@ defmodule Still.Poems do
       with_location(location, fn root, scope ->
         with {:ok, poems} <- poems_root(root, false),
              {:ok, trash} <- trash_root(poems, false),
-             {:ok, _current} <- read_trash_poem(trash, id),
-             :ok <- ensure_absent(Path.join(poems, id)) do
-          case File.rename(Path.join(trash, id), Path.join(poems, id)) do
+             {:ok, current} <- read_trash_poem(trash, id),
+             :ok <- identifier_available(poems, id),
+             {:ok, ^poems} <- poems_root(root, true) do
+          case File.rename(
+                 Path.dirname(current.path),
+                 Path.join(poems, folder_name(id, current.title, current.body))
+               ) do
             :ok -> finish_restore_move(root, poems, trash, id, scope)
             {:error, reason} -> {:error, explain(reason)}
           end
@@ -206,7 +217,7 @@ defmodule Still.Poems do
                {:ok, trash} <- trash_root(poems, false),
                {:ok, current} <- read_trash_poem(trash, id),
                true <- current.token == token,
-               dir = Path.join(trash, id),
+               {:ok, dir} <- poem_dir_from_poems(trash, id),
                :ok <- validate_purge_tree(dir, id),
                :ok <- trash_token_still_current(trash, id, token),
                :ok <- remove_trash_tree(dir) do
@@ -234,7 +245,10 @@ defmodule Still.Poems do
         id = Map.get(existing, :id)
 
         if is_binary(id) do
-          do_save(root, scope, existing, id, body, title)
+          automatic? = is_nil(title) or String.trim(title) == ""
+          effective = if automatic?, do: first_line_title(body), else: title
+          source = if automatic?, do: "first_line", else: "explicit"
+          do_save(root, scope, existing, id, body, effective, source)
         else
           {:error, "This writing has no valid identifier."}
         end
@@ -244,12 +258,12 @@ defmodule Still.Poems do
 
   def save(_, _, _), do: {:error, "The writing could not be saved because its data is invalid."}
 
-  defp do_save(root, scope, existing, id, body, title) do
+  defp do_save(root, scope, existing, id, body, title, title_source) do
     if is_binary(existing[:scope]) and existing.scope != scope do
       {:error, "The active collection changed. Reopen the writing before continuing."}
     else
       if is_nil(existing[:token]) do
-        case create_poem(root, id, body, title) do
+        case create_poem(root, id, body, title, title_source) do
           {:ok, poem} -> {:ok, Map.put(poem, :scope, scope)}
           error -> error
         end
@@ -260,8 +274,9 @@ defmodule Still.Poems do
              {:ok, dir} <- poem_dir(root, id),
              {:ok, current_text} <- File.read(current.path),
              {:ok, metadata_bytes} <- File.read(Path.join(dir, @metadata)) do
-          if current_text == body and current.title == title do
-            {:ok, Map.put(current, :scope, scope)}
+          if current_text == body and current.title == title and
+               current.title_source == title_source do
+            finish_save(root, scope, id, title, body)
           else
             now = DateTime.utc_now() |> DateTime.to_iso8601()
             filename = Path.basename(current.path)
@@ -269,6 +284,7 @@ defmodule Still.Poems do
             next_metadata = %{
               "id" => id,
               "title" => title,
+              "title_source" => title_source,
               "created_at" => current.created_at,
               "updated_at" => now,
               "filename" => filename
@@ -279,6 +295,7 @@ defmodule Still.Poems do
             with {:ok, revision_name} <-
                    write_revision(dir, id,
                      title: current.title,
+                     title_source: current.title_source,
                      body: current_text,
                      created_at: now
                    ),
@@ -306,10 +323,7 @@ defmodule Still.Poems do
                  :ok <- sync_dir(dir) do
               _ = poems
 
-              case read_poem(root, id) do
-                {:ok, poem} -> {:ok, Map.put(poem, :scope, scope)}
-                error -> error
-              end
+              finish_save(root, scope, id, title, body)
             else
               {:error, reason} -> {:error, explain(reason)}
             end
@@ -325,10 +339,10 @@ defmodule Still.Poems do
     end
   end
 
-  defp create_poem(root, id, body, title) do
+  defp create_poem(root, id, body, title, title_source) do
     with true <- valid_id?(id),
          {:ok, poems} <- poems_root(root, true),
-         false <- File.exists?(Path.join(poems, id)),
+         :ok <- identifier_available(poems, id),
          now = DateTime.utc_now() |> DateTime.to_iso8601(),
          staging = Path.join(poems, ".#{id}.partial-#{System.unique_integer([:positive])}"),
          :ok <- File.mkdir(staging),
@@ -341,6 +355,7 @@ defmodule Still.Poems do
              %{
                "id" => id,
                "title" => title,
+               "title_source" => title_source,
                "created_at" => now,
                "updated_at" => now,
                "filename" => "poem.txt"
@@ -348,7 +363,7 @@ defmodule Still.Poems do
              pretty: true
            ) <> "\n",
          :ok <- atomic_write(Path.join(staging, @metadata), metadata),
-         :ok <- File.rename(staging, Path.join(poems, id)),
+         :ok <- File.rename(staging, Path.join(poems, folder_name(id, title, body))),
          :ok <- sync_dir(poems) do
       read_poem(root, id)
     else
@@ -359,6 +374,8 @@ defmodule Still.Poems do
   end
 
   defp read_entries(poems, ids) do
+    ids = ids |> Enum.map(&directory_id/1) |> Enum.reject(&is_nil/1)
+
     Enum.reduce_while(ids, {:ok, []}, fn id, {:ok, acc} ->
       case read_poem_dir(poems, id) do
         {:ok, poem} ->
@@ -379,9 +396,105 @@ defmodule Still.Poems do
     end)
   end
 
+  # Accept original UUID folders and readable labels carrying the full stable ID.
+  # Refuse duplicate identities among recognized folders; never choose arbitrarily.
+  defp directory_id(name) do
+    candidate = name |> String.split(" -- ") |> List.last()
+    if valid_id?(candidate), do: candidate
+  end
+
   defp poem_dir_from_poems(poems, id) do
-    path = Path.join(poems, id)
-    with true <- valid_id?(id), :ok <- safe_dir(path), do: {:ok, path}
+    with true <- valid_id?(id), {:ok, names} <- File.ls(poems) do
+      case Enum.filter(names, &(directory_id(&1) == id)) do
+        [] ->
+          {:error, :enoent}
+
+        [name] ->
+          path = Path.join(poems, name)
+          with :ok <- safe_dir(path), do: {:ok, path}
+
+        _ ->
+          {:error,
+           "Multiple writing folders share this identifier. Their files were left untouched."}
+      end
+    else
+      false -> {:error, "This writing identifier is invalid."}
+      error -> error
+    end
+  end
+
+  defp identifier_available(poems, id) do
+    case poem_dir_from_poems(poems, id) do
+      {:error, :enoent} -> :ok
+      {:ok, _} -> {:error, "A writing with this identifier already exists at the destination."}
+      error -> error
+    end
+  end
+
+  defp first_line_title(body) do
+    case display_title(%{title: nil, body: body}) do
+      "Untitled" -> if String.trim(body) == "", do: nil, else: "Untitled"
+      title -> title
+    end
+  end
+
+  defp folder_name(id, title, body) do
+    label =
+      display_title(%{title: title, body: body})
+      |> String.replace(~r/[\p{C}<>:"\/\\|?*]+/u, " ")
+      |> String.replace(~r/\s+/u, " ")
+      |> String.trim()
+      |> String.trim(".")
+      |> String.graphemes()
+      |> Enum.reduce_while("", fn glyph, acc ->
+        if byte_size(acc <> glyph) <= 160, do: {:cont, acc <> glyph}, else: {:halt, acc}
+      end)
+      |> String.trim()
+
+    label = if label == "", do: "Untitled", else: label
+    label <> " -- " <> id
+  end
+
+  defp finish_save(root, scope, id, title, body) do
+    with {:ok, poems} <- poems_root(root, true),
+         {:ok, dir} <- poem_dir_from_poems(poems, id),
+         destination = Path.join(poems, folder_name(id, title, body)),
+         :ok <- rename_saved_folder(dir, destination, poems),
+         {:ok, piece} <- read_poem(root, id) do
+      {:ok, Map.put(piece, :scope, scope)}
+    end
+  end
+
+  defp rename_saved_folder(dir, dir, _poems), do: :ok
+
+  defp rename_saved_folder(dir, destination, poems) do
+    # The full ID suffix disambiguates equal titles. A case-only rename can refer
+    # to the same inode on macOS; another existing path must never be replaced.
+    available =
+      case File.lstat(destination) do
+        {:error, :enoent} ->
+          :ok
+
+        {:ok, %{type: :directory, inode: inode, major_device: device}} ->
+          case File.lstat(dir) do
+            {:ok, %{inode: ^inode, major_device: ^device}} -> :ok
+            _ -> {:error, "The destination already exists."}
+          end
+
+        {:error, reason} ->
+          {:error, reason}
+
+        _ ->
+          {:error, "The destination already exists."}
+      end
+
+    with :ok <- available, :ok <- File.rename(dir, destination), :ok <- sync_dir(poems) do
+      :ok
+    else
+      {:error, reason} ->
+        {:error,
+         "The words were saved, but the folder could not be renamed: #{explain(reason)}. Reopen the writing before continuing."}
+    end
   end
 
   defp read_poem(root, id) do
@@ -424,9 +537,7 @@ defmodule Still.Poems do
     if not valid_id?(id) do
       {:skip, :invalid}
     else
-      dir = Path.join(poems, id)
-
-      with :ok <- safe_dir(dir),
+      with {:ok, dir} <- poem_dir_from_poems(poems, id),
            {:ok, entries, files_by_path} <- fingerprint_tree(dir, "", []),
            {:ok, meta_bytes} <- Map.fetch(files_by_path, @metadata),
            {:ok, meta} when is_map(meta) <- Jason.decode(meta_bytes),
@@ -445,6 +556,9 @@ defmodule Still.Poems do
          %{
            id: id,
            title: meta["title"],
+           title_source:
+             meta["title_source"] ||
+               if(meta["title"] in [nil, ""], do: "first_line", else: "explicit"),
            body: body,
            token: token,
            created_at: meta["created_at"],
@@ -588,8 +702,7 @@ defmodule Still.Poems do
 
   defp read_trash_poem(trash, id) do
     with true <- valid_id?(id),
-         path = Path.join(trash, id),
-         :ok <- safe_dir(path),
+         {:ok, path} <- poem_dir_from_poems(trash, id),
          {:ok, poem} <- read_poem_dir(trash, id),
          :ok <- recover(path, poem),
          {:ok, current} <- read_poem_dir(trash, id) do
@@ -624,14 +737,6 @@ defmodule Still.Poems do
 
       {:error, reason} ->
         {:error, reason}
-    end
-  end
-
-  defp ensure_absent(path) do
-    case File.lstat(path) do
-      {:error, :enoent} -> :ok
-      {:ok, _} -> {:error, "A writing with this identifier already exists at the destination."}
-      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -736,8 +841,14 @@ defmodule Still.Poems do
             case File.read(Path.join(path, @marker)) do
               {:ok, marker} ->
                 case Jason.decode(marker) do
-                  {:ok, %{"format" => "still-poems-v1"}} ->
-                    {:ok, path}
+                  {:ok, %{"format" => format}}
+                  when format in ["still-poems-v1", "still-poems-v2"] ->
+                    if create? and format == "still-poems-v1" do
+                      with :ok <- atomic_write(Path.join(path, @marker), @marker_contents),
+                           do: {:ok, path}
+                    else
+                      {:ok, path}
+                    end
 
                   _ ->
                     {:error,
@@ -778,20 +889,7 @@ defmodule Still.Poems do
   end
 
   defp poem_dir(root, id) do
-    with {:ok, poems} <- poems_root(root, false) do
-      path = Path.join(poems, id)
-
-      case File.lstat(path) do
-        {:ok, %{type: :directory}} ->
-          {:ok, path}
-
-        {:ok, _} ->
-          {:error, "The writing folder is not a safe directory."}
-
-        {:error, reason} ->
-          {:error, reason}
-      end
-    end
+    with {:ok, poems} <- poems_root(root, false), do: poem_dir_from_poems(poems, id)
   end
 
   defp write_revision(dir, id, fields) do
@@ -813,6 +911,7 @@ defmodule Still.Poems do
                  "id" => id,
                  "revision_id" => rev_id,
                  "title" => fields[:title],
+                 "title_source" => fields[:title_source],
                  "created_at" => fields[:created_at],
                  "filename" => "poem.txt"
                },
@@ -845,6 +944,7 @@ defmodule Still.Poems do
          true <- rev["revision_id"] == revision_id(Path.basename(path)),
          true <- rev["filename"] == "poem.txt",
          true <- valid_revision_title?(rev["title"]),
+         true <- rev["title_source"] in [nil, "explicit", "first_line"],
          true <- valid_time?(rev["created_at"]),
          {:ok, body} <- File.read(Path.join(path, "poem.txt")),
          {:ok, _} <- valid_text(body) do
@@ -852,6 +952,7 @@ defmodule Still.Poems do
        %{
          id: rev["revision_id"],
          title: rev["title"],
+         title_source: rev["title_source"],
          body: body,
          created_at: rev["created_at"]
        }}
@@ -1105,7 +1206,8 @@ defmodule Still.Poems do
       is_binary(filename) and Path.basename(filename) == filename and
         String.ends_with?(filename, ".txt")
 
-    valid_title and valid_filename and valid_time?(meta["created_at"]) and
+    meta["title_source"] in [nil, "explicit", "first_line"] and valid_title and valid_filename and
+      valid_time?(meta["created_at"]) and
       valid_time?(meta["updated_at"])
   end
 

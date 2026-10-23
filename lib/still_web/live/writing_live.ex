@@ -180,7 +180,7 @@ defmodule StillWeb.WritingLive do
            id: piece.id,
            token: piece.token,
            body: piece.body,
-           title: piece.title || "",
+           title: Poems.explicit_title(piece) || "",
            source_key: source_key,
            target_key: target_key
          })
@@ -194,6 +194,21 @@ defmodule StillWeb.WritingLive do
            problem: message,
            notice: nil
          )}
+    end
+  end
+
+  def handle_event("new_file", %{"writing" => attrs}, socket) do
+    draft = draft_words(attrs, socket.assigns.piece)
+
+    if draft == words(socket.assigns.piece) do
+      {:noreply, push_navigate(socket, to: ~p"/?new=1")}
+    else
+      {:noreply,
+       assign(socket,
+         draft: draft,
+         dirty: true,
+         notice: "Save these words before starting a new page. They are still here."
+       )}
     end
   end
 
@@ -346,7 +361,7 @@ defmodule StillWeb.WritingLive do
     end
   end
 
-  defp words(piece), do: %{body: piece.body, title: piece.title || ""}
+  defp words(piece), do: %{body: piece.body, title: Poems.explicit_title(piece) || ""}
   defp blank_title(""), do: nil
   defp blank_title(title), do: title
 
@@ -358,7 +373,7 @@ defmodule StillWeb.WritingLive do
         do: piece.body,
         else: body
 
-    %{body: body, title: Map.get(attrs, "title", piece.title || "")}
+    %{body: body, title: Map.get(attrs, "title", Poems.explicit_title(piece) || "")}
   end
 
   defp draft_key(location, %{token: nil}), do: "still:poem-draft:#{location.draft_scope}:new"
@@ -441,7 +456,12 @@ defmodule StillWeb.WritingLive do
               name="writing[title]"
               value={@draft.title}
               class="title-input"
-              placeholder="A title, if you like. Otherwise, the first line."
+              placeholder={
+                if @draft.body == "",
+                  do: "A title, if you like.",
+                  else: Poems.display_title(%{title: nil, body: @draft.body})
+              }
+              title="Add a title, or leave this empty to use the first line."
               autocomplete="off"
               phx-debounce="700"
             />
@@ -478,6 +498,7 @@ defmodule StillWeb.WritingLive do
             end}</span>
             <div class="footer-actions">
               <button id="save-file" type="submit" class="quiet-link">Save</button>
+              <button id="new-file" type="button" class="quiet-link">New</button>
               <.link id="open-saved-writing" navigate={~p"/writing"} class="quiet-link">Saved writing</.link>
               <button
                 :if={@piece.token}
@@ -501,7 +522,7 @@ defmodule StillWeb.WritingLive do
         <details class="file-location" id="file-save-destination">
           <summary>Save location</summary>
           <p :if={@location.configured}>
-            <code>{@piece.path || Path.join([@location.folder, "poems", @piece.id, "poem.txt"])}</code>
+            <code :if={@piece.path}>{@piece.path}</code><span :if={!@piece.path}>The writing will be saved in a folder named for its title inside <code>{Path.join(@location.folder, "poems")}</code>.</span>
           </p>
           <p :if={!@location.configured}>No collection folder is chosen.</p>
           <.link navigate={~p"/storage"} class="quiet-link">Storage &amp; Backups</.link>
@@ -521,7 +542,7 @@ defmodule StillWeb.WritingLive do
       </div>
       <StillWeb.Echoes.field :if={@piece && @editing} fragments={@gravity_field} />
       <article :if={@piece && !@editing} class="reading-room file-reading">
-        <h1 :if={@piece.title not in [nil, ""]} class="file-title">{@piece.title}</h1>
+        <h1 class="file-title">{Poems.display_title(@piece)}</h1>
         <div id="file-text" class="file-lines">{@piece.body}</div>
         <p :if={@piece.body == ""} id="file-empty" class="file-note">An empty page, kept here.</p>
         <div class="file-reading-actions">
