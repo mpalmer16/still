@@ -33,6 +33,21 @@ defmodule StillWeb.ConnCase do
 
   setup tags do
     Still.DataCase.setup_sandbox(tags)
+
+    if !tags[:async] do
+      previous = Application.get_env(:still, :storage_state_directory)
+      state = Path.join(System.tmp_dir!(), "still-web-state-#{Ecto.UUID.generate()}")
+      Application.put_env(:still, :storage_state_directory, state)
+
+      on_exit(fn ->
+        if previous,
+          do: Application.put_env(:still, :storage_state_directory, previous),
+          else: Application.delete_env(:still, :storage_state_directory)
+
+        File.rm_rf!(state)
+      end)
+    end
+
     {:ok, conn: Phoenix.ConnTest.build_conn() |> Map.put(:host, "localhost")}
   end
 end

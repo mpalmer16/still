@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {test} from 'node:test'
-const source = await readFile(new URL('../assets/js/poem_recovery.js', import.meta.url), 'utf8')
-const {readCopies, holdArrival, captureCopy, acknowledgeCopies, shouldBlockNavigation, restoreCopy, captureAfterArrival} = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
+const source = await readFile(new URL('../assets/js/file_recovery.js', import.meta.url), 'utf8')
+const {readCopies, holdArrival, captureCopy, acknowledgeCopies, shouldBlockNavigation, restoreCopy, captureAfterArrival, resumableCopy, migratePosition, positionKey} = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 const memory = () => {const map = new Map(); return {getItem: k => map.get(k) ?? null, setItem: (k,v) => map.set(k,v), removeItem: k => map.delete(k)}}
 const blank = {body: '', title: ''}
 
@@ -74,4 +74,39 @@ test('failed arrival protection preserves the original copy through initial and 
   captureAfterArrival(store,'poem',{body:'new typing',title:''},blank,true)
   assert.equal(readCopies(store,'poem').active.body,'new typing')
   assert.equal(readCopies(store,'poem').held[0].body,originalCopy.body)
+})
+
+
+test('Now resumes only a confirmed active draft based on the same file token', () => {
+  const store=memory(), copy={body:'draft after echo',title:'',baseToken:'file-v1'}
+  captureCopy(store,'still:poem-draft:fixture:id',copy,blank)
+  assert.equal(resumableCopy(store,'still:poem-draft:fixture:id','file-v1',true).body,copy.body)
+  assert.equal(resumableCopy(store,'still:poem-draft:fixture:id','outside-v2',true),null)
+  assert.equal(resumableCopy(store,'still:poem-draft:fixture:id','file-v1',false),null)
+})
+test('caret and scroll migrate only after the destination position is stored', () => {
+  const store=memory(), source='still:poem-draft:fixture:new',target='still:poem-draft:fixture:uuid'
+  const position=JSON.stringify({start:4,end:9,scroll:480})
+  store.setItem(positionKey(source),position)
+  const set=store.setItem
+  store.setItem=(k,v)=>{if(k===positionKey(target))throw Error('quota');set(k,v)}
+  assert.throws(()=>migratePosition(store,source,target))
+  assert.equal(store.getItem(positionKey(source)),position)
+  store.setItem=set;migratePosition(store,source,target)
+  assert.equal(store.getItem(positionKey(target)),position)
+  assert.equal(store.getItem(positionKey(source)),null)
+})
+
+
+test('purging saved files from another tab cannot erase an active unsaved recovery copy', async () => {
+  const store=memory(), key='still:poem-draft:collection:uuid'
+  captureCopy(store,key,{body:'newer words in another tab',title:'',baseToken:'before'},blank)
+  const original=store.getItem(key), listeners=new Map()
+  globalThis.window={addEventListener:(type,listener)=>listeners.set(type,listener)}
+  globalThis.localStorage=store
+  try {
+    await import(`data:text/javascript;base64,${Buffer.from(source+'\n// separate tab event registration').toString('base64')}`)
+    listeners.get('phx:file-purged')?.({detail:{key}})
+    assert.equal(store.getItem(key),original)
+  } finally { delete globalThis.window; delete globalThis.localStorage }
 })

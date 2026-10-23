@@ -77,7 +77,7 @@ defmodule Still.Writing.Gravity do
   end
 
   defp candidates(body, opts) do
-    index = index()
+    index = index(opts)
     query = if is_binary(opts[:title]), do: opts[:title] <> "\n" <> body, else: body
     query_tokens = tokens(query)
     query_tokens = if opts[:reading], do: query_tokens, else: Enum.take(query_tokens, -@window)
@@ -392,15 +392,18 @@ defmodule Still.Writing.Gravity do
 
   # Each caller keeps one local index. Header changes retokenize only changed
   # writings, so including the living Now does not rebuild the whole archive.
-  defp index do
+  defp index(opts) do
+    historical? = opts[:historical_only] == true
+    query = if historical?, do: from(e in Entry, where: e.origin == "before"), else: Entry
+
     headers =
       Repo.all(
-        from e in Entry,
+        from e in query,
           select: {e.id, e.lock_version, e.updated_at},
           order_by: e.id
       )
 
-    cache_key = {__MODULE__, :index}
+    cache_key = {__MODULE__, :index, historical?}
     database = Repo.config()[:database]
 
     case Process.get(cache_key) do
@@ -413,7 +416,7 @@ defmodule Still.Writing.Gravity do
         index
 
       _ ->
-        index = Repo.all(Entry) |> Enum.reduce(empty_index(), &add_entry/2)
+        index = Repo.all(query) |> Enum.reduce(empty_index(), &add_entry/2)
         Process.put(cache_key, {database, headers, index})
         index
     end

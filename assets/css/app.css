@@ -477,38 +477,44 @@ mark { background: hsl(var(--hue, 218) 18% 25%); color: var(--ink); text-decorat
 .storage-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
 #storage-problem, #storage-guidance { border-inline-start: 2px solid currentColor; padding-inline-start: .8rem; }
 
-/* Poetry has its own file collection and reading surface. */
-.poetry-library, .poetry-page { width: min(100%, 850px); margin: 0 auto; padding-top: clamp(36px, 7vh, 85px); }
-.poetry-heading h1 { margin: 15px 0 28px; font: 400 clamp(46px, 5vw, 64px)/1.1 var(--serif); letter-spacing: -.045em; }
-.poetry-link, .poetry-return { font: 18px/1.5 var(--serif); color: var(--warm); }
-.poetry-return { margin-bottom: 55px; font-size: 15px; }
-.poetry-shelf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 70px; margin: 65px 0; }
-.poetry-piece { display: block; min-height: 130px; padding: 18px 0; border-top: 1px solid #b7c7dd20; }
-.poetry-piece-title { display: block; font: 24px/1.4 var(--serif); color: var(--ink); }
-.poetry-opening { display: block; margin-top: 15px; white-space: pre-wrap; tab-size: 4; font: 17px/1.7 var(--serif); color: var(--muted); overflow-wrap: anywhere; }
-.poetry-empty { margin: 65px 0 110px; font: 22px/1.6 var(--serif); color: var(--soft); }
-.poetry-note { margin: 24px 0; color: var(--soft); font-size: 14px; line-height: 1.8; }
-.poetry-note[role="alert"] { padding-left: 14px; border-left: 1px solid var(--warm); }
-.poetry-note a { text-decoration: underline; text-underline-offset: 4px; }
-.poetry-collection-note, .poetry-file-note { margin-top: 45px; color: var(--muted); font-size: 12px; line-height: 1.8; }
-.poetry-collection-note > .quiet-link { margin-right: 28px; }
-.poetry-collection-note code, .poetry-file-note code { overflow-wrap: anywhere; }
-.poetry-collection-note summary, .poetry-file-note summary { min-height: 44px; cursor: pointer; }
-.poetry-title-input { display: block; width: 100%; padding: 0 0 15px; margin: 0 0 40px; border: 0; color: var(--ink); background: transparent; font: 30px/1.4 var(--serif); }
-.poetry-title-input::placeholder { color: var(--muted); font-size: 21px; }
-.poetry-editor, .poetry-lines { font-family: var(--serif); font-size: calc(19px + var(--letters, .5) * 8px); line-height: 1.85; tab-size: 4; letter-spacing: 0; }
-.poetry-editor { display: block; width: 100%; min-height: 360px; resize: vertical; border: 0; padding: 0 0 25px; color: var(--ink); background: transparent; white-space: pre; overflow: auto; }
-.poetry-editor:focus-visible, .poetry-title-input:focus-visible { outline: 1px solid #b7c7dd25; outline-offset: 10px; }
-.poetry-editor-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 20px 30px; align-items: baseline; margin-top: 30px; }
-.poetry-actions { display: flex; gap: 30px; }
-.poetry-lines { white-space: pre; overflow-wrap: normal; overflow-x: auto; min-height: 1.85em; }
-.poetry-title { margin: 0 0 45px; font: 400 34px/1.4 var(--serif); letter-spacing: -.02em; }
-.poetry-reading-footer { margin-top: 65px; display: flex; gap: 25px; align-items: baseline; flex-wrap: wrap; }
-.poetry-date { color: var(--muted); font-size: 11px; }
-.poetry-history { margin-top: 70px; }
-.poetry-history h2 { color: var(--muted); font-size: 12px; font-weight: 400; }
-.poetry-history details { padding: 18px 0; border-bottom: 1px solid #b7c7dd20; }
-.poetry-history summary { color: var(--soft); font: 16px/1.8 var(--serif); cursor: pointer; min-height: 44px; }
-.poetry-history h3 { font: 400 24px/1.5 var(--serif); }
-.poetry-history .poetry-lines { margin: 25px 0; font-size: 20px; }
-@media (max-width: 600px) { .poetry-shelf { grid-template-columns: 1fr; gap: 15px; } .poetry-return { margin-bottom: 35px; } }
+/* Saved file writing shares the room; the shelf and history stay quiet. */
+.file-library { width: min(100%, 850px); margin: 0 auto; padding-top: clamp(36px, 7vh, 85px); }
+.file-heading h1 { margin: 15px 0 28px; font: 400 clamp(46px, 5vw, 64px)/1.1 var(--serif); letter-spacing: -.045em; }
+.file-link { font: 18px/1.5 var(--serif); color: var(--warm); }
+.file-shelf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 70px; margin: 65px 0; }
+.file-piece { display: block; min-height: 130px; padding: 18px 0; border-top: 1px solid #b7c7dd20; }
+.file-piece-title { display: block; font: 24px/1.4 var(--serif); color: var(--ink); }
+.file-opening { display: block; margin-top: 15px; white-space: pre-wrap; tab-size: 4; font: 17px/1.7 var(--serif); color: var(--muted); overflow-wrap: anywhere; }
+.file-empty { margin: 65px 0 110px; font: 22px/1.6 var(--serif); color: var(--soft); }
+.file-note { margin: 24px 0; color: var(--soft); font-size: 14px; line-height: 1.8; }
+.file-note[role="alert"] { padding-left: 14px; border-left: 1px solid var(--warm); }
+.file-note a { text-decoration: underline; text-underline-offset: 4px; }
+.file-collection-note { margin-top: 45px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.file-collection-note > .quiet-link { margin-right: 28px; }
+.file-collection-note code { overflow-wrap: anywhere; }
+.file-collection-note summary { min-height: 44px; cursor: pointer; }
+.file-lines { font-family: var(--serif); font-size: calc(19px + var(--letters, .5) * 8px); line-height: 1.85; tab-size: 4; letter-spacing: 0; }
+.file-lines { white-space: pre; overflow-wrap: normal; overflow-x: auto; min-height: 1.85em; }
+.file-title { margin: 0 0 45px; font: 400 34px/1.4 var(--serif); letter-spacing: -.02em; }
+.file-history { margin-top: 70px; }
+.file-history h2 { color: var(--muted); font-size: 12px; font-weight: 400; }
+.file-history details { padding: 18px 0; border-bottom: 1px solid #b7c7dd20; }
+.file-history summary { color: var(--soft); font: 16px/1.8 var(--serif); cursor: pointer; min-height: 44px; }
+.file-history h3 { font: 400 24px/1.5 var(--serif); }
+.file-history .file-lines { margin: 25px 0; font-size: 20px; }
+@media (max-width: 600px) { .file-shelf { grid-template-columns: 1fr; gap: 15px; } }
+
+/* Now keeps the familiar room and writing measure; portable files are an internal boundary. */
+.file-now .file-editor { white-space: pre; overflow-x: auto; overflow-wrap: normal; }
+.file-now .title-input { font-size: 23px; }
+.file-now .title-input::placeholder { color: var(--muted); font-size: 16px; }
+.file-writing-footer { flex-wrap: wrap; }
+.file-storage-note { font-size: 12px; margin-top: 22px; }
+.file-location { margin-top: 28px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.file-location summary { cursor: pointer; min-height: 32px; }
+.file-location code { overflow-wrap: anywhere; }
+.file-location .quiet-link { margin-right: 24px; }
+.file-reading { padding-top: clamp(65px, 10vh, 120px); }
+.file-reading-actions, .file-trash-actions { display: flex; gap: 26px; margin-top: 30px; flex-wrap: wrap; }
+.file-reading .file-lines { font-size: calc(19px + var(--letters, .5) * 8px); }
+@media (max-width: 600px) { .file-writing-footer .footer-actions { gap: 20px; flex-wrap: wrap; } }

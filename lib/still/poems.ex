@@ -1,9 +1,12 @@
 defmodule Still.Poems do
   @moduledoc """
-  File-backed poems in the currently selected Still collection.
+  File-backed writing in the currently selected Still collection.
+
+  The initial poems/ directory and format name remain stable for existing collections.
 
   A collection lock left by a crashed process is never removed automatically. Close all Still
   instances before manually removing `.still-poems-lock` from the selected collection folder.
+  The lock coordinates Still instances; an external editor can still race a final token check.
   """
 
   @marker ".still-poems.json"
@@ -76,6 +79,135 @@ defmodule Still.Poems do
     end)
   end
 
+  @doc "Lists safely readable writings in the collection's recoverable trash."
+  def list_trash(location) do
+    with_location(location, fn root, scope ->
+      case poems_root(root, false) do
+        :missing ->
+          {:ok, []}
+
+        {:ok, poems} ->
+          case trash_root(poems, false) do
+            :missing ->
+              {:ok, []}
+
+            {:ok, trash} ->
+              with {:ok, ids} <- File.ls(trash),
+                   {:ok, entries} <- read_trash_entries(trash, ids) do
+                {:ok,
+                 entries
+                 |> Enum.map(&Map.put(&1, :scope, scope))
+                 |> Enum.sort_by(&{&1.updated_at || "", &1.id}, :desc)}
+              else
+                {:error, reason} -> {:error, explain(reason)}
+              end
+
+            error ->
+              normalize_error(error)
+          end
+
+        error ->
+          normalize_error(error)
+      end
+    end)
+  end
+
+  @doc "Moves a saved writing into recoverable trash after checking its open snapshot token."
+  def trash(location, existing) when is_map(existing) do
+    id = Map.get(existing, :id)
+    expected = Map.get(existing, :token)
+
+    if valid_id?(id) and is_binary(expected) do
+      with_location(location, fn root, scope ->
+        if is_binary(existing[:scope]) and existing.scope != scope do
+          {:error, "The active collection changed. Reopen the writing before moving it to trash."}
+        else
+          with {:ok, current} <- read_poem(root, id),
+               true <- current.token == expected,
+               {:ok, poems} <- poems_root(root, false),
+               {:ok, source} <- poem_dir(root, id),
+               {:ok, trash} <- trash_root(poems, true),
+               :ok <- ensure_absent(Path.join(trash, id)),
+               :ok <- token_still_current(root, id, expected) do
+            case File.rename(source, Path.join(trash, id)) do
+              :ok -> finish_trash_move(poems, trash, id, scope)
+              {:error, reason} -> {:error, explain(reason)}
+            end
+          else
+            false -> stale_writing_error()
+            :missing -> {:error, "This collection has no saved writings to trash."}
+            {:error, reason} -> {:error, explain(reason)}
+          end
+        end
+      end)
+    else
+      {:error, "This writing has no valid identifier or current save token."}
+    end
+  end
+
+  def trash(_, _), do: {:error, "The writing could not be trashed because its data is invalid."}
+
+  @doc "Restores a trashed writing if its original identifier is still available."
+  def restore(location, id) do
+    if valid_id?(id) do
+      with_location(location, fn root, scope ->
+        with {:ok, poems} <- poems_root(root, false),
+             {:ok, trash} <- trash_root(poems, false),
+             {:ok, _current} <- read_trash_poem(trash, id),
+             :ok <- ensure_absent(Path.join(poems, id)) do
+          case File.rename(Path.join(trash, id), Path.join(poems, id)) do
+            :ok -> finish_restore_move(root, poems, trash, id, scope)
+            {:error, reason} -> {:error, explain(reason)}
+          end
+        else
+          :missing -> {:error, "There are no trashed writings in this collection."}
+          {:error, reason} -> {:error, explain(reason)}
+        end
+      end)
+    else
+      {:error, "This writing identifier is invalid."}
+    end
+  end
+
+  @doc "Permanently removes a trashed writing after explicit confirmation and token validation."
+  def purge(location, id, token, confirmed?) do
+    cond do
+      confirmed? !== true ->
+        {:error, "Permanent deletion requires explicit confirmation."}
+
+      not valid_id?(id) ->
+        {:error, "This writing identifier is invalid."}
+
+      not is_binary(token) ->
+        {:error, "Permanent deletion requires the current save token."}
+
+      true ->
+        with_location(location, fn root, _scope ->
+          with {:ok, poems} <- poems_root(root, false),
+               {:ok, trash} <- trash_root(poems, false),
+               {:ok, current} <- read_trash_poem(trash, id),
+               true <- current.token == token,
+               dir = Path.join(trash, id),
+               :ok <- validate_purge_tree(dir, id),
+               :ok <- trash_token_still_current(trash, id, token),
+               :ok <- remove_trash_tree(dir) do
+            case sync_dir(trash) do
+              :ok ->
+                :ok
+
+              {:error, reason} ->
+                {:error,
+                 "The writing was permanently removed, but its trash folder could not be synced: #{explain(reason)}. Refresh trash to see the current contents."}
+            end
+          else
+            false -> stale_trash_error()
+            :missing -> {:error, "There are no trashed writings in this collection."}
+            {:error, reason} -> {:error, explain(reason)}
+          end
+        end)
+    end
+  end
+
   def save(location, existing, attrs) when is_map(existing) and is_map(attrs) do
     with {:ok, body} <- valid_text(Map.get(attrs, :body)),
          {:ok, title} <- valid_title(Map.get(attrs, :title)) do
@@ -85,17 +217,17 @@ defmodule Still.Poems do
         if is_binary(id) do
           do_save(root, scope, existing, id, body, title)
         else
-          {:error, "This poem has no valid identifier."}
+          {:error, "This writing has no valid identifier."}
         end
       end)
     end
   end
 
-  def save(_, _, _), do: {:error, "The poem could not be saved because its data is invalid."}
+  def save(_, _, _), do: {:error, "The writing could not be saved because its data is invalid."}
 
   defp do_save(root, scope, existing, id, body, title) do
     if is_binary(existing[:scope]) and existing.scope != scope do
-      {:error, "The active collection changed. Reopen the poem before continuing."}
+      {:error, "The active collection changed. Reopen the writing before continuing."}
     else
       if is_nil(existing[:token]) do
         case create_poem(root, id, body, title) do
@@ -112,7 +244,7 @@ defmodule Still.Poems do
           if current_text == body and current.title == title do
             {:ok, Map.put(current, :scope, scope)}
           else
-            now = DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+            now = DateTime.utc_now() |> DateTime.to_iso8601()
             filename = Path.basename(current.path)
 
             next_metadata = %{
@@ -125,13 +257,16 @@ defmodule Still.Poems do
 
             next_meta_bytes = Jason.encode!(next_metadata, pretty: true) <> "\n"
 
-            with :ok <-
+            with {:ok, revision_name} <-
                    write_revision(dir, id,
                      title: current.title,
                      body: current_text,
                      created_at: now
                    ),
-                 :ok <- token_still_current(root, id, current.token),
+                 :ok <-
+                   token_still_current(root, id, current.token, [
+                     Path.join("revisions", revision_name)
+                   ]),
                  :ok <-
                    write_journal(
                      dir,
@@ -141,7 +276,11 @@ defmodule Still.Poems do
                      body,
                      next_meta_bytes
                    ),
-                 :ok <- token_still_current(root, id, current.token),
+                 :ok <-
+                   token_still_current(root, id, current.token, [
+                     Path.join("revisions", revision_name),
+                     @journal
+                   ]),
                  :ok <- atomic_write(current.path, body),
                  :ok <- atomic_write(Path.join(dir, @metadata), next_meta_bytes),
                  :ok <- File.rm(Path.join(dir, @journal)),
@@ -158,7 +297,7 @@ defmodule Still.Poems do
           end
         else
           false ->
-            {:error, "This poem changed on disk since it was opened. Reopen it before saving."}
+            {:error, "This writing changed on disk since it was opened. Reopen it before saving."}
 
           {:error, reason} ->
             {:error, explain(reason)}
@@ -171,7 +310,7 @@ defmodule Still.Poems do
     with true <- valid_id?(id),
          {:ok, poems} <- poems_root(root, true),
          false <- File.exists?(Path.join(poems, id)),
-         now = DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
+         now = DateTime.utc_now() |> DateTime.to_iso8601(),
          staging = Path.join(poems, ".#{id}.partial-#{System.unique_integer([:positive])}"),
          :ok <- File.mkdir(staging),
          :ok <- File.chmod(staging, 0o700),
@@ -194,9 +333,9 @@ defmodule Still.Poems do
          :ok <- sync_dir(poems) do
       read_poem(root, id)
     else
-      false -> {:error, "This poem identifier already exists. Reopen it before saving."}
+      false -> {:error, "This writing identifier already exists. Reopen it before saving."}
       {:error, reason} -> {:error, explain(reason)}
-      _ -> {:error, "This poem could not be created safely."}
+      _ -> {:error, "This writing could not be created safely."}
     end
   end
 
@@ -234,29 +373,31 @@ defmodule Still.Poems do
          :ok <- recover(dir, poem) do
       read_poem_dir(poems, id)
     else
-      false -> {:error, "This poem identifier is invalid."}
-      :missing -> {:error, "This collection has no saved poems yet."}
-      {:skip, _} -> {:error, "This poem could not be found in the selected collection."}
+      false -> {:error, "This writing identifier is invalid."}
+      :missing -> {:error, "This collection has no saved writing yet."}
+      {:skip, _} -> {:error, "This writing could not be found in the selected collection."}
       {:error, reason} -> {:error, explain(reason)}
     end
   end
 
-  defp token_still_current(root, id, expected) do
-    with {:ok, poems} <- poems_root(root, false),
-         {:ok, current} <- read_poem_dir(poems, id),
-         true <- current.token == expected do
+  defp token_still_current(root, id, expected), do: token_still_current(root, id, expected, [])
+
+  defp token_still_current(root, id, expected, excluded_paths) do
+    with {:ok, dir} <- poem_dir(root, id),
+         {:ok, current_token} <- poem_tree_token(dir, excluded_paths),
+         true <- current_token == expected do
       :ok
     else
       false ->
         {:error,
-         "This poem changed on disk during the save. Its files and recovery journal were preserved."}
+         "This writing changed on disk during the save. Its files and recovery journal were preserved."}
 
       {:error, reason} ->
         {:error, explain(reason)}
 
       _ ->
         {:error,
-         "This poem changed on disk during the save. Its files and recovery journal were preserved."}
+         "This writing changed on disk during the save. Its files and recovery journal were preserved."}
     end
   end
 
@@ -267,20 +408,20 @@ defmodule Still.Poems do
       dir = Path.join(poems, id)
 
       with :ok <- safe_dir(dir),
-           :ok <- safe_file(Path.join(dir, @metadata)),
-           {:ok, meta_bytes} <- File.read(Path.join(dir, @metadata)),
+           {:ok, entries, files_by_path} <- fingerprint_tree(dir, "", []),
+           {:ok, meta_bytes} <- Map.fetch(files_by_path, @metadata),
            {:ok, meta} when is_map(meta) <- Jason.decode(meta_bytes),
            true <- meta["id"] == id,
            true <- valid_metadata?(meta),
-           {:ok, names} <- File.ls(dir),
-           files = Enum.filter(names, &String.ends_with?(&1, ".txt")),
+           files =
+             Enum.filter(Map.keys(files_by_path), fn path ->
+               Path.dirname(path) == "." and String.ends_with?(path, ".txt")
+             end),
            true <- length(files) == 1,
            filename = hd(files),
-           :ok <- safe_file(Path.join(dir, filename)),
-           {:ok, body} <- File.read(Path.join(dir, filename)),
-           {:ok, _} <- valid_text(body) do
-        token = digest(meta_bytes <> <<0>> <> filename <> <<0>> <> body)
-
+           {:ok, body} <- Map.fetch(files_by_path, filename),
+           {:ok, _} <- valid_text(body),
+           token = tree_token(entries) do
         {:ok,
          %{
            id: id,
@@ -293,17 +434,276 @@ defmodule Still.Poems do
          }}
       else
         {:error, :enoent} ->
-          {:error, "Poem folder #{id} is incomplete; its files were left untouched."}
+          {:error, "Writing folder #{id} is incomplete; its files were left untouched."}
+
+        :error ->
+          {:error, "Writing folder #{id} is incomplete; its files were left untouched."}
 
         false ->
-          {:error, "Poem folder #{id} has invalid metadata or more than one text file."}
+          {:error, "Writing folder #{id} has invalid metadata or more than one text file."}
 
         {:error, reason} ->
           {:error, explain(reason)}
 
         _ ->
-          {:error, "Poem folder #{id} is damaged. Its files were left untouched."}
+          {:error, "Writing folder #{id} is damaged. Its files were left untouched."}
       end
+    end
+  end
+
+  defp poem_tree_token(dir, excluded_paths) do
+    with :ok <- safe_dir(dir),
+         {:ok, entries, _files_by_path} <- fingerprint_tree(dir, "", excluded_paths) do
+      {:ok, tree_token(entries)}
+    end
+  end
+
+  defp tree_token(entries),
+    do: digest(:erlang.term_to_binary({:still_writing_tree_v1, entries}, [:deterministic]))
+
+  defp fingerprint_tree(dir, relative, excluded_paths) do
+    with {:ok, names} <- File.ls(dir) do
+      names
+      |> Enum.sort()
+      |> Enum.reject(fn name -> Path.join(relative, name) in excluded_paths end)
+      |> Enum.reduce_while({:ok, [], %{}}, fn name, {:ok, entries, files_by_path} ->
+        path = Path.join(dir, name)
+        child_relative = Path.join(relative, name)
+
+        case File.lstat(path) do
+          {:ok, %{type: :directory}} ->
+            case fingerprint_tree(path, child_relative, excluded_paths) do
+              {:ok, children, child_files} ->
+                {:cont,
+                 {:ok, [{name, {:directory, children}} | entries],
+                  Map.merge(files_by_path, child_files)}}
+
+              error ->
+                {:halt, error}
+            end
+
+          {:ok, %{type: :regular}} ->
+            case File.read(path) do
+              {:ok, bytes} ->
+                {:cont,
+                 {:ok, [{name, {:file, bytes}} | entries],
+                  Map.put(files_by_path, child_relative, bytes)}}
+
+              error ->
+                {:halt, error}
+            end
+
+          {:ok, _} ->
+            {:halt, {:error, "A writing folder contains a symlink or unsupported file type."}}
+
+          error ->
+            {:halt, error}
+        end
+      end)
+      |> case do
+        {:ok, reversed, files_by_path} -> {:ok, Enum.reverse(reversed), files_by_path}
+        error -> error
+      end
+    end
+  end
+
+  defp finish_trash_move(poems, trash, id, scope) do
+    result =
+      with :ok <- sync_dir(poems),
+           :ok <- sync_dir(trash),
+           {:ok, moved} <- read_trash_poem(trash, id) do
+        {:ok, Map.put(moved, :scope, scope)}
+      end
+
+    case result do
+      {:ok, moved} ->
+        {:ok, moved}
+
+      {:error, reason} ->
+        {:error,
+         "The writing was moved to trash, but the move could not be fully verified: #{explain(reason)}. Refresh trash to see its current state."}
+    end
+  end
+
+  defp finish_restore_move(root, poems, trash, id, scope) do
+    result =
+      with :ok <- sync_dir(trash),
+           :ok <- sync_dir(poems),
+           {:ok, restored} <- read_poem(root, id) do
+        {:ok, Map.put(restored, :scope, scope)}
+      end
+
+    case result do
+      {:ok, restored} ->
+        {:ok, restored}
+
+      {:error, reason} ->
+        {:error,
+         "The writing was restored, but the move could not be fully verified: #{explain(reason)}. Reopen it to see its current state."}
+    end
+  end
+
+  defp remove_trash_tree(dir) do
+    case File.rm_rf(dir) do
+      {:ok, _removed} ->
+        :ok
+
+      {:error, reason, path} ->
+        {:error,
+         "Permanent deletion was incomplete at #{path}: #{explain(reason)}. Some files may already be gone; refresh trash to see what remains."}
+    end
+  end
+
+  defp read_trash_entries(trash, ids) do
+    Enum.reduce_while(ids, {:ok, []}, fn id, {:ok, acc} ->
+      if valid_id?(id) do
+        case read_trash_poem(trash, id) do
+          {:ok, poem} -> {:cont, {:ok, [poem | acc]}}
+          error -> {:halt, error}
+        end
+      else
+        {:cont, {:ok, acc}}
+      end
+    end)
+  end
+
+  defp read_trash_poem(trash, id) do
+    with true <- valid_id?(id),
+         path = Path.join(trash, id),
+         :ok <- safe_dir(path),
+         {:ok, poem} <- read_poem_dir(trash, id),
+         :ok <- recover(path, poem),
+         {:ok, current} <- read_poem_dir(trash, id) do
+      {:ok, current}
+    else
+      false -> {:error, "This writing identifier is invalid."}
+      {:error, :enoent} -> {:error, "This writing could not be found in trash."}
+      {:error, reason} -> {:error, explain(reason)}
+      _ -> {:error, "This writing could not be read safely from trash."}
+    end
+  end
+
+  defp trash_root(poems, create?) do
+    path = Path.join(poems, ".trash")
+
+    case File.lstat(path) do
+      {:ok, %{type: :directory}} ->
+        {:ok, path}
+
+      {:ok, _} ->
+        {:error, "The trash folder is not a safe directory."}
+
+      {:error, :enoent} when create? ->
+        with :ok <- File.mkdir(path),
+             :ok <- File.chmod(path, 0o700),
+             :ok <- sync_dir(poems) do
+          {:ok, path}
+        end
+
+      {:error, :enoent} ->
+        :missing
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp ensure_absent(path) do
+    case File.lstat(path) do
+      {:error, :enoent} -> :ok
+      {:ok, _} -> {:error, "A writing with this identifier already exists at the destination."}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp stale_writing_error do
+    {:error,
+     "This writing changed on disk since it was opened. Reopen it before moving it to trash."}
+  end
+
+  defp stale_trash_error do
+    {:error,
+     "This trashed writing changed on disk. Refresh trash before permanently deleting it."}
+  end
+
+  defp trash_token_still_current(trash, id, expected) do
+    case read_trash_poem(trash, id) do
+      {:ok, current} when current.token == expected -> :ok
+      {:ok, _current} -> stale_trash_error()
+      {:error, _reason} -> stale_trash_error()
+    end
+  end
+
+  defp validate_purge_tree(dir, id) do
+    with :ok <- safe_dir(dir),
+         {:ok, poem} <- read_poem_dir(Path.dirname(dir), id),
+         {:ok, names} <- File.ls(dir),
+         files = Enum.filter(names, &String.ends_with?(&1, ".txt")),
+         true <- length(files) == 1,
+         filename = hd(files),
+         true <-
+           Enum.sort(names) in [
+             Enum.sort([@metadata, filename]),
+             Enum.sort([@metadata, filename, "revisions"])
+           ],
+         :ok <- validate_revision_tree(Path.join(dir, "revisions"), id) do
+      _ = poem
+      :ok
+    else
+      false ->
+        {:error, "Trash contains extra or invalid files; everything was left untouched."}
+
+      {:error, :enoent} ->
+        {:error, "A trashed writing is incomplete; everything was left untouched."}
+
+      {:error, reason} ->
+        {:error, reason}
+
+      _ ->
+        {:error, "Trash could not be verified safely; everything was left untouched."}
+    end
+  end
+
+  defp validate_revision_tree(path, id) do
+    case File.lstat(path) do
+      {:error, :enoent} ->
+        :ok
+
+      {:ok, %{type: :directory}} ->
+        with {:ok, names} <- File.ls(path),
+             true <- Enum.all?(names, &valid_revision_name?/1),
+             :ok <- validate_revisions(path, names, id) do
+          :ok
+        else
+          false ->
+            {:error, "Trash contains an invalid revision entry; everything was left untouched."}
+
+          error ->
+            error
+        end
+
+      {:ok, _} ->
+        {:error, "Trash contains an unsafe revisions path; everything was left untouched."}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp validate_revisions(_path, [], _id), do: :ok
+
+  defp validate_revisions(path, [name | rest], id) do
+    revision_dir = Path.join(path, name)
+
+    with {:ok, names} <- File.ls(revision_dir),
+         true <- Enum.sort(names) == Enum.sort([@metadata, "poem.txt"]),
+         {:ok, _revision} <- read_revision(revision_dir, id),
+         :ok <- validate_revisions(path, rest, id) do
+      :ok
+    else
+      false -> {:error, "A revision contains extra files; everything was left untouched."}
+      {:error, reason} -> {:error, reason}
+      _ -> {:error, "A revision could not be verified safely; everything was left untouched."}
     end
   end
 
@@ -322,12 +722,12 @@ defmodule Still.Poems do
 
                   _ ->
                     {:error,
-                     "The poems folder has an unknown format; its files were left untouched."}
+                     "The writings folder has an unknown format; its files were left untouched."}
                 end
 
               {:error, :enoent} ->
                 {:error,
-                 "The poems folder has no Still format marker; its files were left untouched."}
+                 "The writings folder has no Still format marker; its files were left untouched."}
 
               {:error, reason} ->
                 {:error, reason}
@@ -335,14 +735,14 @@ defmodule Still.Poems do
 
           {:error, :enoent} ->
             {:error,
-             "The poems folder has no Still format marker; its files were left untouched."}
+             "The writings folder has no Still format marker; its files were left untouched."}
 
           error ->
             error
         end
 
       {:ok, _} ->
-        {:error, "The poems folder is not a safe directory."}
+        {:error, "The writings folder is not a safe directory."}
 
       {:error, :enoent} when create? ->
         with :ok <- File.mkdir(path),
@@ -367,7 +767,7 @@ defmodule Still.Poems do
           {:ok, path}
 
         {:ok, _} ->
-          {:error, "The poem folder is not a safe directory."}
+          {:error, "The writing folder is not a safe directory."}
 
         {:error, reason} ->
           {:error, reason}
@@ -403,12 +803,12 @@ defmodule Still.Poems do
            :ok <- sync_dir(staging),
            :ok <- File.rename(staging, published),
            :ok <- sync_dir(revisions) do
-        :ok
+        {:ok, name}
       end
 
     case result do
-      :ok ->
-        :ok
+      {:ok, name} ->
+        {:ok, name}
 
       {:error, reason} ->
         File.rm_rf(staging)
@@ -437,7 +837,7 @@ defmodule Still.Poems do
          created_at: rev["created_at"]
        }}
     else
-      _ -> {:error, "A saved poem revision is damaged; its files were left untouched."}
+      _ -> {:error, "A saved writing revision is damaged; its files were left untouched."}
     end
   end
 
@@ -506,12 +906,12 @@ defmodule Still.Poems do
 
               true ->
                 {:error,
-                 "An interrupted poem save conflicts with later file changes. The journal and all poem files were preserved."}
+                 "An interrupted writing save conflicts with later file changes. The journal and all poem files were preserved."}
             end
           else
             _ ->
               {:error,
-               "An interrupted poem save cannot be verified. The journal and all poem files were preserved."}
+               "An interrupted writing save cannot be verified. The journal and all poem files were preserved."}
           end
         else
           {:error, reason} -> {:error, explain(reason)}
@@ -523,7 +923,7 @@ defmodule Still.Poems do
   rescue
     _ ->
       {:error,
-       "An interrupted poem save cannot be verified. The journal and all poem files were preserved."}
+       "An interrupted writing save cannot be verified. The journal and all poem files were preserved."}
   end
 
   defp valid_journal_metadata?(bytes, id) do
@@ -542,7 +942,7 @@ defmodule Still.Poems do
         passed_scope = if is_map(passed), do: passed[:scope] || passed["scope"], else: nil
 
         if is_binary(passed_scope) and passed_scope != scope do
-          {:error, "The active collection changed. Reopen the poem before continuing."}
+          {:error, "The active collection changed. Reopen the writing before continuing."}
         else
           if File.dir?(root) do
             :global.trans({{__MODULE__, scope}, self()}, fn ->
@@ -555,7 +955,7 @@ defmodule Still.Poems do
         end
 
       %{configured: false} ->
-        {:error, "Choose a collection folder before saving poems."}
+        {:error, "Choose a collection folder before saving writing."}
 
       %{available: false, error: error} ->
         {:error, error || "The selected collection folder is unavailable."}
@@ -583,12 +983,12 @@ defmodule Still.Poems do
 
                   _ ->
                     {:error,
-                     "The active collection changed while waiting for its file lock. Reopen the poem."}
+                     "The active collection changed while waiting for its file lock. Reopen the writing."}
                 end
               rescue
-                error -> {:error, "Poem operation failed: #{Exception.message(error)}"}
+                error -> {:error, "Writing operation failed: #{Exception.message(error)}"}
               catch
-                kind, reason -> {:error, "Poem operation failed: #{inspect({kind, reason})}"}
+                kind, reason -> {:error, "Writing operation failed: #{inspect({kind, reason})}"}
               end
 
             case release_filesystem_lock(lock_dir, owner_path, token, root) do
@@ -597,20 +997,20 @@ defmodule Still.Poems do
 
               {:error, reason} ->
                 {:error,
-                 "Poem operation finished, but its collection lock could not be released: #{reason}. Close Still instances before removing #{lock_dir}."}
+                 "Writing operation finished, but its collection lock could not be released: #{reason}. Close Still instances before removing #{lock_dir}."}
             end
 
           {:error, reason} ->
             {:error,
-             "Could not establish the poem collection lock: #{explain(reason)}. Its lock folder is #{lock_dir}; check it before continuing."}
+             "Could not establish the writing collection lock: #{explain(reason)}. Its lock folder is #{lock_dir}; check it before continuing."}
         end
 
       {:error, :eexist} ->
         {:error,
-         "Another Still instance is using this poem collection, or a previous instance left a lock. Close every Still instance before removing #{lock_dir}; do not remove it while another instance is writing."}
+         "Another Still instance is using this writing collection, or a previous instance left a lock. Close every Still instance before removing #{lock_dir}; do not remove it while another instance is writing."}
 
       {:error, reason} ->
-        {:error, "Could not lock the poem collection: #{explain(reason)}."}
+        {:error, "Could not lock the writing collection: #{explain(reason)}."}
     end
   end
 
@@ -658,20 +1058,20 @@ defmodule Still.Poems do
   defp valid_text(text) when is_binary(text) do
     if String.valid?(text) and not String.contains?(text, <<0>>),
       do: {:ok, text},
-      else: {:error, "Poem text must be valid UTF-8 without null bytes."}
+      else: {:error, "Writing text must be valid UTF-8 without null bytes."}
   end
 
-  defp valid_text(_), do: {:error, "Poem text must be a string."}
+  defp valid_text(_), do: {:error, "Writing text must be a string."}
   defp valid_title(nil), do: {:ok, nil}
 
   defp valid_title(title) when is_binary(title),
     do:
       if(String.valid?(title) and not String.contains?(title, <<0>>),
         do: {:ok, title},
-        else: {:error, "Poem title must be valid UTF-8 without null bytes."}
+        else: {:error, "Writing title must be valid UTF-8 without null bytes."}
       )
 
-  defp valid_title(_), do: {:error, "Poem title must be text or empty."}
+  defp valid_title(_), do: {:error, "Writing title must be text or empty."}
   defp valid_id?(id), do: is_binary(id) and Ecto.UUID.cast(id) != :error
 
   defp valid_metadata?(meta) do
@@ -751,7 +1151,7 @@ defmodule Still.Poems do
   defp safe_dir(path) do
     case File.lstat(path) do
       {:ok, %{type: :directory}} -> :ok
-      {:ok, _} -> {:error, "A poem path is a symlink or is not a directory."}
+      {:ok, _} -> {:error, "A writing path is a symlink or is not a directory."}
       error -> error
     end
   end
@@ -759,7 +1159,7 @@ defmodule Still.Poems do
   defp safe_file(path) do
     case File.lstat(path) do
       {:ok, %{type: :regular}} -> :ok
-      {:ok, _} -> {:error, "A poem file is a symlink or is not a regular file."}
+      {:ok, _} -> {:error, "A writing file is a symlink or is not a regular file."}
       error -> error
     end
   end

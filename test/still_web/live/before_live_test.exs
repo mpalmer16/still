@@ -115,24 +115,22 @@ defmodule StillWeb.BeforeLiveTest do
     assert Writing.list_versions(unchanged) == []
   end
 
-  test "new writing can sit beside before and be found from there", %{conn: conn} do
+  test "new writing sits beside historical words without adding a SQLite record", %{conn: conn} do
     old = piece()
     {:ok, view, _} = live(conn, ~p"/?beside=#{old.id}")
-    assert has_element?(view, "#writing-body")
+    assert has_element?(view, "#file-writing-body")
     assert has_element?(view, ".beside-title", old.title)
 
     view
-    |> element("#writing-form")
-    |> render_change(%{"entry" => %{"body" => "A new answer of my own"}})
+    |> form("#file-writing-form", writing: %{body: "A new answer of my own", title: ""})
+    |> render_change()
 
-    [new] = Writing.list_entries(origin: "now")
-    assert new.beside_id == old.id
+    assert Writing.list_entries(origin: "now") == []
+    assert Writing.get_entry!(old.id) == old
     {:ok, reopened, _} = live(conn, ~p"/w/#{old.id}")
-
-    assert has_element?(
-             reopened,
-             "section[aria-label='Written here'] a[href='/w/#{new.id}?read=1']"
-           )
+    assert has_element?(reopened, "#return-to-writing[href='/']")
+    {:ok, current, _} = live(conn, ~p"/")
+    assert has_element?(current, ".beside-title", old.title)
   end
 
   test "a recent echo is read without replacing the current Now", %{conn: conn} do
@@ -143,13 +141,13 @@ defmodule StillWeb.BeforeLiveTest do
 
     {:ok, view, _} = live(conn, ~p"/w/#{old.id}")
     assert has_element?(view, ".gravity-door[href^='/w/#{recent.id}?read=1']")
-    assert has_element?(view, "#return-to-writing[href='/w/#{current.id}']")
+    assert has_element?(view, "#return-to-writing[href='/']")
 
     {:ok, read, _} = live(conn, ~p"/w/#{recent.id}?read=1")
     assert has_element?(read, ".reading-room")
     refute has_element?(read, "#writing-form")
     assert Writing.current_writing().id == current.id
-    assert has_element?(read, "#return-to-writing[href='/w/#{current.id}']")
+    assert has_element?(read, "#return-to-writing[href='/']")
     assert Writing.get_entry!(recent.id).body == recent.body
     assert Writing.list_versions(recent) == []
   end

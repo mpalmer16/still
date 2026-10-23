@@ -7,7 +7,7 @@ export function readCopies(storage, key) {
   if (raw === null) return {active: null, held: []}
   const bucket = JSON.parse(raw)
   if (!bucket || !(bucket.active === null || valid(bucket.active)) ||
-      !Array.isArray(bucket.held) || !bucket.held.every(valid)) throw new Error("Unreadable poem recovery copy")
+      !Array.isArray(bucket.held) || !bucket.held.every(valid)) throw new Error("Unreadable writing recovery copy")
   return bucket
 }
 
@@ -54,24 +54,43 @@ export function acknowledgeCopies(storage, source, target, saved) {
   if (target !== source) storage.removeItem(source)
 }
 
+export const positionKey = key => key.replace("still:poem-draft:", "still:file-position:")
+
+export function resumableCopy(storage, key, token, resume) {
+  const active = readCopies(storage, key).active
+  return resume && active && (active.baseToken ?? null) === token ? active : null
+}
+
+export function migratePosition(storage, source, target) {
+  if (source === target) return
+  const position = storage.getItem(positionKey(source))
+  if (position !== null) {
+    storage.setItem(positionKey(target), position)
+    storage.removeItem(positionKey(source))
+  }
+}
+
 if (typeof window !== "undefined") {
-  window.addEventListener("phx:poem-saved", ({detail}) => {
+  window.addEventListener("phx:file-saved", ({detail}) => {
     let recoveryKey = detail.target_key
     try { acknowledgeCopies(localStorage, detail.source_key, detail.target_key, detail) }
     catch { recoveryKey = detail.source_key }
-    window.dispatchEvent(new CustomEvent("still:poem-saved", {detail: {...detail, recovery_key: recoveryKey}}))
+    try { migratePosition(localStorage, detail.source_key, recoveryKey) } catch { /* Keep original position on failure. */ }
+    window.dispatchEvent(new CustomEvent("still:file-saved", {detail: {...detail, recovery_key: recoveryKey}}))
   })
+
 }
 
 export const shouldBlockNavigation = (current, baseline, recoverySafe) => !recoverySafe && !equal(current, baseline)
 
-export const PoemRecovery = {
+export const FileRecovery = {
   mounted() {
     this.form = this.el.form
-    this.title = this.form.querySelector("#poem-title")
+    this.title = this.form.querySelector("#file-writing-title")
     this.key = this.el.dataset.draftKey
     this.baseline = JSON.parse(this.el.dataset.persisted)
     this.baseline.title ??= ""
+    this.baseToken = this.el.dataset.baseToken || null
     this.failed = false
     this.arrivalPending = true
     this.words = () => {
@@ -83,12 +102,12 @@ export const PoemRecovery = {
       const dirty = !equal(this.words(), this.baseline)
       this.form.dataset.unsaved = String(dirty)
       this.form.dataset.recoverySafe = String(!this.failed)
-      this.form.dataset.poemDraftKey = this.key
+      this.form.dataset.fileDraftKey = this.key
     }
     this.problem = () => {
       this.failed = true
       this.flags()
-      this.pushEvent("poem_recovery_unavailable", {})
+      this.pushEvent("file_recovery_unavailable", {})
     }
     this.pending = () => {
       const bucket = readCopies(localStorage, this.key)
@@ -98,37 +117,41 @@ export const PoemRecovery = {
     this.offer = () => {
       try {
         this.offered = this.pending().find(copy => !equal(copy, this.words()))
-        this.pushEvent("poem_recovery_status", {waiting: Boolean(this.offered)})
+        this.pushEvent("file_recovery_status", {waiting: Boolean(this.offered)})
       } catch { this.problem() }
     }
     this.fit = () => {
       const scroll = window.scrollY
       this.el.style.height = "auto"
-      this.el.style.height = `${Math.max(this.el.scrollHeight, 320)}px`
+      this.el.style.height = `${Math.max(this.el.scrollHeight, Number.parseFloat(getComputedStyle(this.el).minHeight) || 320)}px`
       if (window.scrollY !== scroll) window.scrollTo({top: scroll, behavior: "instant"})
     }
     this.capture = () => {
       const wasFailed = this.failed
       try {
-        captureAfterArrival(localStorage, this.key, this.words(), this.baseline, this.arrivalPending)
+        captureAfterArrival(localStorage, this.key, {...this.words(), baseToken: this.baseToken}, this.baseline, this.arrivalPending)
         this.arrivalPending = false
         this.failed = false
-        if (wasFailed) this.pushEvent("poem_recovery_available", {})
+        if (wasFailed) this.pushEvent("file_recovery_available", {})
       }
       catch { this.problem() }
       this.flags()
       this.fit()
     }
-    this.save = () => {
-      this.capture()
-      this.pushEvent("save_poem", {poem: this.words(), draft_key: this.key})
+    this.submitWriting = read => {
+      this.capture(); this.keepPosition()
+      this.pushEvent("save_file", {writing: this.words(), draft_key: this.key, read})
     }
-    this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); this.save() }
+    this.save = () => this.submitWriting(false)
+    this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); this.submitWriting(event.submitter?.id === "read-file") }
     this.onKey = event => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault(); this.save()
       }
-      if (event.key === "Escape") { event.preventDefault(); this.form.querySelector("#save-poem")?.focus() }
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault(); this.submitWriting(true)
+      }
+      if (event.key === "Escape" && !document.querySelector("#room-close")) { event.preventDefault(); this.form.querySelector("#save-file")?.focus() }
       if (event.key === "Tab" && event.target === this.el) {
         event.preventDefault()
         const start = this.el.selectionStart, end = this.el.selectionEnd
@@ -143,23 +166,37 @@ export const PoemRecovery = {
     this.onSaved = ({detail}) => {
       if (![detail.source_key, detail.target_key].includes(this.key)) return
       this.baseline = {body: detail.body, title: detail.title ?? ""}
+      this.baseToken = detail.token
       this.key = detail.recovery_key
       this.failed = this.key !== detail.target_key
       this.capture()
       this.offer()
     }
+    this.keepPosition = () => {
+      if (this.leaving || !this.el.isConnected) return
+      try { localStorage.setItem(positionKey(this.key), JSON.stringify({start: this.el.selectionStart,
+        end: this.el.selectionEnd, direction: this.el.selectionDirection, scroll: window.scrollY})) }
+      catch { /* Position is optional; words have their own verified recovery copy. */ }
+    }
+    this.onInput = () => { this.capture(); this.keepPosition() }
+    this.onPrepare = () => { this.capture(); this.keepPosition() }
+    this.onNavigation = ({detail}) => {
+      if (detail.kind === "redirect") { this.capture(); this.keepPosition(); this.leaving = true }
+    }
     this.onLeavingClick = event => {
       const link = event.target.closest?.("a[href]")
       if (!link || link.target === "_blank" || link.getAttribute("href")?.startsWith("#")) return
       this.capture()
+      this.keepPosition()
       if (shouldBlockNavigation(this.words(), this.baseline, !this.failed)) {
         event.preventDefault()
         event.stopImmediatePropagation()
-        this.pushEvent("poem_recovery_unavailable", {})
+        this.pushEvent("file_recovery_unavailable", {})
       }
     }
     this.onUnload = event => {
       this.capture()
+      this.keepPosition()
       if (shouldBlockNavigation(this.words(), this.baseline, !this.failed)) {
         event.preventDefault()
         event.returnValue = ""
@@ -167,15 +204,20 @@ export const PoemRecovery = {
     }
     window.addEventListener("click", this.onLeavingClick, true)
     window.addEventListener("beforeunload", this.onUnload)
-    this.form.addEventListener("input", this.capture)
+    this.form.addEventListener("input", this.onInput)
     this.form.addEventListener("submit", this.onSubmit)
     this.form.addEventListener("keydown", this.onKey)
     window.addEventListener("still:save", this.save)
-    window.addEventListener("still:prepare-to-leave", this.capture)
-    window.addEventListener("pagehide", this.capture)
+    window.addEventListener("still:prepare-to-leave", this.onPrepare)
+    window.addEventListener("pagehide", this.onPrepare)
     window.addEventListener("resize", this.fit)
-    window.addEventListener("still:poem-saved", this.onSaved)
-    this.handleEvent("poem-restore-local", () => {
+    window.addEventListener("still:file-saved", this.onSaved)
+    this.el.addEventListener("select", this.keepPosition)
+    this.el.addEventListener("keyup", this.keepPosition)
+    window.addEventListener("scroll", this.keepPosition, {passive: true})
+    window.addEventListener("phx:page-loading-start", this.onNavigation)
+    this.handleEvent("letters-changed", () => requestAnimationFrame(() => { this.fit(); this.keepPosition() }))
+    this.handleEvent("file-restore-local", () => {
       if (!this.offered) return
       try {
         restoreCopy(localStorage, this.key, this.offered, this.words(), this.baseline)
@@ -183,12 +225,13 @@ export const PoemRecovery = {
         this.el.value = this.offered.body
         this.title.value = this.offered.title
         this.capture()
-        this.pushEvent("poem_changed", {poem: this.words()})
+        this.keepPosition()
+        this.pushEvent("writing_changed", {writing: this.words()})
         this.offer()
         this.el.focus({preventScroll: true})
       } catch { this.problem() }
     })
-    this.handleEvent("poem-keep-saved", () => {
+    this.handleEvent("file-keep-saved", () => {
       if (!this.offered) return
       try {
         const bucket = readCopies(localStorage, this.key)
@@ -199,22 +242,48 @@ export const PoemRecovery = {
         this.offer()
       } catch { this.problem() }
     })
+    try {
+      const active = resumableCopy(localStorage, this.key, this.baseToken, this.el.dataset.resumeActive === "true")
+      if (active) {
+        this.el.value = active.body
+        this.title.value = active.title
+        this.arrivalPending = false
+        this.pushEvent("writing_changed", {writing: this.words()})
+      }
+    } catch { this.problem() }
     this.capture()
     this.offer()
     this.fit()
-    if (this.el.autofocus) this.el.focus({preventScroll: true})
+    if (this.el.autofocus) {
+      this.el.focus({preventScroll: true})
+      const end = this.el.value.length
+      this.el.setSelectionRange(end, end)
+      if (this.el.dataset.resumeActive === "true") {
+        try {
+          const position = JSON.parse(localStorage.getItem(positionKey(this.key)))
+          if (position && Number.isInteger(position.start) && Number.isInteger(position.end)) {
+            this.el.setSelectionRange(Math.min(end, Math.max(0, position.start)), Math.min(end, Math.max(0, position.end)), position.direction || "none")
+            if (Number.isFinite(position.scroll)) requestAnimationFrame(() => window.scrollTo({top: position.scroll, behavior: "instant"}))
+          }
+        } catch { /* A missing position never replaces words. */ }
+      }
+    }
   },
   updated() { this.fit() },
   destroyed() {
     window.removeEventListener("click", this.onLeavingClick, true)
     window.removeEventListener("beforeunload", this.onUnload)
-    this.form.removeEventListener("input", this.capture)
+    this.form.removeEventListener("input", this.onInput)
     this.form.removeEventListener("submit", this.onSubmit)
     this.form.removeEventListener("keydown", this.onKey)
     window.removeEventListener("still:save", this.save)
-    window.removeEventListener("still:prepare-to-leave", this.capture)
-    window.removeEventListener("pagehide", this.capture)
+    window.removeEventListener("still:prepare-to-leave", this.onPrepare)
+    window.removeEventListener("pagehide", this.onPrepare)
     window.removeEventListener("resize", this.fit)
-    window.removeEventListener("still:poem-saved", this.onSaved)
+    window.removeEventListener("still:file-saved", this.onSaved)
+    this.el.removeEventListener("select", this.keepPosition)
+    this.el.removeEventListener("keyup", this.keepPosition)
+    window.removeEventListener("scroll", this.keepPosition)
+    window.removeEventListener("phx:page-loading-start", this.onNavigation)
   },
 }

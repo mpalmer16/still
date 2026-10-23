@@ -1,4 +1,4 @@
-defmodule StillWeb.PoemLiveTest do
+defmodule StillWeb.WritingLiveTest do
   use StillWeb.ConnCase
   import Phoenix.LiveViewTest
   alias Still.{Poems, Storage, Writing}
@@ -18,18 +18,18 @@ defmodule StillWeb.PoemLiveTest do
     folder: folder
   } do
     {:ok, find, _} = live(conn, ~p"/pages")
-    assert has_element?(find, "#poems-collection[href='/poems']")
-    {:ok, library, _} = live(conn, ~p"/poems")
-    assert has_element?(library, "#poems-local-only", "No collection folder")
-    {:ok, view, _} = live(conn, ~p"/poems/new")
-    assert has_element?(view, "#poem-local-only", "No poem file has been saved")
-    assert view |> element("#poem-title") |> render() =~ "value=\"\""
+    assert has_element?(find, "#saved-writing[href='/writing']")
+    {:ok, library, _} = live(conn, ~p"/writing")
+    assert has_element?(library, "#writing-local-only", "No collection folder")
+    {:ok, view, _} = live(conn, ~p"/?new=1")
+    assert has_element?(view, "#file-local-only", "kept only in this browser")
+    assert view |> element("#file-writing-title") |> render() =~ "value=\"\""
 
     view
-    |> form("#poem-form", poem: %{body: "\n  synthetic draft\n\n", title: ""})
+    |> form("#file-writing-form", writing: %{body: "\n  synthetic draft\n\n", title: ""})
     |> render_submit()
 
-    assert has_element?(view, "#poem-problem", "Choose a collection folder")
+    assert has_element?(view, "#file-problem", "Choose a collection folder")
     assert Storage.collection_location().configured == false
     refute File.exists?(Path.join(folder, "poems"))
     assert Writing.list_entries() == []
@@ -40,22 +40,26 @@ defmodule StillWeb.PoemLiveTest do
     folder: folder
   } do
     {:ok, _} = Storage.set_folder(folder)
-    {:ok, view, _} = live(conn, ~p"/poems/new")
+    {:ok, view, _} = live(conn, ~p"/?new=1")
     text = "\n\n  cobalt <script>fixture</script>  \n\tsecond line\n\nlast stanza\n"
-    view |> form("#poem-form", poem: %{body: text, title: "Synthetic page"}) |> render_submit()
+
+    view
+    |> form("#file-writing-form", writing: %{body: text, title: "Synthetic page"})
+    |> render_submit()
+
     {:ok, [saved]} = Poems.list(Storage.collection_location())
-    assert_patch(view, ~p"/poems/#{saved.id}/edit")
+    assert_patch(view, ~p"/writing/#{saved.id}/edit")
     assert File.read!(saved.path) == text
-    {:ok, read, html} = live(conn, ~p"/poems/#{saved.id}")
-    assert has_element?(read, "#poem-text")
+    {:ok, read, html} = live(conn, ~p"/writing/#{saved.id}")
+    assert has_element?(read, "#file-text")
     assert html =~ "&lt;script&gt;fixture&lt;/script&gt;"
     refute html =~ "<script>fixture</script>"
-    {:ok, library, _} = live(conn, ~p"/poems")
-    assert has_element?(library, "#poem-#{saved.id}", "Synthetic page")
-    assert has_element?(library, "#poem-collection-location", Path.join(folder, "poems"))
-    {:ok, edit, html} = live(conn, ~p"/poems/#{saved.id}/edit")
+    {:ok, library, _} = live(conn, ~p"/writing")
+    assert has_element?(library, "#saved-#{saved.id}", "Synthetic page")
+    assert has_element?(library, ".file-collection-note", Path.join(folder, "poems"))
+    {:ok, edit, html} = live(conn, ~p"/writing/#{saved.id}/edit")
     assert html =~ "data-persisted"
-    assert has_element?(edit, "#poem-body[data-draft-key]")
+    assert has_element?(edit, "#file-writing-body[data-draft-key]")
     assert Poems.get(Storage.collection_location(), saved.id) == {:ok, saved}
   end
 
@@ -64,18 +68,22 @@ defmodule StillWeb.PoemLiveTest do
     folder: folder
   } do
     {:ok, _} = Storage.set_folder(folder)
-    {:ok, view, _} = live(conn, ~p"/poems/new")
-    view |> form("#poem-form", poem: %{body: "", title: ""}) |> render_submit()
+    {:ok, view, _} = live(conn, ~p"/?new=1")
+    view |> form("#file-writing-form", writing: %{body: "", title: ""}) |> render_submit()
     {:ok, [saved]} = Poems.list(Storage.collection_location())
     assert saved.body == "" and saved.title == nil
-    view |> form("#poem-form", poem: %{body: "", title: "Synthetic title"}) |> render_submit()
+
+    view
+    |> form("#file-writing-form", writing: %{body: "", title: "Synthetic title"})
+    |> render_submit()
+
     {:ok, renamed} = Poems.get(Storage.collection_location(), saved.id)
     assert renamed.id == saved.id and renamed.path == saved.path
     assert renamed.created_at == saved.created_at
     assert renamed.title == "Synthetic title"
-    {:ok, read, _} = live(conn, ~p"/poems/#{saved.id}")
-    assert has_element?(read, "#poem-empty")
-    assert has_element?(read, "#poem-revisions")
+    {:ok, read, _} = live(conn, ~p"/writing/#{saved.id}")
+    assert has_element?(read, "#file-empty")
+    assert has_element?(read, "#file-revisions")
     {:ok, [earlier]} = Poems.revisions(Storage.collection_location(), saved.id)
     assert earlier.body == "" and earlier.title == nil
   end
@@ -91,11 +99,11 @@ defmodule StillWeb.PoemLiveTest do
     location = Storage.collection_location()
     text = "\r\n\tfirst stanza\r\n\r\nlast  \r\n"
     {:ok, saved} = Poems.save(location, Poems.new(location), %{title: nil, body: text})
-    {:ok, edit, _} = live(conn, ~p"/poems/#{saved.id}/edit")
+    {:ok, edit, _} = live(conn, ~p"/writing/#{saved.id}/edit")
 
     edit
-    |> form("#poem-form",
-      poem: %{title: "Changed title", body: String.replace(text, "\r\n", "\n")}
+    |> form("#file-writing-form",
+      writing: %{title: "Changed title", body: String.replace(text, "\r\n", "\n")}
     )
     |> render_submit()
 
@@ -112,18 +120,18 @@ defmodule StillWeb.PoemLiveTest do
     {:ok, _} = Storage.set_folder(folder)
     location = Storage.collection_location()
     {:ok, saved} = Poems.save(location, Poems.new(location), %{title: nil, body: "before"})
-    {:ok, edit, _} = live(conn, ~p"/poems/#{saved.id}/edit")
+    {:ok, edit, _} = live(conn, ~p"/writing/#{saved.id}/edit")
     File.write!(saved.path, "outside words\n")
 
     html =
       edit
-      |> form("#poem-form", poem: %{title: "Local", body: "local unsaved words"})
+      |> form("#file-writing-form", writing: %{title: "Local", body: "local unsaved words"})
       |> render_submit()
 
-    assert has_element?(edit, "#poem-problem", "changed on disk")
-    assert has_element?(edit, "#poem-form[data-unsaved=true][data-save-blocked=true]")
+    assert has_element?(edit, "#file-problem", "changed on disk")
+    assert has_element?(edit, "#file-writing-form[data-unsaved=true][data-save-blocked=true]")
     assert File.read!(saved.path) == "outside words\n"
-    refute html =~ "Saved to your collection"
+    refute html =~ "Saved on this Mac"
   end
 
   test "unavailable and replaced destinations never redirect a save", %{
@@ -132,33 +140,45 @@ defmodule StillWeb.PoemLiveTest do
     root: root
   } do
     {:ok, _} = Storage.set_folder(folder)
-    {:ok, edit, _} = live(conn, ~p"/poems/new")
+    {:ok, edit, _} = live(conn, ~p"/?new=1")
     File.rename!(folder, folder <> "-unavailable")
-    edit |> form("#poem-form", poem: %{body: "held draft", title: ""}) |> render_submit()
-    assert has_element?(edit, "#poem-problem", "unavailable")
+
+    edit
+    |> form("#file-writing-form", writing: %{body: "held draft", title: ""})
+    |> render_submit()
+
+    assert has_element?(edit, "#file-problem", "unavailable")
     assert Storage.collection_location().folder == folder
     other = Path.join(root, "other-folder")
     File.mkdir!(other)
     {:ok, _} = Storage.set_folder(other)
-    edit |> form("#poem-form", poem: %{body: "held draft", title: ""}) |> render_submit()
-    assert has_element?(edit, "#poem-problem", "collection changed")
+
+    edit
+    |> form("#file-writing-form", writing: %{body: "held draft", title: ""})
+    |> render_submit()
+
+    assert has_element?(edit, "#file-problem", "collection changed")
     refute File.exists?(Path.join(other, "poems"))
-    edit |> element("#refresh-poem-folder") |> render_click()
-    assert has_element?(edit, "#poem-destination", Path.join(other, "poems"))
-    edit |> form("#poem-form", poem: %{body: "held draft", title: ""}) |> render_submit()
+    edit |> element("#refresh-file-folder") |> render_click()
+    assert has_element?(edit, "#file-save-destination", Path.join(other, "poems"))
+
+    edit
+    |> form("#file-writing-form", writing: %{body: "held draft", title: ""})
+    |> render_submit()
+
     {:ok, [saved]} = Poems.list(Storage.collection_location())
     assert saved.body == "held draft"
     assert String.starts_with?(saved.path, other <> "/")
   end
 
   test "recovery is explicit and reports unavailable browser storage", %{conn: conn} do
-    {:ok, view, _} = live(conn, ~p"/poems/new")
-    render_hook(view, "poem_recovery_status", %{waiting: true})
-    assert has_element?(view, "#poem-recovery")
-    view |> element("#restore-poem-local") |> render_click()
-    assert_push_event(view, "poem-restore-local", %{})
-    render_hook(view, "poem_recovery_unavailable", %{})
-    assert has_element?(view, "#poem-recovery-problem", "cannot keep a local recovery copy")
+    {:ok, view, _} = live(conn, ~p"/?new=1")
+    render_hook(view, "file_recovery_status", %{waiting: true})
+    assert has_element?(view, "#file-recovery")
+    view |> element("#restore-file-local") |> render_click()
+    assert_push_event(view, "file-restore-local", %{})
+    render_hook(view, "file_recovery_unavailable", %{})
+    assert has_element?(view, "#file-recovery-problem", "cannot keep a local recovery copy")
     assert Storage.collection_location().configured == false
   end
 end

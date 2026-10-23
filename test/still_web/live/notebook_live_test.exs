@@ -71,7 +71,7 @@ defmodule StillWeb.NotebookLiveTest do
     Writing.begin_writing(nil, writing_form: "list")
     {:ok, empty, _html} = live(conn, ~p"/notebooks")
     assert has_element?(empty, ".notebook-empty", "Your notebooks will appear here.")
-    assert has_element?(empty, "#return-to-writing[href='/list?resume=1']")
+    assert has_element?(empty, "#return-to-writing[href='/']")
 
     {:ok, missing, _html} = live(conn, ~p"/notebooks?notebook=missing&at=not-an-id")
     assert has_element?(missing, ".notebook-empty", "That notebook isn't here.")

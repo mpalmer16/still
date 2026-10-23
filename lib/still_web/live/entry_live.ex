@@ -54,12 +54,10 @@ defmodule StillWeb.EntryLive do
          query == "" && !params["version"] && !socket.assigns.historical_version do
       {:noreply, assign(socket, :page_title, Writing.opening(entry))}
     else
-      editing =
-        entry.origin != "before" && params["read"] != "1" && !params["version"] && query == ""
+      editing = false
 
       if connected?(socket) do
         Writing.remember_visit(entry)
-        if editing, do: Writing.remember_writing(entry)
       end
 
       words = version || entry
@@ -90,7 +88,7 @@ defmodule StillWeb.EntryLive do
        |> assign(:beside, if(entry.beside_id, do: Writing.get_entry(entry.beside_id)))
        |> assign(
          :memory,
-         if(editing && entry.origin == "now" && !entry.beside_id, do: Writing.remember_one())
+         nil
        )
        |> assign(:return_writing, Writing.current_writing())
        |> assign(:return_beside, Writing.current_beside())
@@ -177,6 +175,9 @@ defmodule StillWeb.EntryLive do
 
   def handle_event("finish", %{"entry" => attrs}, socket), do: save(attrs, socket, true)
 
+  def handle_event("edit", _, %{assigns: %{entry: %{origin: "now"}}} = socket),
+    do: {:noreply, socket}
+
   def handle_event("edit", _, socket) do
     if socket.assigns.entry.origin == "now", do: Writing.remember_writing(socket.assigns.entry)
 
@@ -232,26 +233,23 @@ defmodule StillWeb.EntryLive do
   end
 
   def handle_event("keep_both", _, socket) do
-    opts = [title: socket.assigns.stale_title]
+    location = Still.Storage.collection_location()
 
-    opts =
-      if socket.assigns.list_writing, do: Keyword.put(opts, :writing_form, "list"), else: opts
+    case Still.Poems.save(location, Still.Poems.new(location), %{
+           body: socket.assigns.stale_body,
+           title: socket.assigns.stale_title
+         }) do
+      {:ok, piece} ->
+        case Still.Desk.remember(location, %{id: piece.id, saved: true, beside: nil}) do
+          :ok ->
+            {:noreply, push_navigate(socket, to: ~p"/writing/#{piece.id}/edit")}
 
-    case Writing.save_entry(nil, socket.assigns.stale_body, opts) do
-      {:ok, entry} ->
-        {:noreply,
-         socket
-         |> push_event("writing-saved", %{
-           body: entry.body,
-           title: entry.title,
-           id: entry.id,
-           first: true,
-           draft_key: draft_key(socket.assigns.entry, socket.assigns.draft_scope)
-         })
-         |> push_navigate(to: ~p"/w/#{entry.id}")}
+          {:error, message} ->
+            {:noreply, put_flash(socket, :error, "The file was saved. " <> message)}
+        end
 
-      {:error, _} ->
-        {:noreply, assign(socket, :status, :error)}
+      {:error, message} ->
+        {:noreply, socket |> assign(:status, :error) |> put_flash(:error, message)}
     end
   end
 
@@ -587,34 +585,6 @@ defmodule StillWeb.EntryLive do
   defp reading_path(%{origin: "now", id: id}, crossing), do: ~p"/w/#{id}?read=1&cross=#{crossing}"
   defp reading_path(%{id: id}, crossing), do: ~p"/w/#{id}?cross=#{crossing}"
 
-  attr :fragments, :list, required: true
-
-  defp field(assigns) do
-    ~H"""
-    <aside
-      :for={fragment <- @fragments}
-      id={"drawn-before-#{fragment.entry.id}"}
-      class={"gravity-presence field-#{fragment.side} gravity-#{fragment.distance} motion-#{fragment.motion} #{if fragment.departing, do: "gravity-receding"}"}
-      style={"--field-y: #{fragment.height}vh; --pull: #{fragment.strength}; --arrival-delay: #{fragment.delay}ms;"}
-      aria-label={if fragment.entry.origin == "before", do: "From before", else: "Written here"}
-      aria-hidden={if fragment.departing, do: "true", else: nil}
-      inert={fragment.departing}
-    >
-      <.link
-        navigate={~p"/w/#{fragment.entry.id}?read=1&approach=#{fragment.side}"}
-        class="gravity-door"
-      >
-        <span class="gravity-horizon" aria-hidden="true"></span>
-        <div class="gravity-words"><.shaped_words body={fragment.line} /></div>
-        <span :if={fragment.entry.title} class="gravity-title"><.list_title text={
-          fragment.entry.title
-        } /></span>
-        <span class="gravity-place">{fragment.place.label}</span>
-      </.link>
-    </aside>
-    """
-  end
-
   defp accept_list_title(attrs, socket) do
     body = Map.get(attrs, "body", "")
     title = Map.get(attrs, "title")
@@ -805,7 +775,7 @@ defmodule StillWeb.EntryLive do
         <.versions open={@versions_open} versions={@versions} />
       </div>
 
-      <.field :if={@editing} fragments={@gravity_field} />
+      <StillWeb.Echoes.field :if={@editing} fragments={@gravity_field} />
 
       <article
         :if={!@editing && @historical_version}
@@ -890,7 +860,7 @@ defmodule StillWeb.EntryLive do
             target_line={@search_line}
           />
         </div>
-        <.field fragments={@gravity_field} />
+        <StillWeb.Echoes.field fragments={@gravity_field} />
         <.recovery recovery_available={@recovery_available} status={@status} entry_id={@entry.id} />
         <div class="reading-foot">
           <button
@@ -905,7 +875,7 @@ defmodule StillWeb.EntryLive do
             navigate={results_path(@search_query, @search_earlier, @search_written)}
             class="quiet-link"
           >Back to results</.link>
-          <button type="button" class="quiet-link" phx-click="edit">Change these words</button>
+          <button :if={@entry.origin == "before"} type="button" class="quiet-link" phx-click="edit">Change these words</button>
           <button type="button" class="quiet-link" phx-click="toggle_versions">Earlier words</button>
           <.link
             :if={@entry.origin == "before" && @entry.notebook}

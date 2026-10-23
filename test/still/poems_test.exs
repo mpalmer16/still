@@ -226,5 +226,173 @@ defmodule Still.PoemsTest do
     File.rename!(folder, folder <> "-moved")
     assert {:error, _} = Poems.save(nil, poem, %{title: nil, body: "words"})
     assert {:error, _} = Poems.list(nil)
+    assert {:error, _} = Poems.list_trash(nil)
+  end
+
+  test "trash and restore preserve the complete writing directory and revisions", %{
+    folder: folder
+  } do
+    poem = Poems.new(nil)
+    assert {:ok, created} = Poems.save(nil, poem, %{title: "First", body: "original"})
+    assert {:ok, saved} = Poems.save(nil, created, %{title: "Second", body: "revised"})
+    original_dir = Path.dirname(saved.path)
+    before_files = files_under(original_dir)
+    assert {:ok, revisions_before} = Poems.revisions(nil, poem.id)
+    assert length(revisions_before) == 1
+
+    assert {:ok, trashed} = Poems.trash(nil, saved)
+    trash_dir = Path.join([folder, "poems", ".trash", poem.id])
+    refute File.exists?(original_dir)
+    assert files_under(trash_dir) == before_files
+    assert trashed.path == Path.join(trash_dir, "poem.txt")
+    assert {:ok, [listed]} = Poems.list_trash(nil)
+    assert listed.id == poem.id
+    assert listed.token == saved.token
+
+    assert {:ok, restored} = Poems.restore(nil, poem.id)
+    assert restored.body == "revised"
+    assert restored.path == Path.join(original_dir, "poem.txt")
+    assert files_under(original_dir) == before_files
+    assert {:ok, revisions_after} = Poems.revisions(nil, poem.id)
+    assert revisions_after == revisions_before
+    assert {:ok, []} = Poems.list_trash(nil)
+  end
+
+  test "restore preserves trash when the original identifier is occupied", %{folder: folder} do
+    poem = Poems.new(nil)
+    assert {:ok, saved} = Poems.save(nil, poem, %{title: nil, body: "safe words"})
+    assert {:ok, trashed} = Poems.trash(nil, saved)
+    poems = Path.join(folder, "poems")
+    collision = Path.join(poems, poem.id)
+    File.mkdir!(collision)
+    File.write!(Path.join(collision, "foreign.txt"), "keep")
+
+    assert {:error, message} = Poems.restore(nil, poem.id)
+    assert message =~ "already exists"
+    assert File.read!(Path.join([poems, ".trash", poem.id, "poem.txt"])) == "safe words"
+    assert File.read!(Path.join(collision, "foreign.txt")) == "keep"
+    refute is_nil(trashed.token)
+  end
+
+  test "trash rejects a stale open snapshot and leaves writing in place", %{folder: folder} do
+    poem = Poems.new(nil)
+    assert {:ok, saved} = Poems.save(nil, poem, %{title: nil, body: "before"})
+    File.write!(saved.path, "changed outside")
+
+    assert {:error, message} = Poems.trash(nil, saved)
+    assert message =~ "changed on disk"
+    assert File.read!(saved.path) == "changed outside"
+    refute File.dir?(Path.join([folder, "poems", ".trash"]))
+    assert {:ok, []} = Poems.list_trash(nil)
+  end
+
+  test "trash and purge tokens cover revision bytes", %{folder: folder} do
+    poem = Poems.new(nil)
+    assert {:ok, created} = Poems.save(nil, poem, %{title: "Before", body: "old words"})
+    assert {:ok, saved} = Poems.save(nil, created, %{title: "After", body: "current words"})
+    revisions_dir = Path.join([folder, "poems", poem.id, "revisions"])
+    [revision_name] = File.ls!(revisions_dir)
+    revision_body = Path.join([revisions_dir, revision_name, "poem.txt"])
+
+    File.write!(revision_body, "external revision edit")
+    assert {:error, stale_trash_message} = Poems.trash(nil, saved)
+    assert stale_trash_message =~ "changed on disk"
+    assert File.read!(revision_body) == "external revision edit"
+    assert File.dir?(Path.join([folder, "poems", poem.id]))
+
+    assert {:ok, refreshed} = Poems.get(nil, poem.id)
+    assert {:ok, trashed} = Poems.trash(nil, refreshed)
+    assert {:ok, [listed]} = Poems.list_trash(nil)
+
+    trash_revision =
+      Path.join([folder, "poems", ".trash", poem.id, "revisions", revision_name, "poem.txt"])
+
+    assert listed.token == trashed.token
+
+    File.write!(trash_revision, "changed after trash listing")
+    assert {:error, stale_purge_message} = Poems.purge(nil, poem.id, listed.token, true)
+    assert stale_purge_message =~ "changed on disk"
+    assert File.read!(trash_revision) == "changed after trash listing"
+
+    assert {:ok, [latest]} = Poems.list_trash(nil)
+    refute latest.token == listed.token
+    assert :ok = Poems.purge(nil, poem.id, latest.token, true)
+  end
+
+  test "permanent deletion requires confirmation and the current trash token", %{folder: folder} do
+    poem = Poems.new(nil)
+    assert {:ok, created} = Poems.save(nil, poem, %{title: "Keep", body: "words"})
+    assert {:ok, saved} = Poems.save(nil, created, %{title: "Keep", body: "later words"})
+    assert {:ok, trashed} = Poems.trash(nil, saved)
+
+    assert {:error, message} = Poems.purge(nil, poem.id, trashed.token, false)
+    assert message =~ "explicit confirmation"
+    trash_path = Path.join([folder, "poems", ".trash", poem.id, "poem.txt"])
+    assert File.read!(trash_path) == "later words"
+
+    File.write!(trash_path, "external change")
+    assert {:error, stale_message} = Poems.purge(nil, poem.id, trashed.token, true)
+    assert stale_message =~ "changed on disk"
+    assert File.read!(trash_path) == "external change"
+
+    assert {:ok, [current]} = Poems.list_trash(nil)
+    assert :ok = Poems.purge(nil, poem.id, current.token, true)
+    refute File.exists?(Path.dirname(trash_path))
+    refute File.exists?(Path.join(Path.dirname(trash_path), "revisions"))
+    assert {:ok, []} = Poems.list_trash(nil)
+  end
+
+  test "missing trash is empty and restore does not create it", %{folder: folder} do
+    poem = Poems.new(nil)
+    assert {:ok, _saved} = Poems.save(nil, poem, %{title: nil, body: "words"})
+    trash = Path.join([folder, "poems", ".trash"])
+    File.rm_rf!(trash)
+
+    assert {:ok, []} = Poems.list_trash(nil)
+    assert {:error, _} = Poems.restore(nil, poem.id)
+    refute File.exists?(trash)
+    assert {:ok, [listed]} = Poems.list(nil)
+    assert listed.id == poem.id
+  end
+
+  test "trash APIs reject invalid identifiers and a symlinked trash directory", %{folder: folder} do
+    assert {:error, _} = Poems.restore(nil, "../outside")
+    assert {:error, _} = Poems.purge(nil, "../outside", "token", true)
+    assert {:error, _} = Poems.trash(nil, %{id: "../outside", token: "token"})
+    assert {:ok, _} = Poems.save(nil, Poems.new(nil), %{title: nil, body: "safe"})
+
+    poems = Path.join(folder, "poems")
+    outside = Path.join(folder, "outside-trash")
+    File.mkdir!(outside)
+    File.write!(Path.join(outside, "keep.txt"), "untouched")
+    File.ln_s!(outside, Path.join(poems, ".trash"))
+
+    assert {:error, _} = Poems.list_trash(nil)
+    assert File.read!(Path.join(outside, "keep.txt")) == "untouched"
+  end
+
+  defp files_under(root) do
+    root
+    |> File.ls!()
+    |> Enum.sort()
+    |> Enum.reduce(%{}, fn name, acc ->
+      path = Path.join(root, name)
+
+      case File.lstat!(path).type do
+        :directory ->
+          nested =
+            files_under(path)
+            |> Enum.map(fn {relative, contents} -> {Path.join(name, relative), contents} end)
+            |> Map.new()
+
+          Map.merge(acc, nested)
+
+        :regular ->
+          Map.put(acc, name, File.read!(path))
+
+        type ->
+          raise "unexpected file type in test fixture: #{inspect(type)}"
+      end
+    end)
   end
 end

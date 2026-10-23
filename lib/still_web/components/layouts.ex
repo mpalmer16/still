@@ -48,12 +48,6 @@ defmodule StillWeb.Layouts do
               class={if(@active == "write", do: "nav-active", else: nil)}
             >Now</.link>
             <.link
-              id="new-list"
-              aria-current={if @active == "list", do: "page"}
-              navigate={~p"/list"}
-              class={if(@active == "list", do: "nav-active", else: nil)}
-            >New List</.link>
-            <.link
               id="wander"
               aria-current={if @active == "before", do: "page"}
               navigate={~p"/wander"}
@@ -193,11 +187,7 @@ defmodule StillWeb.Layouts do
     """
   end
 
-  defp return_path(%{id: id}, _beside, _list), do: ~p"/w/#{id}"
-  defp return_path(nil, %{id: id}, true), do: ~p"/list?beside=#{id}&resume=1"
-  defp return_path(nil, %{id: id}, _list), do: ~p"/?beside=#{id}"
-  defp return_path(nil, nil, true), do: ~p"/list?resume=1"
-  defp return_path(nil, nil, false), do: ~p"/"
+  defp return_path(_writing, _beside, _list), do: ~p"/"
 
   defp place_id(key), do: "place-" <> String.replace(key, ~r/[^\p{L}\p{N}_-]/u, "-")
 

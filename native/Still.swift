@@ -307,8 +307,8 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 // Give the editor recovery hook its normal window before
                 // checking changed state, since that flush can save new text.
                 await prepareToLeave(wait: 900_000_000)
-                guard await poemReadyForLeaving() else {
-                    showStorageNotice("This poem has no safe recovery copy. Save it to the collection or copy its words before closing Still.")
+                guard await fileReadyForLeaving() else {
+                    showStorageNotice("This writing has no safe recovery copy. Save it to the collection or copy its words before closing Still.")
                     cancelClose()
                     return
                 }
@@ -357,7 +357,7 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
             let alert = NSAlert()
             alert.messageText = "Back up your writing before closing?"
             alert.informativeText = hasFolder
-                ? "Your database has changed since its last backup. Poem files and local poem drafts are separate from this database snapshot."
+                ? "Your database has changed since its last backup. New writing files and local drafts are separate from this database snapshot."
                 : "Your collection has changed and has no available backup folder. You can close now and choose a folder later."
             alert.addButton(withTitle: "Back Up & Close")
             alert.addButton(withTitle: "Close Without Backing Up")
@@ -370,7 +370,7 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     private func editorReadyForBackup() async -> Bool {
-        guard await poemReadyForLeaving() else { return false }
+        guard await fileReadyForLeaving() else { return false }
         guard let webView else { return true }
         let script = """
         (() => { const form = document.getElementById('writing-form');
@@ -386,21 +386,21 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         return false
     }
 
-    private func poemReadyForLeaving() async -> Bool {
+    private func fileReadyForLeaving() async -> Bool {
         guard let webView else { return true }
         let script = """
-        (() => { const form = document.getElementById('poem-form');
-          const body = document.getElementById('poem-body');
-          return {hasPoem: !!form, authoritative: form?.dataset.authoritative === 'true',
+        (() => { const form = document.getElementById('file-writing-form');
+          const body = document.getElementById('file-writing-body');
+          return {hasFile: !!form, authoritative: form?.dataset.authoritative === 'true',
             unsaved: form?.dataset.unsaved === 'true',
-            hasContent: !!body?.value.length || !!document.getElementById('poem-title')?.value.length,
+            hasContent: !!body?.value.length || !!document.getElementById('file-writing-title')?.value.length,
             recoverySafe: form?.dataset.recoverySafe === 'true'}; })()
         """
         let state: [String: Bool]? = await withCheckedContinuation { done in
             webView.evaluateJavaScript(script) { value, _ in done.resume(returning: value as? [String: Bool]) }
         }
         guard let state else { return false }
-        return PoemLeavePolicy.allowsLeaving(hasPoem: state["hasPoem"] == true,
+        return FileLeavePolicy.allowsLeaving(hasFile: state["hasFile"] == true,
             authoritative: state["authoritative"] == true, unsaved: state["unsaved"] == true,
             hasContent: state["hasContent"] == true, recoverySafe: state["recoverySafe"] == true)
     }
@@ -408,7 +408,7 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private func setEditorFrozen(_ frozen: Bool) async {
         guard let webView else { return }
         let script = frozen
-            ? "window.__stillHadEditorFocus = ['writing-body','poem-body','poem-title'].includes(document.activeElement?.id) ? document.activeElement.id : null; document.body.inert = true; true"
+            ? "window.__stillHadEditorFocus = ['writing-body','file-writing-body','file-writing-title'].includes(document.activeElement?.id) ? document.activeElement.id : null; document.body.inert = true; true"
             : "document.body.inert = false; if (window.__stillHadEditorFocus) document.getElementById(window.__stillHadEditorFocus)?.focus({preventScroll:true}); delete window.__stillHadEditorFocus; true"
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             webView.evaluateJavaScript(script) { _, _ in done.resume() }
@@ -478,7 +478,7 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         updateRoomEnvironment()
         window.makeFirstResponder(webView)
         webView.evaluateJavaScript("""
-        (() => { const editor = document.getElementById('writing-body') || document.getElementById('poem-body');
+        (() => { const editor = document.getElementById('writing-body') || document.getElementById('file-writing-body');
           if (editor && document.activeElement !== editor) editor.focus({preventScroll: true}); })()
         """, completionHandler: nil)
     }
@@ -505,41 +505,22 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         navigate(to: "/pages")
     }
 
-    @objc func openPoems(_ sender: Any?) { navigate(to: "/poems") }
-
     @objc func openWriting(_ sender: Any?) {
-        navigate(to: "/pages?written=1")
+        navigate(to: "/writing")
     }
     @objc func saveWriting(_ sender: Any?) {
         guard !quitting, let webView else { return }
         webView.evaluateJavaScript("window.dispatchEvent(new Event('still:save'))", completionHandler: nil)
     }
 
-    private var pendingCursorKey: String {
-        "Still.pendingNew." + (backend?.profile.uuidString ?? "")
-    }
-
-    private var poemCursorKey: String { "Still.pendingPoem." + (backend?.profile.uuidString ?? "") }
-
-    private func reopeningURL(_ room: Backend) -> URL {
-        if let path = UserDefaults.standard.string(forKey: poemCursorKey),
-           path.range(of: #"^/poems/(new|[0-9a-fA-F-]{36}/edit)$"#, options: .regularExpression) != nil {
-            return URL(string: path, relativeTo: room.url)!.absoluteURL
-        }
-        let legacyKey = "Still.pendingNew." + room.dataDirectory.resolvingSymlinksInPath().path
-        if let path = UserDefaults.standard.string(forKey: pendingCursorKey) ?? UserDefaults.standard.string(forKey: legacyKey),
-           path.range(of: #"^/(\?new=1|\?beside=[0-9]+|list\?resume=1|list\?beside=[0-9]+&resume=1)$"#, options: .regularExpression) != nil {
-            return URL(string: path, relativeTo: room.url)!.absoluteURL
-        }
-        return room.url
-    }
+    private func reopeningURL(_ room: Backend) -> URL { room.url }
 
     private func navigate(to path: String) {
         guard !quitting, let room = backend else { return }
         Task {
             await prepareToLeave(wait: 200_000_000)
-            guard await poemReadyForLeaving() else {
-                showStorageNotice("The poem’s local recovery copy is unavailable. Save the poem or copy its words before leaving this page.")
+            guard await fileReadyForLeaving() else {
+                showStorageNotice("The writing’s local recovery copy is unavailable. Save the writing or copy its words before leaving this page.")
                 return
             }
             if !quitting {
@@ -556,53 +537,6 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
             }
         }
         try? await Task.sleep(nanoseconds: wait)
-        let script = """
-        (() => { const poem = document.getElementById('poem-body');
-          if (poem) return {poem: true, path: location.pathname};
-          const editor = document.getElementById('writing-body');
-          return editor ? {editor: true, id: editor.dataset.entryId,
-            scope: editor.dataset.draftScope || '', hasWords: editor.value.trim().length > 0 ||
-              (document.getElementById('writing-title')?.value.trim().length || 0) > 0}
-            : {editor: false}; })()
-        """
-        let state: [String: Any]? = await withCheckedContinuation { done in
-            webView.evaluateJavaScript(script) { value, _ in done.resume(returning: value as? [String: Any]) }
-        }
-        guard let state else { return }
-        if state["poem"] as? Bool == true, let path = state["path"] as? String {
-            UserDefaults.standard.set(path, forKey: poemCursorKey)
-            return
-        }
-        UserDefaults.standard.removeObject(forKey: poemCursorKey)
-        if let room = backend {
-            UserDefaults.standard.removeObject(forKey: "Still.pendingNew." + room.dataDirectory.resolvingSymlinksInPath().path)
-        }
-        guard state["editor"] as? Bool == true else {
-            UserDefaults.standard.removeObject(forKey: pendingCursorKey)
-            return
-        }
-        if state["id"] as? String == "new" {
-            if state["hasWords"] as? Bool == true {
-                let scope = state["scope"] as? String ?? ""
-                let path: String
-                if scope == "list" {
-                    path = "/list?resume=1"
-                } else if scope.hasPrefix("list:beside:"), let id = Int(scope.dropFirst(12)), id > 0 {
-                    path = "/list?beside=\(id)&resume=1"
-                } else if scope.hasPrefix("beside:"), let id = Int(scope.dropFirst(7)), id > 0 {
-                    path = "/?beside=\(id)"
-                } else if let id = Int(scope), id > 0 {
-                    path = "/?beside=\(id)"
-                } else {
-                    path = "/?new=1"
-                }
-                UserDefaults.standard.set(path, forKey: pendingCursorKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: pendingCursorKey)
-            }
-        } else {
-            UserDefaults.standard.removeObject(forKey: pendingCursorKey)
-        }
     }
 
     @objc func showWritingFolder(_ sender: Any?) {
@@ -732,8 +666,8 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         defer { choosingFolder = false }
         await prepareToLeave(wait: 900_000_000)
         guard !quitting else { return }
-        guard await poemReadyForLeaving() else {
-            showStorageNotice("This poem has no safe recovery copy. Save it or copy its words before choosing another writing folder.")
+        guard await fileReadyForLeaving() else {
+            showStorageNotice("This writing has no safe recovery copy. Save it or copy its words before choosing another writing folder.")
             return
         }
         if let webView {
@@ -807,8 +741,6 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let show = file.addItem(withTitle: "Show Writing Folder", action: #selector(showWritingFolder(_:)), keyEquivalent: "")
         show.target = self
         file.addItem(.separator())
-        let poems = file.addItem(withTitle: "Poems", action: #selector(openPoems(_:)), keyEquivalent: "")
-        poems.target = self
         let storage = file.addItem(withTitle: "Storage & Backups…", action: #selector(openStorageSettings(_:)), keyEquivalent: "")
         storage.target = self
         let chooseBackup = file.addItem(withTitle: "Choose Backup Folder…", action: #selector(chooseBackupFolder(_:)), keyEquivalent: "")
