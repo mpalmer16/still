@@ -101,3 +101,7 @@ __pycache__/
 /poems/
 /.still-poems-lock/
 /.still-poems.json
+
+# Portable Correspondence records belong to the selected collection.
+/correspondence/
+/.still-correspondence-lock/

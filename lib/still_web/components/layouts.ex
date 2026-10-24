@@ -58,6 +58,12 @@ defmodule StillWeb.Layouts do
               aria-current={if @active == "pages", do: "page"}
               class={if(@active == "pages", do: "nav-active", else: nil)}
             >Find</.link>
+            <.link
+              id="open-correspondence"
+              navigate={~p"/correspondence"}
+              aria-current={if @active == "correspondence", do: "page"}
+              class={if(@active == "correspondence", do: "nav-active", else: nil)}
+            >Correspondence</.link>
           </nav>
         </header>
         <main id="page-content" tabindex="-1">{render_slot(@inner_block)}</main>

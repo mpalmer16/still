@@ -301,3 +301,21 @@ original v1/UUID-only collections without modifying them. An explicit Save (or R
 from Trash) enables v2 before publishing readable names; older applications then refuse
 the newer format instead of silently overlooking its writing. Keep the full ID suffix
 and metadata when renaming a folder outside Still.
+
+## Correspondence
+
+Correspondence keeps file-backed writing, manually maintained journals, ordered
+submission packets, and replies together in the selected collection. Sent manuscripts
+keep immutable copies; nothing is submitted automatically. The historical Lists and
+the Now writing experience keep their existing behavior. The editorial workspace
+uses a wide blue-grey layout, with an explicitly chosen work on the desk, shortlisted Places, side-by-side work history,
+a curated Places directory, and a live ordered manuscript in packet preparation.
+It opens dark and offers an optional light appearance within Correspondence.
+
+See [the Correspondence guide](docs/correspondence.md) for the workflow, portable
+record layout, recovery boundaries, and a disposable synthetic preview. The preview
+runs separately from the installed application:
+
+```sh
+./scripts/preview_correspondence.sh
+```
