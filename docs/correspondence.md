@@ -12,10 +12,22 @@ light appearance stays within this room until you leave it and does not change N
 Correspondence explains what is missing and stores no authoritative records elsewhere.
 
 Pages begin with compact labels and actions rather than introductory banners.
-The home page brings an available manuscript beside active submissions and recent
-replies. **Writing** is the searchable collection; opening a piece places its current
-text beside its earlier versions and correspondence, including the exact versions sent.
-Use **Return to Now to revise** for writing. Correspondence does not have a second editor.
+**On the desk** keeps a work you explicitly choose in view. Use **Place on desk**
+in **Works**, or the home page's saved-work chooser. Change it there or **Clear the desk**;
+clearing removes only the placement, never the writing. The selection survives a restart
+and follows the collection. A recent edit does not imply readiness for publication.
+
+**Works** is the searchable saved collection (its existing URLs remain unchanged).
+Opening a work places its current text beside earlier versions and correspondence,
+including the exact versions sent. Use **Edit in Now** to compose or revise.
+Correspondence does not have a second editor; global **Now** remains the way back.
+
+Home shows up to three outstanding submissions, including unresolved pieces in a
+partly accepted packet, and two recent replies. **All packets** leads to the complete
+history. **Places to consider** shows up to three places you have shortlisted, your
+notes and previous correspondence. Shortlist controls in Places and on home change
+only that personal marker. Home shows recorded windows and policies only when you
+have marked the source checked; this is your record, not live confirmation of availability.
 
 **Places** keeps a compact shortlist above the complete directory. Open a place to
 read its notes, requirements, and linked packets and pieces. **Edit place details**
@@ -68,6 +80,15 @@ manifest live in `snapshots/<snapshot-id>/<piece-id>.txt` and `snapshot.json`. E
 journal and packet JSON lives in `revisions/<record-id>/<content-hash>.json`. JSON is UTF-8 and
 can be inspected with ordinary tools. Record tokens detect external edits, and sent
 snapshots carry content hashes. Keep the whole directory together when copying it.
+
+The optional `correspondence/desk.json` stores `format: still-correspondence-desk`,
+`version: 1`, a work UUID (or explicit null when cleared), and an update timestamp.
+It contains no manuscript text or machine paths. An older collection without this file
+has an empty desk and requires no migration. Desk changes use the same collection
+lock, safe atomic publication, and stale-token checks as other records; earlier JSON
+is preserved in `revisions/desk/<content-hash>.json`. If another session changes it,
+reopen the desk before choosing again. Unavailable chosen works are identified rather
+than silently replaced.
 
 Still writes through temporary files, syncs them, and publishes completed records
 atomically. Earlier JSON is retained before updates. A collection lock prevents two

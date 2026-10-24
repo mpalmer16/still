@@ -12,7 +12,7 @@ defmodule StillWeb.CorrespondenceWork do
     ~H"""
     <section :if={@piece} class="corr-page corr-piece-page editorial-work">
       <div class="corr-breadcrumb">
-        <.link patch={~p"/correspondence/writing"}>Writing</.link>
+        <.link patch={~p"/correspondence/writing"}>Works</.link>
       </div>
 
       <header class="editorial-work-heading">
@@ -21,7 +21,7 @@ defmodule StillWeb.CorrespondenceWork do
         </div>
         <div class="editorial-work-actions">
           <.link navigate={~p"/writing/#{value(@piece, :id)}/edit"} class="corr-text-link">
-            Return to Now to revise <span aria-hidden="true">↗</span>
+            Edit in Now <span aria-hidden="true">↗</span>
           </.link>
           <.link
             patch={~p"/correspondence/packets/new?piece=#{value(@piece, :id)}"}

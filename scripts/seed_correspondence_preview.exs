@@ -139,6 +139,9 @@ if scenario != "empty" do
         shortlisted: false
       })
   end
+
+  # This is an explicit choice in a disposable fixture, not automatic readiness.
+  {:ok, _} = Correspondence.place_on_desk(location, p3.id, nil)
 end
 
 IO.puts("Editorial preview scenario: #{scenario}. All records are disposable synthetic examples.")

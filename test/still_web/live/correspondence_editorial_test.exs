@@ -25,7 +25,7 @@ defmodule StillWeb.CorrespondenceEditorialTest do
   test "empty editorial spaces offer honest first steps and usable navigation", %{conn: conn} do
     {:ok, home, _} = live(conn, "/correspondence")
     assert has_element?(home, "#correspondence-home")
-    assert has_element?(home, "h1#ready-heading", "Ready to travel")
+    assert has_element?(home, "h1#desk-heading", "On the desk")
     refute has_element?(home, ".corr-hero")
     refute render(home) =~ "A wider world for the words."
     refute render(home) =~ "THE WORK, IN MOTION"
@@ -38,7 +38,7 @@ defmodule StillWeb.CorrespondenceEditorialTest do
     assert has_element?(places, "a[href='/correspondence/journals/new']", "Add a place")
 
     {:ok, writing, _} = live(conn, "/correspondence/writing")
-    assert has_element?(writing, "#correspondence-search[aria-label='Search writing']")
+    assert has_element?(writing, "#correspondence-search[aria-label='Search works']")
     assert has_element?(writing, "a[href='/correspondence/packets/new']")
   end
 
@@ -77,7 +77,7 @@ defmodule StillWeb.CorrespondenceEditorialTest do
     assert has_element?(work, "#work-history", "A thoughtful reply.")
     assert has_element?(work, "a[href='/correspondence/journals/#{journal.id}']")
     assert has_element?(work, "a[href='/correspondence/packets/#{replied.id}']")
-    assert has_element?(work, "a[href='/writing/#{piece.id}/edit']", "Return to Now to revise")
+    assert has_element?(work, "a[href='/writing/#{piece.id}/edit']", "Edit in Now")
 
     {:ok, journal_view, _} = live(conn, "/correspondence/journals/#{journal.id}")
     assert has_element?(journal_view, "h1", "Small Press")

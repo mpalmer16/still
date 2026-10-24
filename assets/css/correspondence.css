@@ -18,7 +18,7 @@
   --corr-surface: #2b4259;
   --corr-paper: #243748;
   --corr-ink: #e2eaf3;
-  --corr-muted: #b1c3d4;
+  --corr-muted: #bdcedf;
   --corr-faint: #a2b6ca;
   --corr-line: #435b70;
   --corr-blue: #abd3f6;
@@ -37,7 +37,7 @@
 }
 .correspondence-room.is-light {
   --corr-bg: #eaf0f5; --corr-panel: #dbe6f0; --corr-surface: #d2e1ee; --corr-paper: #f5f8fb;
-  --corr-ink: #263b50; --corr-muted: #4e6378; --corr-faint: #536b81; --corr-line: #afc0d0;
+  --corr-ink: #263b50; --corr-muted: #455e75; --corr-faint: #536b81; --corr-line: #afc0d0;
   --corr-blue: #285b85; --corr-sage-dim: #507fa4; --corr-clay: #53607f; --corr-gold: #3c5f7f; --corr-green: #335a77;
   color-scheme: light;
 }
@@ -55,21 +55,21 @@
 .corr-header nav a { color: var(--corr-muted); padding-block: 22px; font-size: 14px; border-bottom: 2px solid transparent; }
 .corr-header nav a.active { color: var(--corr-ink); border-color: var(--corr-blue); }
 .corr-header-actions { display: flex; align-items: center; justify-self: end; gap: 20px; }
-.corr-theme { border: 0; padding: 10px 2px; background: transparent; color: var(--corr-muted); font-size: 13px; }
-.corr-return { color: var(--corr-blue) !important; font-size: 13px; }
+.corr-theme { border: 0; padding: 10px 2px; background: transparent; color: var(--corr-muted); font-size: 14px; }
+.corr-return { color: var(--corr-blue) !important; font-size: 14px; }
 .corr-page { padding-top: 34px; }
-.corr-kicker { display: inline-block; color: var(--corr-blue); font-size: 12px; font-weight: 500; letter-spacing: .13em; line-height: 1.5; text-transform: uppercase; }
+.corr-kicker { display: inline-block; color: var(--corr-blue); font-size: 14px; font-weight: 500; letter-spacing: .13em; line-height: 1.5; text-transform: uppercase; }
 .corr-button { display: inline-flex; min-height: 46px; align-items: center; justify-content: space-between; gap: 20px; border: 1px solid var(--corr-sage-dim); border-radius: 3px; padding: 11px 16px; background: var(--corr-surface); color: var(--corr-ink) !important; font: 14px/1.4 var(--sans); text-align: left; }
 .corr-button:hover { background: color-mix(in srgb, var(--corr-surface) 85%, var(--corr-blue)); }
 .corr-button span { color: var(--corr-blue); font-size: 19px; }
 .corr-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 17px; }
 .corr-section-heading :is(h1,h2) { margin: 0; font: 400 27px/1.2 Georgia, "Iowan Old Style", serif; letter-spacing: -.02em; }
-.corr-section-heading > span { color: var(--corr-muted); font-size: 12px; }
-.corr-small-link, .corr-text-link { color: var(--corr-blue) !important; font-size: 13px; }
+.corr-section-heading > span { color: var(--corr-muted); font-size: 14px; }
+.corr-small-link, .corr-text-link { color: var(--corr-blue) !important; font-size: 14px; }
 .corr-small-link { display: inline-block; margin-top: 9px; }
 .corr-small-link:hover, .corr-text-link:hover { text-decoration: underline; text-underline-offset: 4px; }
-.corr-meta { color: var(--corr-muted); font-size: 12px; }
-.corr-state { color: var(--corr-blue); font-size: 12px; }
+.corr-meta { color: var(--corr-muted); font-size: 14px; }
+.corr-state { color: var(--corr-blue); font-size: 14px; }
 .editorial-home-layout { display: grid; grid-template-columns: minmax(0, 1.48fr) minmax(300px, .85fr); gap: clamp(30px, 4vw, 70px); padding-top: 0; }
 .editorial-feature { background: var(--corr-paper); border-top: 3px solid var(--corr-sage-dim); padding: clamp(23px, 2.8vw, 43px); }
 .editorial-feature-bottom { display: flex; justify-content: space-between; align-items: baseline; gap: 15px; }
@@ -85,13 +85,13 @@
 .editorial-activity { padding: 23px 25px; align-self: start; background: var(--corr-panel); }
 .editorial-activity .corr-section-heading :is(h1,h2) { font-size: 25px; }
 .corr-journey { border-top: 1px solid var(--corr-line); padding: 17px 0; }
-.corr-journey-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 7px; color: var(--corr-muted); font-size: 12px; }
-.corr-journey-meta span:first-child { color: var(--corr-blue); font-size: 12px; }
+.corr-journey-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 7px; color: var(--corr-muted); font-size: 14px; }
+.corr-journey-meta span:first-child { color: var(--corr-blue); font-size: 14px; }
 .corr-journey h3 { margin: 8px 0 4px; font: 400 23px/1.3 Georgia, "Iowan Old Style", serif; }
 .corr-journey p { margin: 0; color: var(--corr-muted); font: 16px/1.5 Georgia, "Iowan Old Style", serif; }
 .corr-empty, .corr-empty-side { margin: 20px 0; color: var(--corr-muted); font: 18px/1.6 Georgia, "Iowan Old Style", serif; }
 .editorial-replies { margin-top: 23px; }
-.corr-partial-note { border-left: 2px solid var(--corr-blue); padding-left: 10px; margin-top: 10px !important; font: 13px/1.5 var(--sans) !important; }
+.corr-partial-note { border-left: 2px solid var(--corr-blue); padding-left: 10px; margin-top: 10px !important; font: 14px/1.5 var(--sans) !important; }
 .editorial-home-places { margin-top: 38px; padding-top: 27px; border-top: 1px solid var(--corr-line); }
 .editorial-home-places .corr-section-heading :is(h1,h2) { margin-top: 8px; }
 .editorial-place-shelf { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 24px; }
@@ -110,13 +110,13 @@
 .corr-library-piece { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 25px; align-items: start; border-top: 1px solid var(--corr-line); padding: 25px 0; }
 .corr-work-title { display: block; font: 400 27px/1.3 Georgia, "Iowan Old Style", serif; letter-spacing: -.02em; }
 .corr-library-piece p, .corr-select-row p { color: var(--corr-muted); font: 17px/1.65 Georgia, "Iowan Old Style", serif; white-space: pre-wrap; margin: 10px 0; }
-.corr-library-piece aside { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; color: var(--corr-muted); font-size: 12px; }
-.corr-library-piece aside a { color: var(--corr-blue); font-size: 13px; }
+.corr-library-piece aside { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; color: var(--corr-muted); font-size: 14px; }
+.corr-library-piece aside a { color: var(--corr-blue); font-size: 14px; }
 .editorial-writing-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 25px; }
 .editorial-writing-grid .corr-library-piece { display: flex; flex-direction: column; justify-content: space-between; padding: 25px; background: var(--corr-paper); border-top: 2px solid var(--corr-line); }
 .editorial-writing-grid .corr-library-piece p { min-height: 5em; }
 .editorial-writing-grid .corr-library-piece aside { align-items: start; }
-.corr-breadcrumb { font-size: 13px; color: var(--corr-muted); }
+.corr-breadcrumb { font-size: 14px; color: var(--corr-muted); }
 .corr-breadcrumb a { color: var(--corr-blue); }
 .correspondence-room pre { white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
 .corr-manuscript pre { margin: 0; color: var(--corr-ink); font: 20px/1.8 Georgia, "Iowan Old Style", serif; }
@@ -131,11 +131,11 @@
 .corr-select-row { display: flex; justify-content: space-between; align-items: start; gap: 12px; padding: 18px 0; border-top: 1px solid var(--corr-line); }
 .corr-select-row .corr-work-title { font-size: 22px; }
 .corr-select-row p { margin-bottom: 0; font-size: 15px; }
-.corr-select-row button { flex: 0 0 auto; padding: 8px 10px; min-height: 40px; border: 1px solid var(--corr-line); background: transparent; color: var(--corr-muted); font-size: 13px; }
+.corr-select-row button { flex: 0 0 auto; padding: 8px 10px; min-height: 40px; border: 1px solid var(--corr-line); background: transparent; color: var(--corr-muted); font-size: 14px; }
 .corr-select-row button.selected { color: var(--corr-blue); border-color: var(--corr-blue); background: var(--corr-panel); }
 .corr-ordered { border-top: 1px solid var(--corr-line); }
 .corr-ordered-row { display: grid; grid-template-columns: 24px minmax(0,1fr) repeat(3,32px); gap: 3px; align-items: center; padding: 13px 0; border-bottom: 1px solid var(--corr-line); }
-.corr-ordered-row > span { color: var(--corr-blue); font-size: 12px; }
+.corr-ordered-row > span { color: var(--corr-blue); font-size: 14px; }
 .corr-ordered-row strong { font: 400 19px/1.4 Georgia, "Iowan Old Style", serif; }
 .corr-ordered-row button { min-height: 40px; padding: 0; background: transparent; border: 0; color: var(--corr-muted); font-size: 18px; }
 .editorial-packet-preview { margin-top: 27px; }
@@ -146,20 +146,20 @@
 .corr-destination-panel { padding: 24px; background: var(--corr-panel); border-top: 2px solid var(--corr-blue); }
 .corr-destination-panel h2 { margin: 8px 0 19px; font: 400 26px/1.2 Georgia, "Iowan Old Style", serif; }
 .corr-destination-panel .corr-button { width: 100%; }
-.corr-packet-form label, .corr-send-form label, .corr-response label { display: block; margin: 17px 0; color: var(--corr-muted); font-size: 13px; }
+.corr-packet-form label, .corr-send-form label, .corr-response label { display: block; margin: 17px 0; color: var(--corr-muted); font-size: 14px; }
 .corr-packet-form :is(input,select,textarea), .corr-send-form input, .corr-response :is(input:not([type=checkbox]):not([type=hidden]),select,textarea) { display: block; width: 100%; min-height: 44px; margin-top: 7px; padding: 10px 11px; border: 1px solid var(--corr-line); border-radius: 2px; background: var(--corr-bg); color: var(--corr-ink); font: 16px/1.5 var(--sans); }
 .correspondence-room textarea { resize: vertical; }
 .corr-guideline { color: var(--corr-muted); font: 16px/1.6 Georgia, "Iowan Old Style", serif; white-space: pre-wrap; }
-.corr-guideline b { color: var(--corr-blue); font: 13px/1.5 var(--sans); }
-.corr-guideline span { font: 12px/1.5 var(--sans); }
+.corr-guideline b { color: var(--corr-blue); font: 14px/1.5 var(--sans); }
+.corr-guideline span { font: 14px/1.5 var(--sans); }
 .corr-snapshot { padding: 24px; border-top: 2px solid var(--corr-sage-dim); background: var(--corr-paper); }
 .corr-snapshot p { color: var(--corr-muted); font: 17px/1.6 Georgia, "Iowan Old Style", serif; }
 .corr-snapshot .corr-text-link { display: inline-block; margin-top: 15px; }
 .corr-destination-panel .corr-snapshot { margin-top: 20px; padding: 16px; }
-.corr-overlap, .corr-unsaved-note { padding: 14px; margin: 20px 0; border-left: 2px solid var(--corr-clay); background: var(--corr-surface); color: var(--corr-ink); font-size: 13px; }
+.corr-overlap, .corr-unsaved-note { padding: 14px; margin: 20px 0; border-left: 2px solid var(--corr-clay); background: var(--corr-surface); color: var(--corr-ink); font-size: 14px; }
 .corr-overlap p { margin: 8px 0 0; }
 .corr-send-form, .corr-response { margin-top: 25px; padding-top: 19px; border-top: 1px solid var(--corr-line); }
-.corr-send-form small { display: block; color: var(--corr-muted); margin-top: 10px; font-size: 12px; }
+.corr-send-form small { display: block; color: var(--corr-muted); margin-top: 10px; font-size: 14px; }
 .corr-response button { border: 0; background: none; padding: 10px 0; text-align: left; }
 .corr-response .corr-check { display: flex; gap: 10px; align-items: start; }
 .correspondence-room input[type=checkbox] { accent-color: var(--corr-blue); }
@@ -169,11 +169,11 @@
 .corr-packet-timeline { margin-top: 28px; }
 .corr-packet-timeline h3 { font: 400 24px Georgia, "Iowan Old Style", serif; }
 .corr-event { padding: 13px 0; border-top: 1px solid var(--corr-line); }
-.corr-event span { color: var(--corr-blue); font-size: 12px; }
+.corr-event span { color: var(--corr-blue); font-size: 14px; }
 .corr-message { padding: 15px 20px; margin-top: 20px; background: var(--corr-panel); border-left: 3px solid var(--corr-blue); }
 .corr-message.error { border-color: var(--corr-clay); }
 .corr-message a { display: inline-block; margin-left: 10px; text-decoration: underline; color: var(--corr-blue); }
-.corr-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 15px; margin-top: 45px; padding-top: 20px; border-top: 1px solid var(--corr-line); color: var(--corr-faint); font-size: 12px; }
+.corr-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 15px; margin-top: 45px; padding-top: 20px; border-top: 1px solid var(--corr-line); color: var(--corr-faint); font-size: 14px; }
 @media (min-width: 1700px) { .editorial-place-grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
 @media (max-width: 1200px) {
   .corr-header { grid-template-columns: 1fr auto; gap: 10px 30px; padding-top: 18px; }
@@ -233,7 +233,7 @@
   font: 400 32px/1.2 Georgia, "Iowan Old Style", serif;
   letter-spacing: -.045em;
 }
-.editorial-work-current { margin: 0; color: var(--corr-muted); font-size: 13px; }
+.editorial-work-current { margin: 0; color: var(--corr-muted); font-size: 14px; }
 .editorial-work-actions { display: flex; align-items: center; gap: 24px; padding-bottom: 3px; }
 .editorial-work-layout {
   display: grid;
@@ -251,7 +251,7 @@
   background: transparent;
   padding: 21px clamp(15px, 2vw, 29px) 38px 0;
 }
-.editorial-work-revision { margin-bottom: 20px; color: var(--corr-muted); font-size: 12px; }
+.editorial-work-revision { margin-bottom: 20px; color: var(--corr-muted); font-size: 14px; }
 .editorial-work-manuscript pre {
   max-width: 70ch;
   color: var(--corr-ink);
@@ -269,20 +269,20 @@
 .editorial-work-section { padding: 0 0 23px; margin: 0 0 22px; border-bottom: 1px solid var(--corr-line); }
 .editorial-work-section-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; margin-bottom: 12px; }
 .editorial-work-section-heading h2 { margin: 0; color: var(--corr-ink); font: 400 24px/1.25 Georgia, "Iowan Old Style", serif; }
-.editorial-work-section-heading > span { color: var(--corr-muted); font-size: 12px; }
+.editorial-work-section-heading > span { color: var(--corr-muted); font-size: 14px; }
 .editorial-work-event { border-top: 1px solid var(--corr-line); padding: 13px 0 15px; }
 .editorial-work-event-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.editorial-work-status { color: var(--corr-blue, var(--corr-sage)); font-size: 12px; }
+.editorial-work-status { color: var(--corr-blue, var(--corr-sage)); font-size: 14px; }
 .editorial-work-status.status-declined, .editorial-work-status.status-withdrawn { color: var(--corr-clay); }
 .editorial-work-status.status-accepted { color: var(--corr-green, var(--corr-sage)); }
-.editorial-work-date { color: var(--corr-muted); font-size: 12px; }
+.editorial-work-date { color: var(--corr-muted); font-size: 14px; }
 .editorial-work-event h3 { margin: 6px 0 1px; font: 400 19px/1.35 Georgia, "Iowan Old Style", serif; }
 .editorial-work-packet-title, .editorial-work-response p, .editorial-work-empty { margin: 3px 0 0; color: var(--corr-muted); font: 15px/1.55 Georgia, "Iowan Old Style", serif; }
 .editorial-work-response { padding-top: 10px; }
 .editorial-work-response p strong { color: var(--corr-ink); font-weight: 500; }
-.editorial-work-link { display: inline-block; margin-top: 9px; color: var(--corr-blue, var(--corr-sage)); font-size: 13px; }
+.editorial-work-link { display: inline-block; margin-top: 9px; color: var(--corr-blue, var(--corr-sage)); font-size: 14px; }
 .editorial-work-snapshot { margin-top: 12px; border-top: 1px solid var(--corr-line); padding-top: 9px; }
-.editorial-work-snapshot summary { color: var(--corr-blue, var(--corr-sage)); cursor: pointer; font-size: 13px; }
+.editorial-work-snapshot summary { color: var(--corr-blue, var(--corr-sage)); cursor: pointer; font-size: 14px; }
 .editorial-work-snapshot pre { margin: 12px 0 0; padding: 13px; overflow-wrap: anywhere; white-space: pre-wrap; background: var(--corr-panel); color: var(--corr-ink); font: 15px/1.7 Georgia, "Iowan Old Style", serif; }
 .editorial-work-version summary { color: var(--corr-muted); cursor: pointer; font: 15px/1.5 Georgia, "Iowan Old Style", serif; }
 .editorial-work-version pre { overflow-wrap: anywhere; white-space: pre-wrap; font-size: 15px; }
@@ -308,30 +308,30 @@
 .editorial-place-shortlist,.editorial-place-all{margin-top:40px}
 .editorial-place-section-head{display:flex;justify-content:space-between;align-items:end;gap:20px;border-bottom:1px solid var(--corr-line);padding-bottom:13px;margin-bottom:6px}
 .editorial-place-section-head h2{margin:5px 0 0;font:29px/1.15 Georgia,'Iowan Old Style',serif;font-weight:400;letter-spacing:-.02em}
-.editorial-place-section-head>span{font-size:12px;color:var(--corr-muted)}
+.editorial-place-section-head>span{font-size:14px;color:var(--corr-muted)}
 .editorial-place-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:clamp(28px,5vw,78px)}
 /* Compact shortlisted place links; full cards remain in All places. */
 .editorial-place-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:clamp(28px,5vw,78px);list-style:none;margin:0;padding:0}
 .editorial-place-shortcuts li{display:flex;align-items:baseline;justify-content:space-between;gap:14px;min-width:0;padding:13px 0;border-bottom:1px solid var(--corr-line)}
 .editorial-place-shortcuts a{overflow-wrap:anywhere;color:var(--corr-ink);font:19px/1.35 Georgia,'Iowan Old Style',serif}
 .editorial-place-shortcuts a:hover,.editorial-place-shortcuts a:focus-visible{color:var(--corr-blue)}
-.editorial-place-shortcuts li>span{flex:0 0 auto;color:var(--corr-muted);font-size:12px}
+.editorial-place-shortcuts li>span{flex:0 0 auto;color:var(--corr-muted);font-size:14px}
 .editorial-place-card{min-width:0;padding:23px 22px 24px;background:var(--corr-surface,var(--corr-panel));border-top:1px solid var(--corr-line);border-bottom:1px solid var(--corr-line)}
 .editorial-place-card-top{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:20px}
-.editorial-place-mark{color:var(--corr-blue);font:12px var(--sans);letter-spacing:.07em;text-transform:uppercase}
-.editorial-place-source{color:var(--corr-muted);font-size:12px}
+.editorial-place-mark{color:var(--corr-blue);font:14px var(--sans);letter-spacing:.07em;text-transform:uppercase}
+.editorial-place-source{color:var(--corr-muted);font-size:14px}
 .editorial-place-card h3{margin:11px 0 5px;font:25px/1.2 Georgia,'Iowan Old Style',serif;font-weight:400;letter-spacing:-.02em}
 .editorial-place-card h3 a:hover,.editorial-place-card h3 a:focus-visible{color:var(--corr-blue)}
 .editorial-place-interest{margin:0;color:var(--corr-ink);font:16px/1.45 Georgia,'Iowan Old Style',serif}
 .editorial-place-note{margin:9px 0 14px;color:var(--corr-muted);font:14px/1.5 Georgia,'Iowan Old Style',serif}
-.editorial-place-facts{display:flex;flex-wrap:wrap;gap:7px 19px;color:var(--corr-muted);font-size:12px}
-.editorial-place-open{display:inline-flex;gap:8px;margin-top:16px;color:var(--corr-blue);font-size:12px}
+.editorial-place-facts{display:flex;flex-wrap:wrap;gap:7px 19px;color:var(--corr-muted);font-size:14px}
+.editorial-place-open{display:inline-flex;gap:8px;margin-top:16px;color:var(--corr-blue);font-size:14px}
 .editorial-place-open:hover{text-decoration:underline;text-underline-offset:4px}
 .editorial-place-empty{max-width:650px;margin:28px 0 0;padding:28px 0;border-top:1px solid var(--corr-line)}
 .editorial-place-empty-title{margin:0 0 8px;font:27px Georgia,'Iowan Old Style',serif}
 .editorial-place-empty p:not(.editorial-place-empty-title){color:var(--corr-muted);font:16px/1.5 Georgia,'Iowan Old Style',serif}
 .editorial-place-detail,.editorial-place-editor{padding-top:8px}
-.editorial-place-back{display:inline-block;margin:0 0 28px;color:var(--corr-blue);font-size:12px}
+.editorial-place-back{display:inline-block;margin:0 0 28px;color:var(--corr-blue);font-size:14px}
 .editorial-place-profile-head{align-items:start}
 .editorial-place-profile-head .editorial-place-mark{margin-top:12px}
 .editorial-place-profile-lede{max-width:760px;margin:0;color:var(--corr-muted);font:20px/1.45 Georgia,'Iowan Old Style',serif}
@@ -342,16 +342,16 @@
 .editorial-place-facts-panel{align-self:start;position:sticky;top:24px;padding:23px;background:var(--corr-surface,var(--corr-panel));border-top:2px solid var(--corr-blue)}
 .editorial-place-facts-panel dl{margin:12px 0 0}
 .editorial-place-facts-panel dl>div{padding:11px 0;border-top:1px solid var(--corr-line)}
-.editorial-place-facts-panel dt{margin-bottom:4px;color:var(--corr-muted);font-size:12px}
+.editorial-place-facts-panel dt{margin-bottom:4px;color:var(--corr-muted);font-size:14px}
 .editorial-place-facts-panel dd{margin:0;color:var(--corr-ink);font:15px/1.4 Georgia,'Iowan Old Style',serif;overflow-wrap:anywhere}
 .editorial-place-facts-panel a{color:var(--corr-blue);text-decoration:underline;text-underline-offset:3px}
 .editorial-place-add,.editorial-place-prepare{border-color:var(--corr-blue);background:var(--corr-surface,var(--corr-panel));color:var(--corr-ink)!important}.editorial-place-add:hover,.editorial-place-prepare:hover{border-color:var(--corr-accent,var(--corr-blue))}.editorial-place-prepare{display:flex;justify-content:space-between;align-items:center;margin-top:19px;text-decoration:none!important}
 .editorial-place-correspondence{max-width:none;margin:38px 0 0}
 .editorial-place-packet{padding:18px 0;border-bottom:1px solid var(--corr-line)}
 .editorial-place-packet-head{display:flex;justify-content:space-between;align-items:start;gap:15px}
-.editorial-place-status{color:var(--corr-blue);font-size:12px;letter-spacing:.04em}
+.editorial-place-status{color:var(--corr-blue);font-size:14px;letter-spacing:.04em}
 .editorial-place-packet h3{margin:5px 0;font:22px Georgia,'Iowan Old Style',serif;font-weight:400}
-.editorial-place-packet-open{flex:0 0 auto;color:var(--corr-blue);font-size:12px}
+.editorial-place-packet-open{flex:0 0 auto;color:var(--corr-blue);font-size:14px}
 .editorial-place-piece-links{margin:7px 0 0;color:var(--corr-muted);font:14px/1.6 Georgia,'Iowan Old Style',serif}
 .editorial-place-piece-links a{color:var(--corr-ink);text-decoration:underline;text-decoration-color:var(--corr-line);text-underline-offset:3px}
 .editorial-place-empty-note{padding:20px 0;color:var(--corr-muted);font:15px Georgia,'Iowan Old Style',serif}
@@ -363,16 +363,16 @@
 .editorial-place-form{max-width:1050px}
 .editorial-place-form-section{display:grid;grid-template-columns:minmax(190px,.55fr) minmax(0,1fr);gap:clamp(25px,5vw,75px);padding:28px 0;border-bottom:1px solid var(--corr-line)}
 .editorial-place-form-heading{display:flex;align-items:start;gap:13px}
-.editorial-place-form-heading>span{color:var(--corr-blue);font-size:12px;letter-spacing:.1em;padding-top:5px}
+.editorial-place-form-heading>span{color:var(--corr-blue);font-size:14px;letter-spacing:.1em;padding-top:5px}
 .editorial-place-form-heading h2{margin:0 0 6px;font:23px/1.2 Georgia,'Iowan Old Style',serif;font-weight:400}
-.editorial-place-form-heading p{margin:0;color:var(--corr-muted);font-size:13px;line-height:1.5}
+.editorial-place-form-heading p{margin:0;color:var(--corr-muted);font-size:14px;line-height:1.5}
 .editorial-place-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 20px;min-width:0}
-.editorial-place-form label{display:block;min-width:0;color:var(--corr-muted);font-size:12px;line-height:1.4}
+.editorial-place-form label{display:block;min-width:0;color:var(--corr-muted);font-size:14px;line-height:1.4}
 .editorial-place-field.is-wide{grid-column:1/-1}
 .editorial-place-form input:not([type=checkbox]),.editorial-place-form select,.editorial-place-form textarea{display:block;width:100%;min-height:43px;margin-top:6px;padding:10px 12px;border:1px solid var(--corr-line);border-radius:2px;background:var(--corr-bg);color:var(--corr-ink);font:15px/1.45 var(--sans)}
 .editorial-place-form textarea{resize:vertical;line-height:1.55}
 .editorial-place-checks{grid-column:2;display:grid;gap:12px;margin-top:19px}
-.editorial-place-checks label{display:flex;align-items:flex-start;gap:10px;color:var(--corr-ink);font-size:13px}
+.editorial-place-checks label{display:flex;align-items:flex-start;gap:10px;color:var(--corr-ink);font-size:14px}
 .editorial-place-checks input{flex:0 0 auto;margin:2px 0 0;accent-color:var(--corr-blue)}
 .editorial-place-form-actions{display:flex;align-items:center;gap:22px;padding:24px 0}
 @media(max-width:1000px){.editorial-place-grid{grid-template-columns:1fr}.editorial-place-profile-grid{grid-template-columns:minmax(0,1.2fr) minmax(250px,.8fr);gap:30px}.editorial-place-facts-panel{position:static}}
@@ -385,3 +385,71 @@
 .corr-page-heading h1 { margin: 0; font: 400 30px/1.2 Georgia, "Iowan Old Style", serif; letter-spacing: -.02em; }
 .corr-breadcrumb + .corr-page-heading { margin-top: 18px; }
 @media (max-width: 580px) { .corr-page-heading { align-items: start; flex-wrap: wrap; } .editorial-ready > .corr-section-heading { align-items: center; } }
+
+/* Desk placement and shortlisting are small, explicit choices. */
+.corr-desk-action { border: 0; background: transparent; padding: 8px 0; cursor: pointer; font: 14px/1.5 var(--sans); text-align: left; }
+.corr-place-actions { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: baseline; margin-top: 10px; }
+
+/* Correspondence M3 home component styles; scoped to the manuscript-led desk. */
+.editorial-correspondence-home{color:var(--corr-ink);font-size:15px}
+.editorial-home-columns{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(310px,.78fr);gap:clamp(34px,5vw,82px);align-items:start}
+.editorial-home-heading,.editorial-home-section-heading{display:flex;justify-content:space-between;align-items:baseline;gap:18px;border-bottom:1px solid var(--corr-line);padding:0 0 12px;margin:0 0 14px}
+.editorial-home-heading h1,.editorial-home-section-heading h2{margin:0;font:400 27px/1.25 Georgia,'Iowan Old Style',serif;letter-spacing:-.02em;color:var(--corr-ink)}
+.editorial-home-section-heading>a{flex:0 0 auto;color:var(--corr-blue);font-size:14px}
+.editorial-home-section-heading>a:hover,.editorial-home-section-heading>a:focus-visible,.editorial-desk a:hover,.editorial-desk a:focus-visible,.editorial-home-activity a:hover,.editorial-home-activity a:focus-visible,.editorial-home-places a:hover,.editorial-home-places a:focus-visible{color:var(--corr-blue);text-decoration:underline;text-underline-offset:4px}
+.editorial-desk-piece{padding:clamp(21px,3vw,40px);background:var(--corr-paper,var(--corr-panel));border-top:2px solid var(--corr-sage-dim)}
+.editorial-desk-piece h2{margin:0 0 18px;font:400 32px/1.2 Georgia,'Iowan Old Style',serif;letter-spacing:-.025em}
+.editorial-desk-excerpt{margin:0;color:var(--corr-ink);font:20px/1.8 Georgia,'Iowan Old Style',serif;white-space:pre-wrap;overflow-wrap:anywhere}
+.editorial-desk-continues{margin:11px 0 0;color:var(--corr-muted);font-size:14px}
+.editorial-desk-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px 22px;margin-top:22px;padding-top:15px;border-top:1px solid var(--corr-line)}
+.editorial-desk-actions :is(a,button),.editorial-desk-all-works{color:var(--corr-blue);font-size:14px}
+.editorial-desk-actions button,.editorial-home-place button{border:0;padding:0;background:none;cursor:pointer;color:var(--corr-muted);font-size:14px}
+.editorial-desk-empty,.editorial-desk-missing{padding:25px 0;border-bottom:1px solid var(--corr-line)}
+.editorial-desk-empty h2{margin:0 0 7px;font:400 22px/1.3 Georgia,'Iowan Old Style',serif}
+.editorial-desk-empty p,.editorial-desk-missing p{max-width:58ch;margin:0 0 12px;color:var(--corr-muted);font:16px/1.55 Georgia,'Iowan Old Style',serif}
+.editorial-desk-empty>a,.editorial-desk-missing button{color:var(--corr-blue);font-size:14px}
+.editorial-desk-missing button{border:0;padding:0;background:none;cursor:pointer}
+.editorial-desk-chooser{margin-top:19px;border-bottom:1px solid var(--corr-line)}
+.editorial-desk-chooser>summary{padding:11px 0;color:var(--corr-blue);cursor:pointer;font-size:14px}
+.editorial-desk-chooser ul{list-style:none;margin:0;padding:0}
+.editorial-desk-chooser li{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 0;border-top:1px solid var(--corr-line)}
+.editorial-desk-chooser li>div{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px}
+.editorial-desk-chooser li a{font:18px/1.35 Georgia,'Iowan Old Style',serif}
+.editorial-desk-chooser li span{color:var(--corr-muted);font-size:14px}
+.editorial-desk-chooser li button{flex:0 0 auto;border:1px solid var(--corr-line);padding:8px 10px;background:var(--corr-panel);color:var(--corr-ink);cursor:pointer;font-size:14px}
+.editorial-desk-chooser li button:hover{border-color:var(--corr-blue)}
+.editorial-desk-all-works{display:inline-block;margin:11px 0 15px}
+.editorial-home-activity{align-self:start;padding:21px 23px;background:var(--corr-panel)}
+.editorial-home-activity section+section{margin-top:27px;padding-top:24px;border-top:1px solid var(--corr-line)}
+.editorial-home-activity .editorial-home-section-heading{margin-bottom:4px}
+.editorial-active-packet{padding:16px 0;border-bottom:1px solid var(--corr-line)}
+.editorial-home-meta{display:flex;justify-content:space-between;align-items:baseline;gap:12px;color:var(--corr-muted);font-size:14px}
+.editorial-home-meta span{color:var(--corr-blue)}
+.editorial-active-packet h3{margin:8px 0 3px;font:400 21px/1.3 Georgia,'Iowan Old Style',serif}
+.editorial-active-packet-link,.editorial-reply-open{font-size:14px;color:var(--corr-blue)}
+.editorial-home-piece-links{margin:8px 0 0;color:var(--corr-muted);font:15px/1.5 Georgia,'Iowan Old Style',serif}
+.editorial-recent-replies .editorial-reply-row{padding:12px 0;border-bottom:1px solid var(--corr-line)}
+.editorial-reply-row>p:first-of-type{margin:6px 0;color:var(--corr-ink);font:15px/1.4 Georgia,'Iowan Old Style',serif}
+.editorial-reply-note{margin:5px 0;color:var(--corr-muted);font:14px/1.45 Georgia,'Iowan Old Style',serif;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.editorial-reply-open{display:inline-block;margin-top:5px}
+.editorial-home-empty-note{margin:13px 0 3px;color:var(--corr-muted);font:15px/1.5 Georgia,'Iowan Old Style',serif}
+.editorial-home-empty-note a{color:var(--corr-blue);text-decoration:underline;text-underline-offset:3px}
+.editorial-home-places{margin-top:38px;padding-top:24px;border-top:1px solid var(--corr-line)}
+.editorial-home-place-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.editorial-home-place{min-width:0;padding:18px;background:var(--corr-surface,var(--corr-panel));border-top:1px solid var(--corr-line)}
+.editorial-home-place h3{margin:0 0 8px;font:400 21px/1.3 Georgia,'Iowan Old Style',serif;overflow-wrap:anywhere}
+.editorial-home-place p{margin:6px 0;color:var(--corr-muted);font:15px/1.45 Georgia,'Iowan Old Style',serif;overflow-wrap:anywhere}
+.editorial-home-place .editorial-home-place-verified{margin-top:10px;color:var(--corr-blue);font-size:14px}
+.editorial-home-place p.editorial-home-place-fact{font:14px/1.4 var(--sans);color:var(--corr-ink)}
+.editorial-home-place-history{display:grid;gap:5px;margin-top:12px;padding-top:10px;border-top:1px solid var(--corr-line);font-size:14px;color:var(--corr-muted)}
+.editorial-home-place-history a{color:var(--corr-blue);overflow-wrap:anywhere}
+.editorial-home-place button{margin-top:13px;text-decoration:underline;text-underline-offset:3px}
+@media(max-width:1000px){.editorial-home-columns{grid-template-columns:minmax(0,1fr);gap:30px}.editorial-home-activity{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}.editorial-home-activity section+section{margin:0;padding:0;border:0}.editorial-home-place-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.editorial-home-activity{display:block;padding:18px}.editorial-home-activity section+section{margin-top:25px;padding-top:23px;border-top:1px solid var(--corr-line)}.editorial-home-place-grid{grid-template-columns:1fr}.editorial-desk-actions{gap:12px 16px}.editorial-home-section-heading{align-items:center}.editorial-home-section-heading h2,.editorial-home-heading h1{font-size:25px}}
+@media(max-width:390px){.editorial-desk-piece{padding:19px}.editorial-desk-excerpt{font-size:19px}.editorial-home-activity{padding:16px}.editorial-desk-chooser li{align-items:flex-start}.editorial-desk-chooser li button{padding:7px}}
+@media(prefers-reduced-motion:reduce){.editorial-correspondence-home *{scroll-behavior:auto!important;transition:none!important}}
+
+.editorial-correspondence-home { padding-top: 34px; }
+.editorial-home-place-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.editorial-recent-replies .editorial-home-section-heading h2 { font-size: 22px; }
+@media (max-width: 640px) { .editorial-home-place-grid { grid-template-columns: 1fr; } }

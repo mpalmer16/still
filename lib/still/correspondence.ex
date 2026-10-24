@@ -9,6 +9,8 @@ defmodule Still.Correspondence do
   @root "correspondence"
   @marker ".still-correspondence.json"
   @format %{"format" => "still-correspondence-v1"}
+  @desk_format "still-correspondence-desk"
+  @desk_version 1
   @journal_fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted verified)
   @packet_fields ~w(title journal_id piece_ids preparation_notes cover_letter)
   @statuses ~w(preparing submitted awaiting declined accepted withdrawn)
@@ -54,6 +56,37 @@ defmodule Still.Correspondence do
          {:ok, p} <- read_record(d.packets, id, :packet),
          do: attach_snapshot(p, d)
   end
+
+  @doc "Reads the optional manuscript pinned to this collection's Correspondence desk."
+  def desk(location) do
+    with {:ok, active} <- active_location(location),
+         {:ok, dirs} <- read_store(active.folder),
+         {:ok, current, _bytes} <- read_desk_file(desk_path(dirs)) do
+      {:ok, current || empty_desk()}
+    end
+  end
+
+  @doc "Pins a saved piece using the current Correspondence desk record token."
+  def place_on_desk(location, piece_id, expected_token)
+      when is_binary(piece_id) and (is_nil(expected_token) or is_binary(expected_token)) do
+    if uuid_value?(piece_id) do
+      case Poems.get(location, piece_id) do
+        {:ok, _piece} -> write_desk(location, piece_id, expected_token)
+        {:error, message} -> {:error, message}
+      end
+    else
+      {:error, "The selected writing identifier is invalid."}
+    end
+  end
+
+  def place_on_desk(_, _, _), do: {:error, "Reopen the Correspondence desk before changing it."}
+
+  @doc "Clears the manuscript pin while retaining a versioned empty desk record."
+  def clear_desk(location, expected_token)
+      when is_nil(expected_token) or is_binary(expected_token),
+      do: write_desk(location, nil, expected_token)
+
+  def clear_desk(_, _), do: {:error, "Reopen the Correspondence desk before changing it."}
 
   def save_journal(location, attrs, id \\ nil, token \\ nil)
 
@@ -882,6 +915,115 @@ defmodule Still.Correspondence do
         end)
       end)
     end
+  end
+
+  defp write_desk(location, piece_id, expected_token) do
+    with {:ok, dirs} <- write_store(location) do
+      base = Path.dirname(dirs.journals)
+      active = Storage.collection_location()
+
+      if not active.available or Path.expand(active.folder) != Path.dirname(base) do
+        {:error, "The active collection changed. Reopen Correspondence before continuing."}
+      else
+        expected_scope = active.scope
+
+        :global.trans({{__MODULE__, base}, self()}, fn ->
+          with_fs_lock(base, expected_scope, fn ->
+            path = desk_path(dirs)
+
+            with :ok <- current_scope(base, expected_scope),
+                 {:ok, _previous, previous_bytes} <- desk_revision(path, expected_token),
+                 :ok <- validate_desk_piece(location, piece_id),
+                 :ok <- preserve_revision(base, "desk", expected_token, previous_bytes),
+                 :ok <- safe_dir(base),
+                 :ok <- current_scope(base, expected_scope),
+                 :ok <- replaceable(path),
+                 record <- %{
+                   "format" => @desk_format,
+                   "version" => @desk_version,
+                   "piece_id" => piece_id,
+                   "updated_at" => now()
+                 },
+                 :ok <- atomic(path, Jason.encode!(record, pretty: true) <> "\n"),
+                 {:ok, saved, _bytes} <- read_desk_file(path) do
+              {:ok, saved}
+            else
+              {:error, reason} -> {:error, explain(reason)}
+            end
+          end)
+        end)
+      end
+    end
+  end
+
+  defp validate_desk_piece(_location, nil), do: :ok
+
+  defp validate_desk_piece(location, piece_id) do
+    case Poems.get(location, piece_id) do
+      {:ok, _piece} -> :ok
+      {:error, message} -> {:error, message}
+    end
+  end
+
+  defp desk_revision(path, expected_token) do
+    case read_desk_file(path) do
+      {:ok, nil, nil} when is_nil(expected_token) ->
+        {:ok, nil, nil}
+
+      {:ok, nil, nil} ->
+        {:error,
+         "The Correspondence desk changed since it was opened. Reopen it before retrying."}
+
+      {:ok, current, bytes} when current.token == expected_token ->
+        {:ok, current, bytes}
+
+      {:ok, _current, _bytes} ->
+        {:error,
+         "The Correspondence desk changed since it was opened. Reopen it before retrying."}
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  defp desk_path(dirs), do: Path.join(Path.dirname(dirs.journals), "desk.json")
+
+  defp empty_desk, do: %{piece_id: nil, token: nil, updated_at: nil}
+
+  defp read_desk_file(path) do
+    case File.lstat(path) do
+      {:error, :enoent} ->
+        {:ok, nil, nil}
+
+      {:ok, %{type: :regular}} ->
+        with {:ok, bytes} <- File.read(path),
+             {:ok, raw} when is_map(raw) <- Jason.decode(bytes),
+             true <- valid_desk_record?(raw) do
+          state = %{
+            piece_id: raw["piece_id"],
+            token: digest(bytes),
+            updated_at: raw["updated_at"]
+          }
+
+          {:ok, state, bytes}
+        else
+          _ ->
+            {:error, "The Correspondence desk file is invalid; its contents were left untouched."}
+        end
+
+      {:ok, _} ->
+        {:error, "The Correspondence desk path is unsafe; its contents were left untouched."}
+
+      {:error, reason} ->
+        {:error, explain(reason)}
+    end
+  end
+
+  defp valid_desk_record?(raw) do
+    Map.has_key?(raw, "piece_id") and raw["format"] == @desk_format and
+      raw["version"] == @desk_version and
+      (is_nil(raw["piece_id"]) or uuid_value?(raw["piece_id"])) and
+      valid_time?(raw["updated_at"])
   end
 
   defp preserve_revision(_base, _id, nil, nil), do: :ok

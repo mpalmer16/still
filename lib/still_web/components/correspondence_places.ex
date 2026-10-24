@@ -78,8 +78,17 @@ defmodule StillWeb.CorrespondencePlaces do
         <span>Simultaneous: {@policy}</span>
         <span>Window: {@windows}</span>
       </div>
-      <.link patch={~p"/correspondence/journals/#{@journal.id}"} class="editorial-place-open">Open place
-      <span aria-hidden="true">→</span></.link>
+      <div class="corr-place-actions">
+        <.link patch={~p"/correspondence/journals/#{@journal.id}"} class="editorial-place-open">Open place
+        <span aria-hidden="true">→</span></.link>
+        <button
+          type="button"
+          class="corr-text-link corr-desk-action"
+          phx-click="toggle_shortlist"
+          phx-value-id={@journal.id}
+          aria-pressed={to_string(truthy?(@journal.shortlisted))}
+        >{if truthy?(@journal.shortlisted), do: "Remove from shortlist", else: "Add to shortlist"}</button>
+      </div>
     </article>
     """
   end
@@ -103,7 +112,13 @@ defmodule StillWeb.CorrespondencePlaces do
         <div>
           <h1 id="place-title">{@journal.name}</h1>
         </div>
-        <span :if={truthy?(@journal.shortlisted)} class="editorial-place-mark">Shortlisted</span>
+        <button
+          type="button"
+          class="corr-text-link corr-desk-action"
+          phx-click="toggle_shortlist"
+          phx-value-id={@journal.id}
+          aria-pressed={to_string(truthy?(@journal.shortlisted))}
+        >{if truthy?(@journal.shortlisted), do: "Remove from shortlist", else: "Add to shortlist"}</button>
       </header>
 
       <div class="editorial-place-profile-grid">
