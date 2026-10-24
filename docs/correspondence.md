@@ -11,6 +11,24 @@ light appearance stays within this room until you leave it and does not change N
 **Storage & Backups** that holds your saved writing. Without an available folder,
 Correspondence explains what is missing and stores no authoritative records elsewhere.
 
+Pages begin with compact labels and actions rather than introductory banners.
+The home page brings an available manuscript beside active submissions and recent
+replies. **Writing** is the searchable collection; opening a piece places its current
+text beside its earlier versions and correspondence, including the exact versions sent.
+Use **Return to Now to revise** for writing. Correspondence does not have a second editor.
+
+**Places** keeps a compact shortlist above the complete directory. Open a place to
+read its notes, requirements, and linked packets and pieces. **Edit place details**
+opens the manual record; **Prepare a packet** starts with that saved destination selected.
+The dark palette uses blue-grey paper and slate panels; **Light** changes this room
+only, and the next visit starts dark again.
+
+Packet preparation separates the saved-writing chooser, ordered manuscript, and
+destination. The chooser can be searched and scrolled with the keyboard. Reordering
+updates the on-screen manuscript; save before exporting or recording a submission.
+Sent packets show their preserved texts by default, with optional folding for each piece.
+On smaller windows the columns stack in reading order rather than compressing the text.
+
 Keep a journal's website and actual submission address separately. Record current
 guidelines, reading windows, fees, simultaneous-submission policy, and response
 expectations yourself. An unknown field means unknown. Personal notes remain separate
@@ -81,6 +99,13 @@ From a development checkout with dependencies already set up:
 This creates a new disposable synthetic database, settings directory, and collection
 under the system temporary directory, then opens a localhost server at port 4096.
 Visit `http://localhost:4096/correspondence`. Use `STILL_PREVIEW_PORT=4097` if needed.
+Choose `STILL_PREVIEW_SCENARIO=empty`, `small` (the default), or `established`
+to inspect an empty, five-piece, or twelve-piece synthetic collection. For example:
+
+```sh
+STILL_PREVIEW_PORT=4097 STILL_PREVIEW_SCENARIO=established ./scripts/preview_correspondence.sh
+```
+
 The script prints its exact temporary directory. It refuses to seed a pre-existing
 collection and does not use the installed application's database or profile. Stop
 with Control-C. Each launch creates a fresh preview; retain its printed directory if

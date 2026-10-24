@@ -147,7 +147,8 @@ defmodule StillWeb.CorrespondenceLiveTest do
   test "an empty collection has a gentle first step and no invented activity", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/correspondence")
 
-    assert has_element?(view, ".corr-empty", "Your collection is ready when the first page is.")
+    assert has_element?(view, ".editorial-empty-page", "The first page is still to come.")
+    assert has_element?(view, ".editorial-empty-page a[href='/']", "Return to Now")
     assert has_element?(view, "a[href='/correspondence/journals/new']", "Add a place")
     refute has_element?(view, ".corr-journey")
   end

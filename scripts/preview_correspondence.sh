@@ -2,6 +2,10 @@
 # Always creates a fresh synthetic collection; never reads the normal Still profile.
 set -eu
 cd "$(dirname "$0")/.."
+case "${STILL_PREVIEW_SCENARIO:-small}" in
+  empty|small|established) ;;
+  *) printf '%s\n' 'Choose STILL_PREVIEW_SCENARIO=empty, small, or established.' >&2; exit 1 ;;
+esac
 still_preview_root="$(mktemp -d /tmp/still-correspondence-XXXXXX)"
 export MIX_ENV=dev
 export STILL_CORRESPONDENCE_PREVIEW_DIRECTORY="$still_preview_root"

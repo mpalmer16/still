@@ -2,6 +2,7 @@ defmodule StillWeb.CorrespondenceLive do
   use StillWeb, :live_view
 
   alias Still.{Correspondence, Poems, Storage}
+  alias StillWeb.{CorrespondencePlaces, CorrespondenceWork}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -11,6 +12,9 @@ defmodule StillWeb.CorrespondenceLive do
        problem: nil,
        search: "",
        form: %{},
+       revisions: [],
+       journal_packets: [],
+       packet_search: "",
        correspondence_light?: false
      )}
   end
@@ -152,7 +156,8 @@ defmodule StillWeb.CorrespondenceLive do
 
   defp load_packet(socket, location, nil, params) do
     with {:ok, overview} <- Correspondence.overview(location) do
-      defaults = packet_defaults_from(overview, params, location)
+      defaults =
+        packet_defaults_from(overview, params, location) |> packet_destination(overview, params)
 
       {:noreply,
        assign(socket,
@@ -203,6 +208,9 @@ defmodule StillWeb.CorrespondenceLive do
   @impl true
   def handle_event("search", %{"search" => value}, socket),
     do: {:noreply, assign(socket, search: value)}
+
+  def handle_event("packet_search", %{"search" => value}, socket),
+    do: {:noreply, assign(socket, packet_search: value)}
 
   def handle_event("toggle_palette", _, socket),
     do: {:noreply, update(socket, :correspondence_light?, &(!&1))}
@@ -488,6 +496,15 @@ defmodule StillWeb.CorrespondenceLive do
     end
   end
 
+  # A directory link may suggest a destination, but only a saved journal is valid.
+  defp packet_destination(defaults, overview, %{"journal" => id}) do
+    if Enum.any?(overview.journals, &(&1.id == id)),
+      do: %{defaults | journal_id: id},
+      else: defaults
+  end
+
+  defp packet_destination(defaults, _overview, _params), do: defaults
+
   defp title_for(:home), do: "Correspondence"
   defp title_for(:collection), do: "Writing"
   defp title_for(:journals), do: "Places"
@@ -516,7 +533,7 @@ defmodule StillWeb.CorrespondenceLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} active="correspondence">
-      <div class={"correspondence-room #{if @correspondence_light?, do: "is-light", else: ""}"}>
+      <div class={"correspondence-room corr-workspace #{if @correspondence_light?, do: "is-light", else: ""}"}>
         <header class="corr-header">
           <div class="corr-brand">
             <.link patch={~p"/correspondence"}>Correspondence<span>.</span></.link>
@@ -548,6 +565,7 @@ defmodule StillWeb.CorrespondenceLive do
             >{if @correspondence_light?, do: "Night", else: "Light"}</button><.link
               navigate={~p"/"}
               class="corr-return"
+              aria-label="Back to Now"
             >↶ <span>Back to Now</span></.link>
           </div>
         </header>
@@ -559,87 +577,87 @@ defmodule StillWeb.CorrespondenceLive do
 
         <section
           :if={@live_action == :home && @location.configured && @location.available}
+          id="correspondence-home"
           class="corr-page"
         >
-          <div class="corr-hero">
-            <div>
-              <span class="corr-kicker">THE WORK, IN MOTION</span><h1>Correspondence.</h1><p>
-                A place to see where your writing might go next.
-              </p>
-            </div><.link patch={~p"/correspondence/packets/new"} class="corr-button">Choose writing for a packet
-            <span>→</span></.link>
-          </div>
-          <div class="corr-home-grid">
-            <div>
+          <div class="editorial-home-layout">
+            <section aria-labelledby="ready-heading" class="editorial-ready">
               <div class="corr-section-heading">
-                <h2>Ready to travel</h2><span>{@overview.pieces
-                |> Enum.count(&(not submitted?(@overview.packets, &1.id)))} pieces available for another packet</span>
+                <h1 id="ready-heading">Ready to travel</h1>
+                <.link patch={~p"/correspondence/packets/new"} class="corr-button">Prepare a packet
+                <span>→</span></.link>
               </div>
               <article
-                :for={
-                  piece <-
-                    Enum.take(
-                      @overview.pieces |> Enum.filter(&(not submitted?(@overview.packets, &1.id))),
-                      3
-                    )
-                }
-                class="corr-work"
+                :for={{piece, index} <- Enum.with_index(ready_pieces(@overview), 0)}
+                class={if index == 0, do: "editorial-feature", else: "editorial-ready-row"}
                 id={"ready-#{piece.id}"}
               >
-                <i class="corr-rule"></i><div>
-                  <.link patch={~p"/correspondence/writing/#{piece.id}"} class="corr-work-title">{title(
-                    piece
-                  )}</.link><div class="corr-meta">
-                    Revised {date(piece.updated_at)} · {piece_revisions(piece)} {plural(
-                      piece_revisions(piece),
-                      "earlier version",
-                      "earlier versions"
-                    )}
-                  </div><p>{opening(piece.body)}</p>
-                </div><span class="corr-state">{if history_for?(@overview.packets, piece.id),
-                  do: "Returned",
-                  else: "Never sent"}</span>
+                <h3><.link patch={~p"/correspondence/writing/#{piece.id}"}>{title(piece)}</.link></h3>
+                <pre>{excerpt(piece.body, if(index == 0, do: 8, else: 3))}</pre>
+                <div class="editorial-feature-bottom">
+                  <span class="corr-state">{if history_for?(@overview.packets, piece.id),
+                    do: "Returned",
+                    else: "Never sent"}</span>
+                  <span class="corr-meta">Revised {date(piece.updated_at)} · {piece_revisions(piece)} {plural(
+                    piece_revisions(piece),
+                    "earlier version",
+                    "earlier versions"
+                  )}</span>
+                  <.link patch={~p"/correspondence/writing/#{piece.id}"} class="corr-small-link">Read &amp; see its history →</.link>
+                </div>
               </article>
-              <p :if={@overview.pieces == []} class="corr-empty">
-                Your collection is ready when the first page is.<br />
-                <.link patch={~p"/correspondence/journals/new"} class="corr-text-link">Add a place →</.link>
-              </p>
-              <div :if={@overview.pieces != []} class="corr-inline-links">
-                <.link patch={~p"/correspondence/writing"}>Browse the writing <span>→</span></.link><.link patch={
-                  ~p"/correspondence/journals/new"
-                }>Add a place <span>→</span></.link>
+              <.link
+                :if={ready_pieces(@overview) != []}
+                patch={~p"/correspondence/writing"}
+                class="corr-small-link"
+              >All writing →</.link>
+              <div :if={ready_pieces(@overview) == []} class="editorial-empty-page">
+                <h3>
+                  {if @overview.pieces == [],
+                    do: "The first page is still to come.",
+                    else: "The writing is out in the world."}
+                </h3>
+                <p>
+                  {if @overview.pieces == [],
+                    do:
+                      "Save a piece in Now. Its manuscript and correspondence will have a place here.",
+                    else: "Open the collection to read the work and follow its correspondence."}
+                </p>
+                <.link navigate={~p"/"} class="corr-text-link">Return to Now →</.link>
+                <.link patch={~p"/correspondence/writing"} class="corr-small-link">Browse the writing →</.link>
               </div>
-            </div><aside class="corr-side">
-              <h2>Out in the world</h2>
-              <article :for={packet <- active_packets(@overview.packets)} class="corr-journey">
-                <div class="corr-journey-meta">
-                  <span>{packet_status_label(packet)}</span><span>{packet_display_date(packet)}</span>
-                </div><h3>
-                  <.link patch={~p"/correspondence/packets/#{packet.id}"}>{journal_name(
-                    @overview.journals,
-                    packet.journal_id
-                  ) || packet.title}</.link>
-                </h3><p>
-                  {packet_piece_names(packet, @overview.pieces)} · {length(packet.piece_ids)} {plural(
-                    length(packet.piece_ids),
-                    "piece",
-                    "pieces"
-                  )}
-                </p><p
-                  :if={
-                    packet.status == "accepted" and
-                      length(packet.accepted_piece_ids || []) < length(packet.piece_ids)
-                  }
-                  class="corr-partial-note"
-                >
-                  Some pieces remain under consideration. Review the outstanding destinations before preparing another packet.
-                </p><.link patch={~p"/correspondence/packets/#{packet.id}"} class="corr-small-link">Open the packet →</.link>
-              </article>
-              <p :if={active_packets(@overview.packets) == []} class="corr-empty-side">
-                Nothing is away just now. The next piece can begin with a place or a packet.
-              </p>
-              <div :if={recent_replies(@overview.packets) != []} class="corr-recent-replies">
-                <h3>Recent replies</h3>
+            </section>
+            <aside class="editorial-activity" aria-label="Correspondence at a glance">
+              <section>
+                <div class="corr-section-heading">
+                  <h2>Out in the world</h2><.link
+                    patch={~p"/correspondence/packets"}
+                    class="corr-small-link"
+                  >All packets →</.link>
+                </div>
+                <article :for={packet <- active_packets(@overview.packets)} class="corr-journey">
+                  <div class="corr-journey-meta">
+                    <span>{packet_status_label(packet)}</span><span>{packet_display_date(packet)}</span>
+                  </div>
+                  <h3>
+                    <.link patch={~p"/correspondence/packets/#{packet.id}"}>{journal_name(
+                      @overview.journals,
+                      packet.journal_id
+                    ) || packet.title}</.link>
+                  </h3>
+                  <p>{packet_piece_names(packet, @overview.pieces)}</p>
+                  <p :if={packet.status == "accepted"} class="corr-partial-note">
+                    Some pieces remain under consideration.
+                  </p>
+                </article>
+                <p :if={active_packets(@overview.packets) == []} class="corr-empty-side">
+                  Nothing is away just now. A packet begins with saved writing and a place it might go.
+                </p>
+              </section>
+              <section class="editorial-replies">
+                <div class="corr-section-heading">
+                  <h2>Recent replies</h2>
+                </div>
                 <article :for={packet <- recent_replies(@overview.packets)} class="corr-journey">
                   <div class="corr-journey-meta">
                     <span>{packet_status_label(packet)}</span><span>{reply_date(packet)}</span>
@@ -651,31 +669,54 @@ defmodule StillWeb.CorrespondenceLive do
                     ) || packet.title}</.link>
                   </h3>
                   <p>{packet_piece_names(packet, @overview.pieces)}</p>
-                  <.link patch={~p"/correspondence/packets/#{packet.id}"} class="corr-small-link">Open the reply →</.link>
+                  <.link patch={~p"/correspondence/packets/#{packet.id}"} class="corr-small-link">Read the reply →</.link>
                 </article>
-              </div>
-              <div class="corr-note">
-                <span class="corr-kicker">A PLACE TO BEGIN</span><p>
-                  Keep a few journals close for the moment a piece feels ready.
-                </p><.link patch={~p"/correspondence/journals"}>Browse your places →</.link>
-              </div>
+                <p :if={recent_replies(@overview.packets) == []} class="corr-empty-side">
+                  Replies will gather here as you record them.
+                </p>
+              </section>
             </aside>
           </div>
+          <section class="editorial-home-places" aria-labelledby="home-places-heading">
+            <div class="corr-section-heading">
+              <div>
+                <h2 id="home-places-heading">
+                  A few places in mind
+                </h2>
+              </div><.link patch={~p"/correspondence/journals"} class="corr-small-link">Your directory →</.link>
+            </div>
+            <div class="editorial-place-shelf">
+              <article :for={journal <- close_places(@overview.journals)}>
+                <h3>
+                  <.link patch={~p"/correspondence/journals/#{journal.id}"}>{journal.name}</.link>
+                </h3><p>{value(journal, :interests, "Your notes and submission details.")}</p><.link
+                  patch={~p"/correspondence/journals/#{journal.id}"}
+                  class="corr-small-link"
+                >Open place →</.link>
+              </article>
+              <p :if={@overview.journals == []} class="corr-empty-side">
+                Keep a journal’s details and your own notes together.
+                <.link patch={~p"/correspondence/journals/new"} class="corr-text-link">Add a place →</.link>
+              </p>
+            </div>
+          </section>
         </section>
 
         <section
           :if={@live_action == :collection && @location.configured && @location.available}
           class="corr-page"
         >
-          <div class="corr-hero">
-            <div>
-              <span class="corr-kicker">YOUR SAVED WORK</span><h1>The writing.</h1><p>
-                Each piece keeps its own history, whether it has traveled or not.
-              </p>
-            </div><.link patch={~p"/correspondence/packets/new"} class="corr-button">Compose a packet
+          <div class="corr-page-heading">
+            <h1>Writing</h1>
+            <.link patch={~p"/correspondence/packets/new"} class="corr-button">Compose a packet
             <span>→</span></.link>
           </div>
-          <form id="correspondence-search" phx-change="search" class="corr-search">
+          <form
+            id="correspondence-search"
+            phx-change="search"
+            class="corr-search"
+            aria-label="Search writing"
+          >
             <input
               name="search"
               value={@search}
@@ -683,7 +724,7 @@ defmodule StillWeb.CorrespondenceLive do
               aria-label="Search writing"
             /><span>⌕</span>
           </form>
-          <div class="corr-library">
+          <div class="corr-library editorial-writing-grid">
             <article
               :for={piece <- filtered_pieces(@overview.pieces, @search)}
               class="corr-library-piece"
@@ -709,216 +750,40 @@ defmodule StillWeb.CorrespondenceLive do
           </div>
         </section>
 
-        <section :if={@live_action == :piece && @piece} class="corr-page corr-piece-page">
-          <div class="corr-breadcrumb">
-            <.link patch={~p"/correspondence/writing"}>Writing</.link><span> / </span> {title(@piece)}
-          </div>
-          <div class="corr-piece-heading">
-            <span class="corr-kicker">A PIECE WITH A LIFE OF ITS OWN</span><h1>{title(@piece)}</h1><div class="corr-meta">
-              Current file · revised {date(@piece.updated_at)}
-            </div><.link navigate={~p"/writing/#{@piece.id}/edit"} class="corr-text-link">Return to Now to revise →</.link>
-          </div>
-          <article class="corr-manuscript"><pre>{@piece.body}</pre></article>
-          <section class="corr-history corr-earlier-versions">
-            <div class="corr-section-heading">
-              <h2>Earlier versions</h2><span>{length(@revisions)} saved {plural(
-                length(@revisions),
-                "revision",
-                "revisions"
-              )}</span>
-            </div>
-            <details :for={revision <- @revisions} class="corr-version">
-              <summary>
-                {title(revision)} · {date(Map.get(revision, :updated_at, revision.created_at))}
-              </summary><pre>{revision.body}</pre>
-            </details>
-          </section>
-          <section class="corr-history">
-            <div class="corr-section-heading">
-              <h2>Its correspondence</h2><.link
-                patch={~p"/correspondence/packets/new?piece=#{@piece.id}"}
-                class="corr-text-link"
-              >Prepare a packet →</.link>
-            </div>
-            <article :for={row <- @history} class="corr-history-row">
-              <div>
-                <span class="corr-kicker">{packet_status_label(row.packet)}</span><h3>
-                  <.link patch={~p"/correspondence/packets/#{row.packet.id}"}>{journal_display(row)}</.link>
-                  ·
-                  <.link
-                    patch={~p"/correspondence/journals/#{row.packet.journal_id}"}
-                    class="corr-small-link"
-                  >Journal details →</.link>
-                </h3><p :if={row.snapshot}>
-                  Sent {date(row.packet.snapshot.date)} in “{row.packet.snapshot.packet_title}”
-                </p><p :if={!row.snapshot}>Packet in preparation</p>
-                <.link
-                  :if={row.packet.status in ["declined", "withdrawn"]}
-                  patch={~p"/correspondence/packets/new?from=#{row.packet.id}"}
-                  class="corr-small-link"
-                >Prepare another packet with these pieces →</.link>
-              </div><details :if={row.snapshot}>
-                <summary>Read the exact version sent</summary><pre>{row.snapshot.body}</pre>
-              </details>
-            </article>
-            <p :if={@history == []} class="corr-empty">This piece has not traveled yet.</p>
-          </section>
-        </section>
-
+        <CorrespondenceWork.detail
+          :if={@live_action == :piece && @piece}
+          piece={@piece}
+          revisions={@revisions}
+          history={@history}
+        />
         <section
           :if={@live_action == :journals && @location.configured && @location.available}
           class="corr-page"
         >
-          <div class="corr-hero">
-            <div>
-              <span class="corr-kicker">PLACES TO SEND WORK</span><h1>Your places.</h1><p>
-                A personal shelf of journals, with their details and your notes together.
-              </p>
-            </div><.link patch={~p"/correspondence/journals/new"} class="corr-button">Add a place
-            <span>+</span></.link>
-          </div>
-          <div class="corr-library">
-            <article :for={journal <- @overview.journals} class="corr-library-piece">
-              <div>
-                <.link patch={~p"/correspondence/journals/#{journal.id}"} class="corr-work-title">{journal.name}</.link><p>
-                  {value(journal, :interests)}
-                </p><div class="corr-meta">
-                  {if checked?(journal.shortlisted), do: "Shortlisted · ", else: ""}{if checked?(
-                                                                                          journal.verified
-                                                                                        ),
-                                                                                        do:
-                                                                                          "Details verified",
-                                                                                        else:
-                                                                                          "Personal notes"}
-                </div>
-              </div><aside>
-                <span>{policy_label(journal.simultaneous_policy)}</span><.link patch={
-                  ~p"/correspondence/journals/#{journal.id}"
-                }>Guidelines and details →</.link>
-              </aside>
-            </article><p :if={@overview.journals == []} class="corr-empty">
-              A journal can be added whenever a destination comes to mind.<br /><.link
-                patch={~p"/correspondence/journals/new"}
-                class="corr-text-link"
-              >Add your first place →</.link>
-            </p>
-          </div>
+          <CorrespondencePlaces.directory journals={@overview.journals} />
         </section>
-
+        <section :if={@live_action == :journal && @journal} class="corr-page">
+          <CorrespondencePlaces.details
+            journal={@journal}
+            packets={@journal_packets}
+            pieces={@overview.pieces}
+            form={@form}
+          />
+        </section>
         <section
-          :if={@live_action in [:new_journal, :journal] && (@journal || @live_action == :new_journal)}
-          class="corr-page corr-form-page"
+          :if={@live_action == :new_journal && @location.configured && @location.available}
+          class="corr-page"
         >
-          <div class="corr-breadcrumb">
-            <.link patch={~p"/correspondence/journals"}>Places</.link><span> / </span>{if @journal,
-              do: @journal.name,
-              else: "New place"}
-          </div>
-          <div class="corr-hero compact">
-            <div>
-              <span class="corr-kicker">A DESTINATION TO REMEMBER</span><h1>
-                {if @journal, do: @journal.name, else: "Add a place."}
-              </h1><p>Keep verified details and your own notes side by side.</p>
-            </div>
-          </div>
-          <.form
-            id="journal-form"
-            for={%{}}
-            as={:journal}
-            phx-submit="save_journal"
-            phx-change="validate_journal"
-            class="corr-form"
-          >
-            <label>Name<input name="journal[name]" value={value(@form, :name)} required /></label>
-            <div class="corr-form-row">
-              <label>Website<input name="journal[website]" type="url" value={value(@form, :website)} /></label><label>Submission page<input
-                name="journal[submission_url]"
-                type="url"
-                value={value(@form, :submission_url)}
-              /></label>
-            </div>
-            <label>What they publish<input name="journal[interests]" value={value(@form, :interests)} /></label>
-            <label>Submission guidelines<textarea name="journal[guidelines]" rows="5">{value(@form, :guidelines)}</textarea></label>
-            <div class="corr-form-row">
-              <label>Reading or submission windows<input
-                name="journal[windows]"
-                value={value(@form, :windows)}
-                placeholder="Leave blank if unknown"
-              /></label><label>Fee<input
-                name="journal[fee]"
-                value={value(@form, :fee)}
-                placeholder="Leave blank if unknown"
-              /></label>
-            </div>
-            <div class="corr-form-row">
-              <label>Simultaneous submissions<select name="journal[simultaneous_policy]"><option
-                value="unknown"
-                selected={value(@form, :simultaneous_policy) == "unknown"}
-              >
-                Unknown
-              </option><option
-                value="allowed"
-                selected={value(@form, :simultaneous_policy) == "allowed"}
-              >
-                Allowed
-              </option><option
-                value="not_allowed"
-                selected={value(@form, :simultaneous_policy) == "not_allowed"}
-              >
-                Not allowed
-              </option></select></label><label>Response expectations<input
-                name="journal[response_expectation]"
-                value={value(@form, :response_expectation)}
-                placeholder="Leave blank if unknown"
-              /></label>
-            </div>
-            <label>Your notes<textarea name="journal[notes]" rows="4">{value(@form, :notes)}</textarea></label>
-            <label class="corr-check"><input
-              type="checkbox"
-              name="journal[verified]"
-              value="true"
-              checked={checked?(value(@form, :verified))}
-            /> I verified these details at the journal’s own source</label>
-            <label class="corr-check"><input
-              type="checkbox"
-              name="journal[shortlisted]"
-              value="true"
-              checked={checked?(value(@form, :shortlisted))}
-            /> Keep this place close</label>
-            <div class="corr-form-actions">
-              <button class="corr-button" type="submit">Save place <span>→</span></button><.link
-                patch={~p"/correspondence/journals"}
-                class="corr-text-link"
-              >Cancel</.link>
-            </div>
-          </.form>
-          <section :if={@journal && @journal_packets != []} class="corr-history">
-            <div class="corr-section-heading">
-              <h2>Packets for this place</h2>
-            </div>
-            <article :for={packet <- @journal_packets} class="corr-history-row">
-              <div>
-                <span class="corr-kicker">{packet_status_label(packet)}</span>
-                <h3>
-                  <.link patch={~p"/correspondence/packets/#{packet.id}"}>{packet.title}</.link>
-                </h3>
-                <p>{packet_piece_names(packet, @overview.pieces)}</p>
-              </div>
-              <.link patch={~p"/correspondence/packets/#{packet.id}"} class="corr-small-link">Open packet →</.link>
-            </article>
-          </section>
+          <CorrespondencePlaces.editor form={@form} />
         </section>
 
         <section
           :if={@live_action == :packets && @location.configured && @location.available}
           class="corr-page"
         >
-          <div class="corr-hero">
-            <div>
-              <span class="corr-kicker">PIECES, GATHERED WITH INTENTION</span><h1>Your packets.</h1><p>
-                Every sent packet keeps the exact words it carried.
-              </p>
-            </div><.link patch={~p"/correspondence/packets/new"} class="corr-button">Prepare a packet
+          <div class="corr-page-heading">
+            <h1>Packets</h1>
+            <.link patch={~p"/correspondence/packets/new"} class="corr-button">Prepare a packet
             <span>+</span></.link>
           </div>
           <div class="corr-library">
@@ -943,26 +808,20 @@ defmodule StillWeb.CorrespondenceLive do
 
         <section
           :if={@live_action in [:new_packet, :packet] && (@packet || @live_action == :new_packet)}
-          class="corr-page corr-form-page"
+          class="corr-page editorial-packet-page"
         >
           <div class="corr-breadcrumb">
-            <.link patch={~p"/correspondence/packets"}>Packets</.link><span> / </span>{if @packet,
-              do: @packet.title,
-              else: "New packet"}
+            <.link patch={~p"/correspondence/packets"}>← Packets</.link>
           </div>
-          <div class="corr-hero compact">
-            <div>
-              <span class="corr-kicker">A CONSIDERED GATHERING</span><h1>
-                {if @packet, do: @packet.title, else: "Make a packet."}
-              </h1><p>
-                {if @packet && Map.get(@packet, :snapshot),
-                  do: "The words sent, preserved alongside their correspondence.",
-                  else: "Review the work together before it leaves the room."}
-              </p>
-            </div>
+          <div class="corr-page-heading">
+            <h1>{if @packet, do: @packet.title, else: "New packet"}</h1>
           </div>
-          <div class="corr-packet-grid">
-            <div>
+          <div class={"corr-packet-grid #{if @packet && Map.get(@packet, :snapshot), do: "is-sent", else: ""}"}>
+            <section
+              :if={!@packet || @packet.status == "preparing"}
+              class="editorial-packet-library"
+              aria-label="Choose writing"
+            >
               <div class="corr-section-heading">
                 <h2>The pieces</h2><.link
                   :if={!@packet || @packet.status == "preparing"}
@@ -970,8 +829,30 @@ defmodule StillWeb.CorrespondenceLive do
                   class="corr-text-link"
                 >Choose from writing →</.link>
               </div>
-              <div :if={!@packet || @packet.status == "preparing"} class="corr-piece-select">
-                <article :for={piece <- @overview.pieces} class="corr-select-row">
+              <form
+                id="packet-writing-search"
+                phx-change="packet_search"
+                class="corr-search editorial-packet-search"
+                aria-label="Search packet writing"
+              >
+                <input
+                  name="search"
+                  value={@packet_search}
+                  aria-label="Find writing for this packet"
+                  placeholder="Find a title or line…"
+                />
+              </form>
+              <p class="corr-meta">Choose current saved writing. Its order is yours to arrange.</p>
+              <div
+                :if={!@packet || @packet.status == "preparing"}
+                class="corr-piece-select"
+                tabindex="0"
+                aria-label="Saved writing to choose from"
+              >
+                <article
+                  :for={piece <- filtered_pieces(@overview.pieces, @packet_search)}
+                  class="corr-select-row"
+                >
                   <div>
                     <.link patch={~p"/correspondence/writing/#{piece.id}"} class="corr-work-title">{title(
                       piece
@@ -984,6 +865,11 @@ defmodule StillWeb.CorrespondenceLive do
                   >{if piece.id in (@form[:piece_ids] || []), do: "Added ✓", else: "Add +"}</button>
                 </article>
               </div>
+              <p :if={filtered_pieces(@overview.pieces, @packet_search) == []} class="corr-empty-side">
+                No saved writing matches. Save a piece in Now, or try another search.
+              </p>
+            </section>
+            <section class="editorial-packet-manuscript" aria-label="Packet manuscript">
               <div
                 :if={!@packet || @packet.status == "preparing"}
                 class="corr-section-heading ordered"
@@ -1024,11 +910,30 @@ defmodule StillWeb.CorrespondenceLive do
                   Add a saved piece to begin.
                 </p>
               </div>
+              <div
+                :if={!@packet || @packet.status == "preparing"}
+                id="packet-preview"
+                class="editorial-packet-preview"
+              >
+                <div class="corr-section-heading">
+                  <h2>The manuscript</h2><span>Current saved text</span>
+                </div>
+                <article
+                  :for={piece <- selected_pieces(@overview.pieces, @form[:piece_ids] || [])}
+                  class="editorial-packet-sheet"
+                >
+                  <h3>{title(piece)}</h3><pre>{piece.body}</pre>
+                  <.link patch={~p"/correspondence/writing/#{piece.id}"} class="corr-small-link">Current writing &amp; history →</.link>
+                </article>
+                <p :if={(@form[:piece_ids] || []) == []} class="corr-empty-side">
+                  The selected work will appear here, in manuscript order.
+                </p>
+              </div>
               <div :if={@packet && Map.get(@packet, :snapshot)} class="corr-snapshot">
                 <span class="corr-kicker">SUBMITTED VERSION · {date(@packet.snapshot.date)}</span><p>
                   This packet holds its own copy of the text it carried. Later revisions to the saved writing do not change it.
                 </p>
-                <details :for={sent_piece <- @packet.snapshot.pieces} class="corr-version">
+                <details :for={sent_piece <- @packet.snapshot.pieces} class="corr-version" open>
                   <summary>Read “{sent_piece.title}” exactly as sent</summary><pre>{sent_piece.body}</pre>
                   <.link
                     patch={~p"/correspondence/writing/#{sent_piece.id}"}
@@ -1043,12 +948,8 @@ defmodule StillWeb.CorrespondenceLive do
                   class="corr-text-link"
                 >Download DOCX</.link>
               </div>
-            </div><aside class="corr-destination-panel">
-              <div class="corr-kicker">THE DESTINATION</div><h2>
-                {if @packet && Map.get(@packet, :snapshot),
-                  do: "Where it went.",
-                  else: "Where should it go?"}
-              </h2>
+            </section><aside class="corr-destination-panel">
+              <h2>Destination</h2>
               <.form
                 :if={!@packet || @packet.status == "preparing"}
                 id="packet-form"
@@ -1077,7 +978,7 @@ defmodule StillWeb.CorrespondenceLive do
                     :guidelines
                   )}<br /><span :if={!checked?(@journal.verified)}>Personal notes · not verified</span><span :if={
                     checked?(@journal.verified)
-                  }>Verified {date(Map.get(@journal, :verified_at) || @journal.updated_at)}</span>
+                  }>Marked source-checked by you</span>
                 </p>
                 <.link patch={~p"/correspondence/journals/new"} class="corr-small-link">Add a place you saved →</.link>
                 <label>Preparation notes<textarea name="packet[preparation_notes]" rows="3">{value(@form, :preparation_notes)}</textarea></label>
@@ -1100,7 +1001,7 @@ defmodule StillWeb.CorrespondenceLive do
                   <a href={@journal.submission_url} target="_blank" rel="noopener noreferrer">Open journal submission page ↗</a>
                 </p>
                 <p :if={@journal && !valid_web_url?(@journal.submission_url)}>
-                  No verified submission URL is saved for this place.
+                  No submission URL is saved for this place.
                 </p>
                 <p :if={!@journal}>The saved journal details are unavailable.</p>
               </div>
@@ -1213,12 +1114,23 @@ defmodule StillWeb.CorrespondenceLive do
           </div>
         </section>
         <footer :if={@location && @location.configured && @location.available} class="corr-footer">
-          <span>STILL · A ROOM FOR WRITING</span><span>Correspondence keeps the words close as they travel.</span><span>Collection on this Mac</span>
+          <span>STILL · A ROOM FOR WRITING</span><span>Correspondence keeps the words close as they travel.</span><span>Saved in your collection</span>
         </footer>
       </div>
     </Layouts.app>
     """
   end
+
+  defp selected_pieces(pieces, ids),
+    do: Enum.flat_map(ids, fn id -> Enum.filter(pieces, &(&1.id == id)) end)
+
+  defp ready_pieces(overview),
+    do: overview.pieces |> Enum.reject(&submitted?(overview.packets, &1.id)) |> Enum.take(3)
+
+  defp close_places(journals),
+    do: journals |> Enum.sort_by(&(!&1.shortlisted)) |> Enum.take(3)
+
+  defp excerpt(body, lines), do: body |> String.split("\n") |> Enum.take(lines) |> Enum.join("\n")
 
   defp filtered_pieces(pieces, search), do: Correspondence.search_pieces(pieces, search)
 
@@ -1298,12 +1210,6 @@ defmodule StillWeb.CorrespondenceLive do
     do: ids -- (accepted || [])
 
   defp response_piece_ids(%{piece_ids: ids}), do: ids
-  defp journal_display(%{journal: %{name: name}}), do: name
-
-  defp journal_display(%{packet: %{snapshot: %{journal_name: name}}}) when is_binary(name),
-    do: name
-
-  defp journal_display(_), do: "Saved journal unavailable"
 
   defp packet_unsaved?(form, packet) do
     Enum.any?([:title, :journal_id, :piece_ids, :preparation_notes, :cover_letter], fn key ->
