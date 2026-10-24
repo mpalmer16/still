@@ -258,6 +258,33 @@ defmodule Still.Writing do
   def connections(entry), do: Connections.for_entry(entry)
   def gravity(body, opts \\ []), do: Gravity.draw(body, opts)
   def gravity_field(body, opts \\ []), do: Gravity.field(body, opts)
+
+  @doc "Original source-file number, only when preserved artifact filenames agree. Never an inferred date or position."
+  def source_number(%{origin: "before", source: source}) when is_map(source) do
+    artifacts = source["artifacts"]
+
+    numbers =
+      if(is_list(artifacts), do: artifacts, else: [])
+      |> Enum.flat_map(fn
+        %{"path" => path} when is_binary(path) ->
+          case Regex.run(~r/^(\d+)/, Path.basename(path)) do
+            [_, number] -> [number]
+            _ -> []
+          end
+
+        _ ->
+          []
+      end)
+      |> Enum.uniq()
+
+    case numbers do
+      [number] -> number
+      _ -> nil
+    end
+  end
+
+  def source_number(_), do: nil
+
   def geography(entry), do: Geography.for_entry(entry)
   def places, do: Geography.places()
   def notebooks, do: Notebooks.all()

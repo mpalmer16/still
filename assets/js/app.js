@@ -379,7 +379,9 @@ document.addEventListener("keydown", event => {
     roomIsOpen.click()
   } else if (event.key === "Escape" && !field && document.querySelector(".reading-room")) {
     event.preventDefault()
-    document.querySelector("#return-to-writing")?.click()
+    const highlights = document.querySelector("#clear-search-highlights")
+    if (highlights) highlights.click()
+    else document.querySelector("#return-to-writing")?.click()
   }
   if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "l") {
     event.preventDefault()

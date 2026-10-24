@@ -23,6 +23,12 @@ defmodule StillWeb.ReadingImprovementsTest do
            |> LazyHTML.to_tree()
            |> length() == 4
 
+    render_click(element(read, "#clear-search-highlights"))
+    refute has_element?(read, ".reading-room mark")
+    assert has_element?(read, "#passage-3[data-search-target='true']")
+    assert has_element?(read, "a[href*='q=heron+cafe']", "Back to results")
+    refute has_element?(read, "#clear-search-highlights")
+
     assert Writing.get_entry!(entry.id).body == body
     assert Writing.list_versions(entry) == []
   end
@@ -55,6 +61,11 @@ defmodule StillWeb.ReadingImprovementsTest do
              read,
              "textarea, [phx-hook='ReadRecovery'], button[phx-click='restore_version']"
            )
+
+    render_click(element(read, "#clear-search-highlights"))
+    refute has_element?(read, ".historical-reading mark")
+    assert has_element?(read, ".historical-reading", "earlier heron")
+    assert has_element?(read, "a[href*='earlier=1'][href*='q=heron']", "Back to results")
 
     assert Writing.get_entry!(current.id) == current
     assert Writing.list_versions(current) == [version]

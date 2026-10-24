@@ -144,7 +144,7 @@ defmodule StillWeb.Layouts do
         inert={@landscape_open}
         aria-hidden={if @landscape_open, do: "true"}
       >
-        <span class="place-name">{@place.label}</span>
+        <span class="place-name">{@place.label}<span :if={Map.get(@place, :source_number)}> · source {@place.source_number}</span></span>
         <span :if={region_label(@place.region) != ""} class="place-region">{region_label(
           @place.region
         )}</span>

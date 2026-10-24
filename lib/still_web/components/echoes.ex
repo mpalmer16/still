@@ -23,7 +23,9 @@ defmodule StillWeb.Echoes do
         <span :if={fragment.entry.title} class="gravity-title"><.list_title text={
           fragment.entry.title
         } /></span>
-        <span class="gravity-place">{fragment.place.label}</span>
+        <span class="gravity-place">{fragment.place.label}<span :if={
+          Still.Writing.source_number(fragment.entry)
+        }> · source {Still.Writing.source_number(fragment.entry)}</span></span>
       </.link>
     </aside>
     """

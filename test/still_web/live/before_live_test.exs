@@ -156,7 +156,7 @@ defmodule StillWeb.BeforeLiveTest do
     entry = piece()
     {:ok, view, _} = live(conn, ~p"/pages?q=uncertain%20light")
     assert has_element?(view, "a[href^='/w/#{entry.id}?']")
-    assert has_element?(view, ".entry-date", "from before")
+    assert has_element?(view, ".entry-notebook", String.replace(entry.notebook, "/", " · "))
     refute has_element?(view, "time")
   end
 
