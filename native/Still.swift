@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import UniformTypeIdentifiers
 import Security
 import CryptoKit
 import Darwin
@@ -672,6 +673,23 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
             break
         }
         return nil
+    }
+
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        guard frame.isMainFrame, let frameURL = frame.request.url,
+              CorrespondenceNavigationPolicy.isLocalRoom(frameURL, port: backend?.port ?? -1)
+        else { completionHandler(nil); return }
+        let panel = NSOpenPanel()
+        panel.title = "Import Places"
+        panel.message = "Choose a JSON file to review. No places are added until you confirm in Still."
+        panel.allowedContentTypes = [.json]
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.beginSheetModal(for: window) { response in
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
     }
 
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,

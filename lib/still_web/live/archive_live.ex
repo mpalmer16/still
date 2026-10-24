@@ -78,6 +78,8 @@ defmodule StillWeb.ArchiveLive do
      |> stream(:results, shown)}
   end
 
+  defp notebook?(entry), do: is_binary(entry.notebook) && String.trim(entry.notebook) != ""
+
   defp search_params(query, earlier, written) do
     if(String.trim(query) == "", do: [], else: [q: query]) ++
       if(earlier, do: [earlier: "1"], else: []) ++ if(written, do: [written: "1"], else: [])
@@ -186,7 +188,18 @@ defmodule StillWeb.ArchiveLive do
                 "%B %d, %Y · %H:%M UTC"
               )}</time>
             </span>
-            <span :if={!result.version && result.entry.origin == "before"} class="entry-date">from before{if result.entry.returned_at,
+            <span :if={notebook?(result.entry)} class="entry-date entry-notebook">{String.replace(
+              result.entry.notebook,
+              "/",
+              " · "
+            )}{if number = Writing.source_number(result.entry), do: " · source #{number}"}{if !result.version &&
+                                                                                                result.entry.returned_at,
+                                                                                              do:
+                                                                                                " & now"}</span>
+            <span
+              :if={!result.version && result.entry.origin == "before" && !notebook?(result.entry)}
+              class="entry-date"
+            >from before{if result.entry.returned_at,
               do: " & now"}</span>
             <time
               :if={!result.version && result.entry.origin != "before"}

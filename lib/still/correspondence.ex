@@ -11,7 +11,7 @@ defmodule Still.Correspondence do
   @format %{"format" => "still-correspondence-v1"}
   @desk_format "still-correspondence-desk"
   @desk_version 1
-  @journal_fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted verified)
+  @journal_fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted verified inactive)
   @packet_fields ~w(title journal_id piece_ids preparation_notes cover_letter)
   @statuses ~w(preparing submitted awaiting declined accepted withdrawn)
 
@@ -50,6 +50,24 @@ defmodule Still.Correspondence do
 
   def journal(location, id),
     do: with({:ok, d} <- store(location), do: read_record(d.journals, id, :journal))
+
+  @doc "Reads places without loading manuscripts or submission snapshots."
+  def journals(location),
+    do: with({:ok, d} <- store(location), do: records(d.journals, :journal))
+
+  @doc "Validates place details without writing to the collection."
+  def validate_journal(attrs), do: normalize_journal(attrs)
+
+  @doc "Deactivates or reactivates a place without changing its identity or submission history."
+  def set_journal_active(location, id, token, active) when is_boolean(active) do
+    with {:ok, journal} <- journal(location, id),
+         :ok <- fresh(journal, token) do
+      attrs = journal |> Map.take(Enum.map(@journal_fields, &String.to_existing_atom/1))
+      save_journal(location, Map.put(attrs, :inactive, !active), id, token)
+    end
+  end
+
+  def active_journal?(journal), do: !Map.get(journal, :inactive, false)
 
   def packet(location, id) do
     with {:ok, d} <- store(location),
@@ -96,6 +114,7 @@ defmodule Still.Correspondence do
          {:ok, d} <- write_store(location),
          {:ok, old} <- existing(d.journals, id, token, :journal),
          :ok <- unique_name(d.journals, vals.name, record_id),
+         vals <- preserve_inactive(vals, attrs, old),
          now <- now(),
          rec <-
            Map.merge(vals, %{
@@ -118,6 +137,7 @@ defmodule Still.Correspondence do
          {:ok, old} <- existing(d.packets, id, token, :packet),
          :ok <- editable(old),
          {:ok, j} <- read_record(d.journals, vals.journal_id, :journal),
+         :ok <- active_destination(j),
          {:ok, pieces} <- current_pieces(location, vals.piece_ids),
          now <- now(),
          rec <-
@@ -147,6 +167,7 @@ defmodule Still.Correspondence do
          :ok <- reviewed_tokens(p, pieces),
          {:ok, date} <- date(date),
          {:ok, j} <- read_record(d.journals, p.journal_id, :journal),
+         :ok <- active_destination(j),
          sid <- Ecto.UUID.generate(),
          snap <- %{
            id: sid,
@@ -321,7 +342,8 @@ defmodule Still.Correspondence do
            optional(v["response_expectation"], "Response expectations"),
          {:ok, notes} <- optional(v["notes"], "Personal notes"),
          {:ok, verified} <- bool(v["verified"]),
-         {:ok, shortlisted} <- bool(v["shortlisted"]) do
+         {:ok, shortlisted} <- bool(v["shortlisted"]),
+         {:ok, inactive} <- bool(v["inactive"]) do
       {:ok,
        %{
          name: name,
@@ -335,9 +357,23 @@ defmodule Still.Correspondence do
          response_expectation: response_expectation,
          notes: notes,
          verified: verified,
-         shortlisted: shortlisted
+         shortlisted: shortlisted,
+         inactive: inactive
        }}
     end
+  end
+
+  defp preserve_inactive(vals, attrs, old) do
+    if old && !Map.has_key?(attrs, :inactive) && !Map.has_key?(attrs, "inactive"),
+      do: Map.put(vals, :inactive, old.inactive),
+      else: vals
+  end
+
+  defp active_destination(journal) do
+    if active_journal?(journal),
+      do: :ok,
+      else:
+        {:error, "This place is inactive. Reactivate it before preparing or sending a packet."}
   end
 
   defp normalize_packet(a) do
@@ -381,6 +417,7 @@ defmodule Still.Correspondence do
   defp optional(v, label), do: text(v, label, true)
 
   defp web_url(nil, _label), do: {:ok, nil}
+  defp web_url("", _label), do: {:ok, nil}
 
   defp web_url(value, label) when is_binary(value) do
     with {:ok, value} <- text(value, label, true),
@@ -639,10 +676,10 @@ defmodule Still.Correspondence do
     if Enum.all?(fields, &Map.has_key?(r, &1)) and valid_texts and valid_urls and
          is_binary(r["name"]) and
          String.trim(r["name"]) != "" and is_boolean(r["verified"]) and
-         is_boolean(r["shortlisted"]) and
+         is_boolean(r["shortlisted"]) and is_boolean(Map.get(r, "inactive", false)) and
          valid_time?(r["created_at"]) and valid_time?(r["updated_at"]) do
       {:ok,
-       atomize(r, [
+       atomize(Map.put_new(r, "inactive", false), [
          :id,
          :name,
          :website,
@@ -656,6 +693,7 @@ defmodule Still.Correspondence do
          :notes,
          :shortlisted,
          :verified,
+         :inactive,
          :created_at,
          :updated_at
        ])}
@@ -902,6 +940,7 @@ defmodule Still.Correspondence do
           with :ok <- current_scope(base, expected_scope),
                {:ok, previous_bytes} <- checked,
                :ok <- if(kind == :journal, do: unique_name(dir, rec.name, rec.id), else: :ok),
+               :ok <- writable_destination(base, rec, kind),
                :ok <- preserve_revision(base, rec.id, expected_token, previous_bytes),
                :ok <- safe_dir(dir),
                :ok <- current_scope(base, expected_scope),
@@ -916,6 +955,14 @@ defmodule Still.Correspondence do
       end)
     end
   end
+
+  defp writable_destination(base, %{status: status, journal_id: id}, :packet)
+       when status in ["preparing", "submitted"] do
+    with {:ok, journal} <- read_record(Path.join(base, "journals"), id, :journal),
+         do: active_destination(journal)
+  end
+
+  defp writable_destination(_, _, _), do: :ok
 
   defp write_desk(location, piece_id, expected_token) do
     with {:ok, dirs} <- write_store(location) do

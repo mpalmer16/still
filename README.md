@@ -319,3 +319,8 @@ runs separately from the installed application:
 ```sh
 ./scripts/preview_correspondence.sh
 ```
+
+Places can be added from a reviewed JSON upload using **Correspondence → Places →
+Import Places**. The page includes an example to share with a researcher; a portable
+copy is in `docs/places-import-example.json`. Places can also be deactivated and
+reactivated without losing submission history. See [Correspondence](docs/correspondence.md).

@@ -302,7 +302,10 @@ defmodule StillWeb.CorrespondenceHome do
   end
 
   defp shortlisted(journals),
-    do: journals |> Enum.filter(&truthy?(&1.shortlisted)) |> Enum.take(3)
+    do:
+      journals
+      |> Enum.filter(&(Still.Correspondence.active_journal?(&1) && truthy?(&1.shortlisted)))
+      |> Enum.take(3)
 
   defp journal_packets(packets, id) do
     packets

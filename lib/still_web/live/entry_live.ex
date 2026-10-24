@@ -11,6 +11,7 @@ defmodule StillWeb.EntryLive do
      |> assign(:historical_version, nil)
      |> assign(:version_missing, false)
      |> assign(:search_query, "")
+     |> assign(:search_highlights, false)
      |> assign(:search_line, nil)
      |> assign(:search_earlier, false)
      |> assign(:search_written, false)
@@ -75,6 +76,7 @@ defmodule StillWeb.EntryLive do
        )
        |> assign(:version_missing, !!params["version"] && is_nil(version))
        |> assign(:search_query, query)
+       |> assign(:search_highlights, query != "")
        |> assign(:search_earlier, params["earlier"] == "1")
        |> assign(:search_written, params["written"] == "1")
        |> assign(:search_line, Writing.search_passage(words.body, query).line)
@@ -165,6 +167,9 @@ defmodule StillWeb.EntryLive do
   end
 
   @impl true
+  def handle_event("dismiss_search_highlights", _, socket),
+    do: {:noreply, assign(socket, :search_highlights, false)}
+
   def handle_event("save", %{"entry" => attrs}, socket), do: save(attrs, socket, false)
 
   def handle_event("finish", %{"entry" => %{"action" => "save"} = attrs}, socket),
@@ -250,6 +255,28 @@ defmodule StillWeb.EntryLive do
 
       {:error, message} ->
         {:noreply, socket |> assign(:status, :error) |> put_flash(:error, message)}
+    end
+  end
+
+  def handle_event("add_to_saved_writing", _, socket) do
+    if socket.assigns.entry && !socket.assigns.editing && !socket.assigns.historical_version do
+      location = Still.Storage.collection_location()
+
+      case Writing.add_to_saved_writing(location, socket.assigns.entry.id) do
+        {:ok, piece} ->
+          {:noreply,
+           socket
+           |> put_flash(
+             :info,
+             "Your saved version is ready to edit. The historical List is unchanged."
+           )
+           |> push_navigate(to: ~p"/writing/#{piece.id}/edit")}
+
+        {:error, message} ->
+          {:noreply, put_flash(socket, :error, message)}
+      end
+    else
+      {:noreply, socket}
     end
   end
 
@@ -667,7 +694,7 @@ defmodule StillWeb.EntryLive do
       letters_open={@letters_open}
       landscape_open={@landscape_open}
       places={@places}
-      place={@place}
+      place={Map.put(@place, :source_number, Writing.source_number(@entry))}
       return_writing={@return_writing}
       return_beside={@return_beside}
       return_list={@return_list}
@@ -797,17 +824,27 @@ defmodule StillWeb.EntryLive do
           <.link navigate={~p"/w/#{@entry.id}?read=1"} class="quiet-link">Read current words</.link>
         </div>
         <h1 id="reading-title" tabindex="-1" class="list-title">
-          <.highlight text={@historical_version.title || "Earlier words"} query={@search_query} />
+          <.highlight
+            text={@historical_version.title || "Earlier words"}
+            query={if @search_highlights, do: @search_query, else: ""}
+          />
         </h1>
         <div class="list-body historical-body">
           <.shaped_words
             body={@historical_version.body}
-            query={@search_query}
+            query={if @search_highlights, do: @search_query, else: ""}
             id_prefix="passage"
             target_line={@search_line}
           />
         </div>
         <div class="reading-foot">
+          <button
+            :if={@search_highlights && @search_query != ""}
+            id="clear-search-highlights"
+            type="button"
+            class="quiet-link"
+            phx-click="dismiss_search_highlights"
+          >Clear highlights</button>
           <.link
             :if={@search_query != ""}
             navigate={results_path(@search_query, @search_earlier, @search_written)}
@@ -849,13 +886,16 @@ defmodule StillWeb.EntryLive do
             tabindex="-1"
             class={if(@entry.title, do: "list-title", else: "sr-only")}
           >
-            <.highlight text={@entry.title || Writing.opening(@entry)} query={@search_query} />
+            <.highlight
+              text={@entry.title || Writing.opening(@entry)}
+              query={if @search_highlights, do: @search_query, else: ""}
+            />
           </h1>
         </header>
         <div class="list-body" id="list-body">
           <.shaped_words
             body={@entry.body}
-            query={@search_query}
+            query={if @search_highlights, do: @search_query, else: ""}
             id_prefix="passage"
             target_line={@search_line}
           />
@@ -863,6 +903,13 @@ defmodule StillWeb.EntryLive do
         <StillWeb.Echoes.field fragments={@gravity_field} />
         <.recovery recovery_available={@recovery_available} status={@status} entry_id={@entry.id} />
         <div class="reading-foot">
+          <button
+            :if={@search_highlights && @search_query != ""}
+            id="clear-search-highlights"
+            type="button"
+            class="quiet-link"
+            phx-click="dismiss_search_highlights"
+          >Clear highlights</button>
           <button
             :if={@previous_reading}
             id="reading-back"
@@ -876,6 +923,14 @@ defmodule StillWeb.EntryLive do
             class="quiet-link"
           >Back to results</.link>
           <button :if={@entry.origin == "before"} type="button" class="quiet-link" phx-click="edit">Change these words</button>
+          <button
+            :if={@entry.origin == "before"}
+            id="add-to-saved-writing"
+            type="button"
+            class="quiet-link"
+            phx-click="add_to_saved_writing"
+            phx-disable-with="Opening saved writing…"
+          >Add to saved writing</button>
           <button type="button" class="quiet-link" phx-click="toggle_versions">Earlier words</button>
           <.link
             :if={@entry.origin == "before" && @entry.notebook}

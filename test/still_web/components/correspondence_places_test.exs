@@ -11,7 +11,7 @@ defmodule StillWeb.CorrespondencePlacesTest do
     assert empty =~ ~s(href="/correspondence/journals/new")
     assert empty =~ "Add a place"
     assert empty =~ ~s(<h1 id="places-heading">Places</h1>)
-    assert empty =~ ~s(<h2 id="all-places-heading">All places</h2>)
+    assert empty =~ ~s(<h2 id="all-places-heading">Active places</h2>)
     refute empty =~ "editorial-place-count"
     refute empty =~ "A PERSONAL DIRECTORY"
     refute empty =~ "Places to send work."

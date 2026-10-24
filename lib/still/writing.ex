@@ -25,6 +25,14 @@ defmodule Still.Writing do
   def get_entry(id), do: Repo.get(Entry, id)
   def get_entry!(id), do: Repo.get!(Entry, id)
 
+  @doc "Adds an explicit editable saved version; never updates the historical database entry."
+  def add_to_saved_writing(location, id) do
+    case get_entry(id) do
+      nil -> {:error, "This historical List is no longer available."}
+      entry -> Still.Poems.from_historical(location, entry)
+    end
+  end
+
   def list_entry?(%Entry{origin: "before"}), do: true
   def list_entry?(%Entry{source: %{"writing_form" => "list"}}), do: true
   def list_entry?(_entry), do: false
@@ -258,6 +266,33 @@ defmodule Still.Writing do
   def connections(entry), do: Connections.for_entry(entry)
   def gravity(body, opts \\ []), do: Gravity.draw(body, opts)
   def gravity_field(body, opts \\ []), do: Gravity.field(body, opts)
+
+  @doc "Original source-file number, only when preserved artifact filenames agree. Never an inferred date or position."
+  def source_number(%{origin: "before", source: source}) when is_map(source) do
+    artifacts = source["artifacts"]
+
+    numbers =
+      if(is_list(artifacts), do: artifacts, else: [])
+      |> Enum.flat_map(fn
+        %{"path" => path} when is_binary(path) ->
+          case Regex.run(~r/^(\d+)/, Path.basename(path)) do
+            [_, number] -> [number]
+            _ -> []
+          end
+
+        _ ->
+          []
+      end)
+      |> Enum.uniq()
+
+    case numbers do
+      [number] -> number
+      _ -> nil
+    end
+  end
+
+  def source_number(_), do: nil
+
   def geography(entry), do: Geography.for_entry(entry)
   def places, do: Geography.places()
   def notebooks, do: Notebooks.all()

@@ -1,11 +1,11 @@
 /* The editorial room has its own light; the writing room remains untouched. */
 .site-frame:has(.corr-workspace) {
   padding: 0 0 60px;
-  background: #1b2937;
-  --ink: #e2eaf3;
-  --muted: #b1c3d4;
+  background: #1c1c1e;
+  --ink: #e7e7e9;
+  --muted: #bdbdc3;
 }
-.site-frame:has(.corr-workspace.is-light) { background: #eaf0f5; --ink: #263b50; --muted: #4e6378; }
+.site-frame:has(.corr-workspace.is-light) { background: #ededee; --ink: #29292e; --muted: #5a5a64; }
 .site-frame:has(.corr-workspace) .site-header { width: min(88vw, 1680px); height: 88px; }
 .site-frame:has(.corr-workspace) .room-light,
 .site-frame:has(.corr-workspace) .room-light-control,
@@ -13,21 +13,21 @@
 .site-frame:has(.corr-workspace)::after { display: none; }
 .correspondence-room {
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --corr-bg: #1b2937;
-  --corr-panel: #25394d;
-  --corr-surface: #2b4259;
-  --corr-paper: #243748;
-  --corr-ink: #e2eaf3;
-  --corr-muted: #bdcedf;
-  --corr-faint: #a2b6ca;
-  --corr-line: #435b70;
-  --corr-blue: #abd3f6;
+  --corr-bg: #1c1c1e;
+  --corr-panel: #252527;
+  --corr-surface: #2e2e31;
+  --corr-paper: #222224;
+  --corr-ink: #e7e7e9;
+  --corr-muted: #c4c4ca;
+  --corr-faint: #adadb6;
+  --corr-line: #48484f;
+  --corr-blue: #a6c4e2;
   --focus-color: var(--corr-blue);
   --corr-sage: var(--corr-blue);
-  --corr-sage-dim: #7badd5;
-  --corr-clay: #bec9e8;
-  --corr-gold: #c5d8eb;
-  --corr-green: #c6dff0;
+  --corr-sage-dim: #7898ba;
+  --corr-clay: #c5bfd2;
+  --corr-gold: #c8ced7;
+  --corr-green: #c2ced8;
   width: min(88vw, 1680px);
   min-height: calc(100vh - 88px);
   margin: 0 auto;
@@ -36,8 +36,8 @@
   color-scheme: dark;
 }
 .correspondence-room.is-light {
-  --corr-bg: #eaf0f5; --corr-panel: #dbe6f0; --corr-surface: #d2e1ee; --corr-paper: #f5f8fb;
-  --corr-ink: #263b50; --corr-muted: #455e75; --corr-faint: #536b81; --corr-line: #afc0d0;
+  --corr-bg: #ededee; --corr-panel: #e1e1e3; --corr-surface: #d7d7da; --corr-paper: #f8f8f8;
+  --corr-ink: #29292e; --corr-muted: #53535e; --corr-faint: #60606b; --corr-line: #b8b8bf;
   --corr-blue: #285b85; --corr-sage-dim: #507fa4; --corr-clay: #53607f; --corr-gold: #3c5f7f; --corr-green: #335a77;
   color-scheme: light;
 }
@@ -453,3 +453,19 @@
 .editorial-home-place-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 .editorial-recent-replies .editorial-home-section-heading h2 { font-size: 22px; }
 @media (max-width: 640px) { .editorial-home-place-grid { grid-template-columns: 1fr; } }
+
+/* Place imports and reversible deactivation use the room's existing quiet controls. */
+.corr-place-directory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 28px; }
+.corr-place-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 24px; margin: 20px 0; color: var(--corr-muted); }
+.corr-place-status p { flex: 1 1 420px; margin: 0; }
+.corr-inactive-places { margin-top: 40px; padding-top: 22px; border-top: 1px solid var(--corr-line); color: var(--corr-muted); }
+.corr-place-import { max-width: 840px; }
+.corr-place-import h1 { font: 32px/1.2 Georgia, 'Iowan Old Style', serif; font-weight: 400; }
+.corr-place-import p { color: var(--corr-muted); }
+.corr-place-import form { display: grid; justify-items: start; gap: 12px; padding: 24px 0; }
+.corr-place-import input[type=file] { max-width: 100%; color: var(--corr-ink); font: inherit; background: transparent; border: 0; }
+.corr-place-import input::file-selector-button { background: var(--corr-surface); color: var(--corr-ink); border: 0; border-radius: 0; padding: 10px 16px; margin-right: 14px; font: inherit; cursor: pointer; }
+.corr-import-review,.corr-import-example { border-top: 1px solid var(--corr-line); padding-top: 24px; margin: 24px 0; }
+.corr-import-review h2 { font: 23px/1.4 Georgia, 'Iowan Old Style', serif; }
+.corr-import-example summary { color: var(--corr-blue); cursor: pointer; }
+.corr-import-example pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--corr-paper); padding: 22px; font: 13px/1.65 ui-monospace, monospace; color: var(--corr-ink); }

@@ -32,7 +32,7 @@ have marked the source checked; this is your record, not live confirmation of av
 **Places** keeps a compact shortlist above the complete directory. Open a place to
 read its notes, requirements, and linked packets and pieces. **Edit place details**
 opens the manual record; **Prepare a packet** starts with that saved destination selected.
-The dark palette uses blue-grey paper and slate panels; **Light** changes this room
+The dark palette uses charcoal and grey with restrained blue highlights; **Light** changes this room
 only, and the next visit starts dark again.
 
 Packet preparation separates the saved-writing chooser, ordered manuscript, and
@@ -141,3 +141,57 @@ DOCX is a readable manuscript, not a claim to meet every journal's requirements.
 Its line breaks represent original line endings; the frozen UTF-8 text remains the
 source of exact byte fidelity. PDF can be produced by opening a DOCX and exporting
 or printing it in a word processor; Still does not require a PDF conversion service.
+
+## Importing and deactivating places
+
+Next to **Add a place**, choose **Import Places**. Share the JSON example on that
+page (or `docs/places-import-example.json`) with Cal. Upload one UTF-8 `.json`
+array containing 1–200 places, at most 1 MB. Only `name` is required; all other
+fields in the example are optional. Text must be strings; unknown details may be
+omitted or empty. `shortlisted` is a boolean. `simultaneous_policy`, when supplied,
+is `unknown`, `allowed`, or `not_allowed`. Web addresses must use HTTP or HTTPS.
+Unknown fields are rejected so misspellings cannot silently discard information.
+
+**Review places** validates the whole file without changing the collection.
+**Import N places** then adds the previewed new names. Existing names, including
+inactive places, and repeated names in the file are skipped (ignoring case and
+outer whitespace). Import never edits an existing place or reactivates it. Imported
+information starts unverified; check a publication's current source before submitting.
+Nothing is fetched from the web and no submission is sent.
+
+If saving fails partway through, Still reports the number actually added and the
+failure. Completed additions remain intact; reviewing the file again skips those
+names, making retries safe. The preview stays bound to the collection in which
+it was reviewed: a missing or changed folder is an error, never a fallback.
+
+Open a place and choose **Deactivate place** to remove it from the active directory,
+home shortlist, and new packet choices. Its identity, notes, revisions, submitted
+manuscripts, replies, and links remain intact. Find it under **Inactive places**
+and choose **Reactivate place** to use it again. Preparing or sending a packet to
+an inactive place requires reactivation; recording responses to existing submissions
+continues normally. Editing details or importing the same name never implicitly
+reactivates it. Old place records without the optional `inactive` flag remain active;
+reading them causes no migration or rewrite.
+
+## Bringing a historical List into saved writing
+
+While reading the current words of a historical List (including one opened through
+Find or Wander), choose **Add to saved writing**. Still saves its exact text in the
+configured file collection and opens the usual Now editor. Change the optional
+title there to the display title you want, then save. The historical List, its
+notebook provenance, and SQLite revisions stay unchanged. This is an explicit
+editable edition for your saved collection and packet preparation, not a migration.
+
+The saved version has a stable ID derived from the importer's preserved source key.
+Using the action again opens that same version, preserving subsequent title and
+text edits rather than copying the historical words over them. The link survives
+folder/title changes and a restored SQLite database. A saved version in Trash must
+be restored instead of duplicated. Files created separately by hand are not matched
+by their title or text; Still does not guess that two different pieces are the same.
+
+`metadata.json` retains the original title, notebook, source number when known, and
+source key under optional `historical_source`. Absolute import paths are excluded.
+The source reference is also visible under **Text file** when reading saved writing.
+The UTF-8 text file remains ordinary text; only this saved edition's title and text
+change as you revise it. No two-way synchronization with the historical original
+is implied. Older writing files without this field remain unchanged and readable.
