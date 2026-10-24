@@ -22,6 +22,7 @@
   --corr-faint: #a2b6ca;
   --corr-line: #435b70;
   --corr-blue: #abd3f6;
+  --focus-color: var(--corr-blue);
   --corr-sage: var(--corr-blue);
   --corr-sage-dim: #7badd5;
   --corr-clay: #bec9e8;
@@ -45,7 +46,6 @@
 .correspondence-room :is(h1,h2,h3,p,a,strong,label,dd) { overflow-wrap: anywhere; }
 .correspondence-room a { color: inherit; text-decoration: none; }
 .correspondence-room a:hover { color: var(--corr-blue); }
-.correspondence-room :is(a,button,input,select,textarea,summary):focus-visible { outline: 2px solid var(--corr-blue); outline-offset: 4px; }
 .correspondence-room :is(button,a,summary) { touch-action: manipulation; }
 .correspondence-room button { cursor: pointer; }
 .corr-header { display: grid; grid-template-columns: 1fr auto 1fr; gap: 30px; align-items: center; min-height: 78px; border-block: 1px solid var(--corr-line); }
@@ -371,7 +371,6 @@
 .editorial-place-field.is-wide{grid-column:1/-1}
 .editorial-place-form input:not([type=checkbox]),.editorial-place-form select,.editorial-place-form textarea{display:block;width:100%;min-height:43px;margin-top:6px;padding:10px 12px;border:1px solid var(--corr-line);border-radius:2px;background:var(--corr-bg);color:var(--corr-ink);font:15px/1.45 var(--sans)}
 .editorial-place-form textarea{resize:vertical;line-height:1.55}
-.editorial-place-form :is(input,select,textarea):focus-visible,.editorial-place-form button:focus-visible,.editorial-place-form a:focus-visible,.editorial-place-directory a:focus-visible,.editorial-place-detail a:focus-visible,.editorial-place-edit summary:focus-visible{outline:2px solid var(--corr-blue);outline-offset:3px}
 .editorial-place-checks{grid-column:2;display:grid;gap:12px;margin-top:19px}
 .editorial-place-checks label{display:flex;align-items:flex-start;gap:10px;color:var(--corr-ink);font-size:13px}
 .editorial-place-checks input{flex:0 0 auto;margin:2px 0 0;accent-color:var(--corr-blue)}
