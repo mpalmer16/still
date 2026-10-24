@@ -2,12 +2,21 @@ defmodule StillWeb.CorrespondenceLive do
   use StillWeb, :live_view
 
   alias Still.{Correspondence, Poems, Storage}
-  alias StillWeb.{CorrespondenceHome, CorrespondencePlaces, CorrespondenceWork}
+  alias Still.Correspondence.PlaceImport
+
+  alias StillWeb.{
+    CorrespondenceHome,
+    CorrespondenceImport,
+    CorrespondencePlaces,
+    CorrespondenceWork
+  }
 
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
-     assign(socket,
+     socket
+     |> allow_upload(:places, accept: ~w(.json), max_entries: 1, max_file_size: 1_048_576)
+     |> assign(
        desk: %{piece_id: nil, token: nil, updated_at: nil},
        desk_problem: nil,
        notice: nil,
@@ -17,6 +26,8 @@ defmodule StillWeb.CorrespondenceLive do
        revisions: [],
        journal_packets: [],
        packet_search: "",
+       import_plan: nil,
+       import_result: nil,
        correspondence_light?: false
      )}
   end
@@ -43,7 +54,7 @@ defmodule StillWeb.CorrespondenceLive do
            form: %{}
          )}
 
-      action in [:home, :collection, :journals, :packets] ->
+      action in [:home, :collection, :journals, :import_journals, :packets] ->
         load_overview(socket, location, action)
 
       action == :piece ->
@@ -244,6 +255,86 @@ defmodule StillWeb.CorrespondenceLive do
     desk_result(socket, result, "Desk cleared. The work remains in your collection.")
   end
 
+  def handle_event("validate_places_upload", _, socket),
+    do: {:noreply, assign(socket, import_plan: nil, import_result: nil, problem: nil)}
+
+  def handle_event("preview_places_import", _, socket) do
+    {completed, pending} = uploaded_entries(socket, :places)
+
+    if length(completed) == 1 && pending == [] &&
+         upload_errors(socket.assigns.uploads.places) == [] do
+      [result] =
+        consume_uploaded_entries(socket, :places, fn %{path: path}, _entry ->
+          result =
+            with {:ok, bytes} <- File.read(path),
+                 do: PlaceImport.preview(socket.assigns.location, bytes)
+
+          {:ok, result}
+        end)
+
+      case result do
+        {:ok, plan} ->
+          {:noreply, assign(socket, import_plan: plan, import_result: nil, problem: nil)}
+
+        {:error, reason} ->
+          {:noreply,
+           assign(socket, import_plan: nil, import_result: nil, problem: import_problem(reason))}
+      end
+    else
+      {:noreply,
+       assign(socket,
+         import_plan: nil,
+         import_result: nil,
+         problem: "Choose one JSON file and wait for its upload to finish."
+       )}
+    end
+  end
+
+  def handle_event("import_places", _, %{assigns: %{import_plan: nil}} = socket),
+    do: {:noreply, socket}
+
+  def handle_event("import_places", _, socket) do
+    result = PlaceImport.commit(socket.assigns.import_plan)
+    {:noreply, assign(socket, import_plan: nil, import_result: result, problem: nil)}
+  end
+
+  def handle_event("toggle_place_active", %{"id" => id}, socket) do
+    journal = Enum.find(socket.assigns.overview.journals, &(&1.id == id))
+
+    if journal do
+      case Correspondence.set_journal_active(
+             socket.assigns.location,
+             id,
+             journal.token,
+             journal.inactive
+           ) do
+        {:ok, saved} ->
+          journals =
+            Enum.map(socket.assigns.overview.journals, fn j ->
+              if j.id == id, do: saved, else: j
+            end)
+
+          {:noreply,
+           assign(socket,
+             overview: %{socket.assigns.overview | journals: journals},
+             journal: saved,
+             form: Map.put(socket.assigns.form, :inactive, saved.inactive),
+             problem: nil,
+             notice:
+               if(saved.inactive,
+                 do: "Place deactivated. Past submissions and notes are preserved.",
+                 else: "Place reactivated."
+               )
+           )}
+
+        {:error, reason} ->
+          {:noreply, assign(socket, problem: reason, notice: nil)}
+      end
+    else
+      {:noreply, assign(socket, problem: "Reopen the place before changing its status.")}
+    end
+  end
+
   def handle_event("toggle_shortlist", %{"id" => id}, socket) do
     case Enum.find(socket.assigns.overview.journals, &(&1.id == id)) do
       nil ->
@@ -310,6 +401,7 @@ defmodule StillWeb.CorrespondenceLive do
     id = journal && journal.id
     token = journal && journal.token
 
+    attrs = Map.put(attrs, "inactive", (journal && journal.inactive) || false)
     attrs = Map.put(attrs, "verified", checked?(attrs["verified"]))
     attrs = Map.put(attrs, "shortlisted", checked?(attrs["shortlisted"]))
 
@@ -508,6 +600,9 @@ defmodule StillWeb.CorrespondenceLive do
   def handle_event("validate_packet", %{"packet" => attrs}, socket),
     do: {:noreply, assign(socket, form: Map.merge(socket.assigns.form, attrs))}
 
+  defp import_problem(reason) when is_binary(reason), do: reason
+  defp import_problem(_), do: "The uploaded file could not be read. Choose it again."
+
   defp desk_result(socket, {:ok, desk}, notice),
     do: {:noreply, assign(socket, desk: desk, desk_problem: nil, problem: nil, notice: notice)}
 
@@ -553,6 +648,7 @@ defmodule StillWeb.CorrespondenceLive do
       simultaneous_policy: "unknown",
       response_expectation: "",
       notes: "",
+      inactive: false,
       shortlisted: false,
       verified: false
     }
@@ -603,6 +699,7 @@ defmodule StillWeb.CorrespondenceLive do
 
   defp title_for(:home), do: "Correspondence"
   defp title_for(:collection), do: "Works"
+  defp title_for(:import_journals), do: "Import Places"
   defp title_for(:journals), do: "Places"
   defp title_for(:packets), do: "Packets"
   defp title_for(_), do: "Correspondence"
@@ -645,7 +742,11 @@ defmodule StillWeb.CorrespondenceLive do
             >Works</.link>
             <.link
               patch={~p"/correspondence/journals"}
-              class={if @live_action in [:journals, :journal, :new_journal], do: "active", else: nil}
+              class={
+                if @live_action in [:journals, :journal, :new_journal, :import_journals],
+                  do: "active",
+                  else: nil
+              }
             >Places</.link>
             <.link
               patch={~p"/correspondence/packets"}
@@ -742,6 +843,16 @@ defmodule StillWeb.CorrespondenceLive do
           class="corr-page"
         >
           <CorrespondencePlaces.directory journals={@overview.journals} />
+        </section>
+        <section
+          :if={@live_action == :import_journals && @location.configured && @location.available}
+          class="corr-page"
+        >
+          <CorrespondenceImport.page
+            upload={@uploads.places}
+            plan={@import_plan}
+            result={@import_result}
+          />
         </section>
         <section :if={@live_action == :journal && @journal} class="corr-page">
           <CorrespondencePlaces.details
@@ -947,11 +1058,18 @@ defmodule StillWeb.CorrespondenceLive do
                 <label>Saved journal<select name="packet[journal_id]"><option value="">
                   Choose a journal…
                 </option><option
-                  :for={journal <- @overview.journals}
+                  :for={
+                    journal <-
+                      Enum.filter(
+                        @overview.journals,
+                        &(Correspondence.active_journal?(&1) || &1.id == value(@form, :journal_id))
+                      )
+                  }
                   value={journal.id}
+                  disabled={journal.inactive}
                   selected={value(@form, :journal_id) == journal.id}
                 >
-                  {journal.name}
+                  {journal.name}{if journal.inactive, do: " (inactive)", else: ""}
                 </option></select></label>
                 <p :if={@journal} class="corr-guideline">
                   <b>{policy_label(@journal.simultaneous_policy)}</b><br />{value(

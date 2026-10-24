@@ -52,6 +52,84 @@ defmodule Still.Poems do
       scope: if(is_map(location), do: location[:scope] || location["scope"], else: nil)
     }
 
+  @doc "Keeps one editable file-backed version of a historical List, preserving its source link."
+  def from_historical(location, %{origin: "before", source_key: key} = entry)
+      when is_binary(key) and key != "" do
+    with {:ok, body} <- valid_text(entry.body),
+         {:ok, title} <- valid_title(entry.title) do
+      # The importer source key survives restored databases; titles and filenames do not define identity.
+      <<a::48, _::4, b::12, _::2, c::62, _::binary>> =
+        :crypto.hash(:sha256, "still-historical-list-v1:" <> key)
+
+      {:ok, id} = Ecto.UUID.load(<<a::48, 8::4, b::12, 2::2, c::62>>)
+
+      source = %{
+        "kind" => "historical_list",
+        "source_key" => key,
+        "title" => entry.title,
+        "notebook" => entry.notebook,
+        "source_number" => Still.Writing.source_number(entry)
+      }
+
+      with_location(location, fn root, scope ->
+        with {:ok, poems} <- poems_root(root, true) do
+          case poem_dir_from_poems(poems, id) do
+            {:ok, _} ->
+              with {:ok, piece} <- read_poem(root, id) do
+                if piece.historical_source && piece.historical_source["source_key"] == key,
+                  do: {:ok, Map.put(piece, :scope, scope)},
+                  else:
+                    {:error,
+                     "This saved identifier belongs to a different source. Its writing was left untouched."}
+              end
+
+            {:error, :enoent} ->
+              with :ok <- historical_not_in_trash(poems, id) do
+                automatic? = is_nil(title) or String.trim(title) == ""
+                effective = if automatic?, do: first_line_title(body), else: title
+                title_source = if automatic?, do: "first_line", else: "explicit"
+
+                case create_poem(root, id, body, effective, title_source, source) do
+                  {:ok, piece} -> {:ok, Map.put(piece, :scope, scope)}
+                  error -> error
+                end
+              end
+
+            {:error, reason} ->
+              {:error, explain(reason)}
+          end
+        end
+      end)
+    end
+  end
+
+  def from_historical(_, _),
+    do:
+      {:error, "Only a historical List with a preserved source identifier can be added this way."}
+
+  defp historical_not_in_trash(poems, id) do
+    case trash_root(poems, false) do
+      :missing ->
+        :ok
+
+      {:ok, trash} ->
+        case poem_dir_from_poems(trash, id) do
+          {:error, :enoent} ->
+            :ok
+
+          {:ok, _} ->
+            {:error,
+             "This List already has a saved version in Trash. Restore it from Saved writing before continuing."}
+
+          {:error, reason} ->
+            {:error, explain(reason)}
+        end
+
+      {:error, reason} ->
+        {:error, explain(reason)}
+    end
+  end
+
   def list(location) do
     with_location(location, fn root, scope ->
       case poems_root(root, false) do
@@ -287,7 +365,8 @@ defmodule Still.Poems do
               "title_source" => title_source,
               "created_at" => current.created_at,
               "updated_at" => now,
-              "filename" => filename
+              "filename" => filename,
+              "historical_source" => current.historical_source
             }
 
             next_meta_bytes = Jason.encode!(next_metadata, pretty: true) <> "\n"
@@ -339,7 +418,7 @@ defmodule Still.Poems do
     end
   end
 
-  defp create_poem(root, id, body, title, title_source) do
+  defp create_poem(root, id, body, title, title_source, historical_source \\ nil) do
     with true <- valid_id?(id),
          {:ok, poems} <- poems_root(root, true),
          :ok <- identifier_available(poems, id),
@@ -358,7 +437,8 @@ defmodule Still.Poems do
                "title_source" => title_source,
                "created_at" => now,
                "updated_at" => now,
-               "filename" => "poem.txt"
+               "filename" => "poem.txt",
+               "historical_source" => historical_source
              },
              pretty: true
            ) <> "\n",
@@ -556,6 +636,7 @@ defmodule Still.Poems do
          %{
            id: id,
            title: meta["title"],
+           historical_source: meta["historical_source"],
            title_source:
              meta["title_source"] ||
                if(meta["title"] in [nil, ""], do: "first_line", else: "explicit"),
@@ -1206,10 +1287,28 @@ defmodule Still.Poems do
       is_binary(filename) and Path.basename(filename) == filename and
         String.ends_with?(filename, ".txt")
 
-    meta["title_source"] in [nil, "explicit", "first_line"] and valid_title and valid_filename and
+    valid_historical_source?(meta["historical_source"]) and
+      meta["title_source"] in [nil, "explicit", "first_line"] and valid_title and valid_filename and
       valid_time?(meta["created_at"]) and
       valid_time?(meta["updated_at"])
   end
+
+  defp valid_historical_source?(nil), do: true
+
+  defp valid_historical_source?(%{"kind" => "historical_list", "source_key" => key} = source) do
+    is_binary(key) && key != "" && String.valid?(key) && !String.contains?(key, <<0>>) &&
+      Enum.all?(["title", "notebook"], fn field ->
+        value = source[field]
+
+        is_nil(value) ||
+          (is_binary(value) && String.valid?(value) && !String.contains?(value, <<0>>))
+      end) &&
+      (is_nil(source["source_number"]) ||
+         (is_binary(source["source_number"]) &&
+            Regex.match?(~r/^[0-9]+$/, source["source_number"])))
+  end
+
+  defp valid_historical_source?(_), do: false
 
   defp valid_time?(value) when is_binary(value) do
     case DateTime.from_iso8601(value) do

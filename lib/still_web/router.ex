@@ -31,6 +31,7 @@ defmodule StillWeb.Router do
       live "/correspondence/writing/:id", CorrespondenceLive, :piece
       live "/correspondence/journals", CorrespondenceLive, :journals
       live "/correspondence/journals/new", CorrespondenceLive, :new_journal
+      live "/correspondence/journals/import", CorrespondenceLive, :import_journals
       live "/correspondence/journals/:id", CorrespondenceLive, :journal
       live "/correspondence/packets", CorrespondenceLive, :packets
       live "/correspondence/packets/new", CorrespondenceLive, :new_packet

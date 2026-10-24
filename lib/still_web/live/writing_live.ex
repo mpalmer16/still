@@ -566,6 +566,9 @@ defmodule StillWeb.WritingLive do
         <p :if={@problem} id="file-problem" class="file-note" role="alert">{@problem}</p>
         <details class="file-location">
           <summary>Text file</summary><code>{@piece.path}</code>
+          <p :if={@piece.historical_source} id="historical-writing-source">
+            {historical_source_label(@piece.historical_source)}. The original is preserved separately.
+          </p>
         </details>
         <section :if={@revisions != []} id="file-revisions" class="file-history">
           <h2>Earlier words</h2>
@@ -579,5 +582,15 @@ defmodule StillWeb.WritingLive do
       </article>
     </Layouts.app>
     """
+  end
+
+  defp historical_source_label(source) do
+    [
+      "From the historical List “#{source["title"] || "Untitled"}”",
+      if(source["notebook"], do: String.replace(source["notebook"], "/", " · ")),
+      if(source["source_number"], do: "source " <> source["source_number"])
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" · ")
   end
 end

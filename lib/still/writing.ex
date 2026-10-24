@@ -25,6 +25,14 @@ defmodule Still.Writing do
   def get_entry(id), do: Repo.get(Entry, id)
   def get_entry!(id), do: Repo.get!(Entry, id)
 
+  @doc "Adds an explicit editable saved version; never updates the historical database entry."
+  def add_to_saved_writing(location, id) do
+    case get_entry(id) do
+      nil -> {:error, "This historical List is no longer available."}
+      entry -> Still.Poems.from_historical(location, entry)
+    end
+  end
+
   def list_entry?(%Entry{origin: "before"}), do: true
   def list_entry?(%Entry{source: %{"writing_form" => "list"}}), do: true
   def list_entry?(_entry), do: false

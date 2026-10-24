@@ -1,20 +1,32 @@
 defmodule StillWeb.CorrespondencePlaces do
   @moduledoc "Editorial components for browsing and editing correspondence destinations."
   use StillWeb, :html
-  alias Still.Poems
+  alias Still.{Correspondence, Poems}
 
   attr :journals, :list, required: true
 
   def directory(assigns) do
     assigns =
-      assign(assigns, :shortlisted, Enum.filter(assigns.journals, &truthy?(&1.shortlisted)))
+      assigns
+      |> assign(:active, Enum.filter(assigns.journals, &Correspondence.active_journal?/1))
+      |> assign(:inactive, Enum.reject(assigns.journals, &Correspondence.active_journal?/1))
+      |> assign(
+        :shortlisted,
+        Enum.filter(
+          assigns.journals,
+          &(Correspondence.active_journal?(&1) && truthy?(&1.shortlisted))
+        )
+      )
 
     ~H"""
     <section id="places-directory" class="editorial-place-directory" aria-labelledby="places-heading">
       <header class="editorial-place-intro">
         <h1 id="places-heading">Places</h1>
-        <.link patch={~p"/correspondence/journals/new"} class="corr-button editorial-place-add">Add a place
-        <span>+</span></.link>
+        <div class="corr-place-directory-actions">
+          <.link patch={~p"/correspondence/journals/new"} class="corr-button editorial-place-add">Add a place
+          <span>+</span></.link>
+          <.link patch={~p"/correspondence/journals/import"} class="corr-text-link">Import Places</.link>
+        </div>
       </header>
 
       <section
@@ -35,12 +47,12 @@ defmodule StillWeb.CorrespondencePlaces do
 
       <section class="editorial-place-all" aria-labelledby="all-places-heading">
         <div class="editorial-place-section-head">
-          <h2 id="all-places-heading">All places</h2>
+          <h2 id="all-places-heading">Active places</h2>
         </div>
-        <div :if={@journals != []} class="editorial-place-grid">
-          <.journal_card :for={journal <- @journals} journal={journal} />
+        <div :if={@active != []} class="editorial-place-grid">
+          <.journal_card :for={journal <- @active} journal={journal} />
         </div>
-        <div :if={@journals == []} class="editorial-place-empty">
+        <div :if={@active == []} class="editorial-place-empty">
           <p class="editorial-place-empty-title">The directory is open.</p>
           <p>
             Add a publication when one comes to mind. Its details and your notes can stay together here.
@@ -49,6 +61,15 @@ defmodule StillWeb.CorrespondencePlaces do
           <span>→</span></.link>
         </div>
       </section>
+      <details :if={@inactive != []} id="inactive-places" class="corr-inactive-places">
+        <summary>Inactive places ({length(@inactive)})</summary>
+        <p>Notes and past submissions are kept. Open a place to reactivate it.</p>
+        <ul>
+          <li :for={journal <- @inactive}>
+            <.link patch={~p"/correspondence/journals/#{journal.id}"}>{journal.name}</.link>
+          </li>
+        </ul>
+      </details>
     </section>
     """
   end
@@ -101,6 +122,7 @@ defmodule StillWeb.CorrespondencePlaces do
   def details(assigns) do
     assigns =
       assigns
+      |> assign(:inactive, !Correspondence.active_journal?(assigns.journal))
       |> assign(:website_href, safe_web_url(value(assigns.journal, :website)))
       |> assign(:submission_href, safe_web_url(value(assigns.journal, :submission_url)))
       |> assign(:packets, Enum.sort_by(assigns.packets, &packet_sort_key/1, :desc))
@@ -121,6 +143,19 @@ defmodule StillWeb.CorrespondencePlaces do
         >{if truthy?(@journal.shortlisted), do: "Remove from shortlist", else: "Add to shortlist"}</button>
       </header>
 
+      <div class="corr-place-status">
+        <p :if={@inactive}>
+          Inactive · Notes and past submissions are preserved. Reactivate this place to prepare or send another packet.
+        </p>
+        <button
+          id="toggle-place-active"
+          type="button"
+          class="corr-text-link"
+          phx-click="toggle_place_active"
+          phx-value-id={@journal.id}
+          phx-disable-with="Saving…"
+        >{if @inactive, do: "Reactivate place", else: "Deactivate place"}</button>
+      </div>
       <div class="editorial-place-profile-grid">
         <div class="editorial-place-main">
           <section class="editorial-place-profile-section">
@@ -220,6 +255,7 @@ defmodule StillWeb.CorrespondencePlaces do
             </div>
           </dl>
           <.link
+            :if={!@inactive}
             patch={~p"/correspondence/packets/new?journal=#{@journal.id}"}
             class="corr-button editorial-place-prepare"
           >Prepare a packet <span>→</span></.link>

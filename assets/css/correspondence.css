@@ -453,3 +453,19 @@
 .editorial-home-place-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 .editorial-recent-replies .editorial-home-section-heading h2 { font-size: 22px; }
 @media (max-width: 640px) { .editorial-home-place-grid { grid-template-columns: 1fr; } }
+
+/* Place imports and reversible deactivation use the room's existing quiet controls. */
+.corr-place-directory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 28px; }
+.corr-place-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 24px; margin: 20px 0; color: var(--corr-muted); }
+.corr-place-status p { flex: 1 1 420px; margin: 0; }
+.corr-inactive-places { margin-top: 40px; padding-top: 22px; border-top: 1px solid var(--corr-line); color: var(--corr-muted); }
+.corr-place-import { max-width: 840px; }
+.corr-place-import h1 { font: 32px/1.2 Georgia, 'Iowan Old Style', serif; font-weight: 400; }
+.corr-place-import p { color: var(--corr-muted); }
+.corr-place-import form { display: grid; justify-items: start; gap: 12px; padding: 24px 0; }
+.corr-place-import input[type=file] { max-width: 100%; color: var(--corr-ink); font: inherit; background: transparent; border: 0; }
+.corr-place-import input::file-selector-button { background: var(--corr-surface); color: var(--corr-ink); border: 0; border-radius: 0; padding: 10px 16px; margin-right: 14px; font: inherit; cursor: pointer; }
+.corr-import-review,.corr-import-example { border-top: 1px solid var(--corr-line); padding-top: 24px; margin: 24px 0; }
+.corr-import-review h2 { font: 23px/1.4 Georgia, 'Iowan Old Style', serif; }
+.corr-import-example summary { color: var(--corr-blue); cursor: pointer; }
+.corr-import-example pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--corr-paper); padding: 22px; font: 13px/1.65 ui-monospace, monospace; color: var(--corr-ink); }

@@ -258,6 +258,28 @@ defmodule StillWeb.EntryLive do
     end
   end
 
+  def handle_event("add_to_saved_writing", _, socket) do
+    if socket.assigns.entry && !socket.assigns.editing && !socket.assigns.historical_version do
+      location = Still.Storage.collection_location()
+
+      case Writing.add_to_saved_writing(location, socket.assigns.entry.id) do
+        {:ok, piece} ->
+          {:noreply,
+           socket
+           |> put_flash(
+             :info,
+             "Your saved version is ready to edit. The historical List is unchanged."
+           )
+           |> push_navigate(to: ~p"/writing/#{piece.id}/edit")}
+
+        {:error, message} ->
+          {:noreply, put_flash(socket, :error, message)}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_event("toggle_versions", _, socket) do
     open = not socket.assigns.versions_open
     versions = if open, do: Writing.list_versions(socket.assigns.entry), else: []
@@ -901,6 +923,14 @@ defmodule StillWeb.EntryLive do
             class="quiet-link"
           >Back to results</.link>
           <button :if={@entry.origin == "before"} type="button" class="quiet-link" phx-click="edit">Change these words</button>
+          <button
+            :if={@entry.origin == "before"}
+            id="add-to-saved-writing"
+            type="button"
+            class="quiet-link"
+            phx-click="add_to_saved_writing"
+            phx-disable-with="Opening saved writing…"
+          >Add to saved writing</button>
           <button type="button" class="quiet-link" phx-click="toggle_versions">Earlier words</button>
           <.link
             :if={@entry.origin == "before" && @entry.notebook}
