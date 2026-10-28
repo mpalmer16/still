@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="title description">
+  <title id="title">Still</title>
+  <desc id="description">A quiet blue-grey writing room. A small page of invented writing sits between faint echoes of earlier words.</desc>
+  <rect width="1200" height="440" rx="8" fill="#10141a"/>
+  <g font-family="Iowan Old Style, Baskerville, Georgia, serif">
+    <text x="600" y="91" text-anchor="middle" font-size="54" letter-spacing="-3" fill="#d7dee8">still<tspan fill="#b1c3dd">.</tspan></text>
+    <path d="M583 128h34" stroke="#b1c3dd" stroke-opacity=".45"/>
+    <g font-size="26" fill="#d7dee8">
+      <text x="451" y="213">I leave the window open</text>
+      <text x="451" y="254">a little longer.</text>
+    </g>
+    <g font-size="18" fill="#9aa7ba">
+      <text x="129" y="185" opacity=".62">the room held</text>
+      <text x="129" y="213" opacity=".62">the last of the light</text>
+      <text x="897" y="281" opacity=".68">an open window</text>
+      <text x="897" y="309" opacity=".48">in another year</text>
+    </g>
+    <text x="600" y="384" text-anchor="middle" font-size="17" letter-spacing=".4" fill="#9aa7ba">a page, and some company</text>
+  </g>
+</svg>

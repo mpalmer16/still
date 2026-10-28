@@ -1,0 +1,404 @@
+# Using Still
+
+[← Still](../README.md)
+
+Still is a private, local place to write in the company of old writing. **Now**
+is one blank page for a poem, list, fragment, or anything else. New writing is
+kept as ordinary text files. The historical Lists remain in SQLite, with their
+notebooks, provenance, earlier words, and paths through the room.
+
+There are no accounts, cloud APIs, analytics, feeds, or hosted services. A folder
+service may synchronize your files; Still works with the local folder itself.
+
+## Write and return
+
+Open Still into **Now**. Begin anywhere; a title is optional. Line breaks,
+blank stanzas, tabs, indentation and trailing spaces are not interpreted or
+reformatted. New input uses LF; an unchanged body or title-only edit retains
+existing CRLF bytes. Editing text in a browser uses its LF newline convention.
+
+**Save** or Cmd/Ctrl+S explicitly saves a file in the chosen collection. Typing
+keeps a local recovery copy, but does not save the authoritative file. **Read**
+or Cmd/Ctrl+Enter saves the latest words before opening their reading view.
+**Saved writing**, beneath the editor, opens the pages you have kept. Open a
+page to read it and choose **Change these words** to edit its words or title.
+Earlier versions appear beneath the reading view. The wordmark opens a new
+blank page; **Now** returns to the current piece.
+
+A historical fragment can approach after a pause when your language shares
+literal words with the past. Timing, peripheral placement and restrained
+movement use the existing Still echo system. New files do not become part of
+that historical corpus. Following an echo opens the List for reading; **Now**
+returns to the same file or local draft, preserving words, caret, selection and
+scroll in the same browser/profile where possible. A changed disk token makes
+recovery explicit rather than silently treating a local copy as current.
+
+Echoes now follow the passage around your caret after a short pause. Moving back
+into an earlier stanza lets its language draw different company. A selected word
+or phrase is a deliberate listening point; one uncommon selected word can admit a
+faint echo, while ordinary isolated typing keeps the existing restraint. Blank
+stanza gaps leave the field quiet. Listening never changes the words, caret, or
+selection, and an imported saved edition excludes its own historical original.
+
+Lean toward an echo with the pointer, or Tab to its link: a little of its original
+surrounding language unfolds. The neighboring lines come from the same authored
+stanza. Leaving folds them back; following the link still opens the source. Long
+contexts keep the original glimpse. Nothing cycles or keeps moving while idle;
+reduced-motion preferences remove the unfolding transition.
+
+When reading a current List or saved page, **Listen here** appears beside each
+passage on approach or keyboard focus. In a narrow window its small circle stays
+visible. Choose it to let echoes listen beside that passage, then **Whole page**
+to return to the complete piece. Authored line breaks, indentation, blank stanzas,
+and search passage targets remain in place. The listening position is temporary.
+
+**Light**, **Letters**, the room map, notebook order, **Find**, **Wander** and
+**Back where I was** retain the historical reading experience. Find searches
+the SQLite collection, including earlier words when requested. Saved new writing
+is a separate shelf reached from Now or Find, with no writing categories. Native
+**File → Open Writing…** (Cmd+O) opens that shelf; **File → New Writing** (Cmd+N)
+opens a blank page. There is no separate Poetry or New List destination. Old
+`/list` and `/poems` addresses remain compatibility aliases to the unified pages.
+
+## Choose a collection folder
+
+The active historical SQLite database stays in its existing writing folder.
+Do not put the live database in a synchronized folder. Choose a separate local
+root through **Storage & Backups**, reached from Find or the editor's **Save
+location** details. In the Mac app, **File → Choose Backup Folder…** opens the
+native picker. In a browser, enter an existing absolute path on the computer
+running Still. This setting supplies both the database snapshot destination
+and the directory for new writing files. It need not be a Google Drive folder.
+
+Before setup, Now still accepts a **local draft**, clearly marked as not saved
+as a file. Choose a folder, return to Now, and use **Refresh folder choice** in
+Save location before saving a new draft. The displayed location changes only
+when you explicitly adopt the choice. Saved editors opened against an earlier
+root refuse writes after a switch; reopen the desired collection through Saved
+writing. Missing folders produce guidance and never trigger a fallback save.
+Changing or clearing the setting leaves existing files untouched.
+
+Portable writing retains the original `poems/` and `poem.txt` names, with readable containing folders:
+
+```text
+chosen-root/
+  poems/
+    .still-poems.json
+    <title> -- <stable-uuid>/
+      poem.txt
+      metadata.json
+      revisions/<timestamp>-<revision-uuid>/
+        poem.txt
+        metadata.json
+    .trash/<stable-uuid>/             # same complete directory after Delete
+```
+
+These names do not assign a type to the writing. Opening an existing collection
+never renames its files. Text is UTF-8 and independently readable; metadata holds
+the explicit or automatic first-line title, its source, stable identity,
+creation/modification dates and relative filename. Renaming a title retains the
+UUID and renames its containing folder. UUID-only folders from older versions
+remain readable; an explicit Save gives that writing its readable folder name.
+An externally renamed single `.txt` file is recognized; keep its directory,
+full ID suffix, and metadata together.
+Synchronize the complete tree, including marker, history and Trash.
+
+Saves compare a token covering file names, directory structure and bytes,
+including earlier revisions. Stale edits are rejected. A changed save first
+freezes the prior words/title; hidden staging, flushed files, local atomic
+renames and a verification journal protect interrupted two-file saves.
+Ambiguous, incomplete, unknown-format or symlinked paths are left with an error.
+An index is unnecessary to reconstruct the shelf.
+
+The `.still-poems-lock` beside `poems/` coordinates local Still processes. A
+crash may leave that lock. Close every Still process before manually removing
+only the lock directory; preserve writing files and journals. External editors
+and synchronization tools ignore Still's lock and can race the last token
+check. Use one writing computer at a time, let synchronization settle, and
+reopen externally edited files before continuing. Arbitrary outside edits have
+no automatic revision capture. Unsupported directory flushing remains a
+filesystem limitation. Still confirms local saving, not cloud upload.
+
+## Delete and restore
+
+Read saved writing and choose **Delete**, then confirm **Move to Trash**. The
+complete file directory, title and all earlier words move together. Choose
+**Saved writing → Trash → Restore** to return it. Historical SQLite Lists never
+have this Delete control. In Trash, **Delete permanently…** opens a second
+confirmation; **Delete permanently** removes that directory and its history.
+A changed token refuses stale deletion. A partial filesystem failure is
+reported explicitly, with instructions to refresh and inspect the folder.
+
+Permanent deletion covers those saved files, not unsent words in another tab
+or browser/profile, provider-side copies, or independent backups. Still does
+not erase another editor's unconfirmed local recovery copy.
+
+## Recovery and local settings
+
+The current document cursor is machine-local JSON beside backup settings,
+scoped to the active database and collection. It stores IDs, not words or
+portable machine paths. Configuring a folder retains the active new draft;
+explicitly starting another page changes Now without deleting the earlier
+saved file. Damaged cursor state produces an error instead of silently
+opening a different document.
+
+Browser and Mac WebKit recovery stores are separate. Recovery survives
+navigation/reopening in the same profile; do not clear site data while relying
+on an unsent copy. A recovery offer never writes a file until Save. Distinct
+pending copies survive delayed save replies. If recovery-key migration fails
+after the first save, newer words remain reachable through a new blank page's
+recovery offer. Browser storage failure is visible and in-page navigation is
+blocked for unsecured changed words. Browser back/close/crash cannot guarantee
+recovery when storage itself is unavailable. Native navigation, writing-folder
+switch and close also refuse to abandon such words.
+
+Machine-local settings default to `~/.config/still/`. Use
+`STILL_LOCAL_STATE_DIRECTORY` to isolate a development session. These settings
+and the current-page cursor do not belong in the synchronized collection or Git.
+Existing experimental SQLite writing and browser drafts are not silently
+deleted on launch. See the deliberate transition below.
+
+## Database backups
+
+Use **Back Up Now** in Storage & Backups or the native File menu. Still uses
+SQLite `VACUUM INTO`, verifies integrity, flushes and publishes a uniquely
+named snapshot before recording success. It never copies the live database.
+The previous valid backup survives failure. There is no scheduler or retention
+service. **Open Backup Folder** / **Show Backup Folder** reveals the chosen root
+when a desktop opener is available; otherwise use the displayed host path.
+
+Freshness compares logical database contents with the verified snapshot,
+including entries, revisions and reading/room state, rather than timestamps.
+New file writing is separate from this status and is not included in SQLite
+backups or the SQLite JSON export. Preserve the complete `poems/` tree too.
+Local recovery copies are not database backups. Cloud upload is not confirmed.
+
+Mac close/quit offers **Back Up & Close**, **Close Without Backing Up**, or
+**Cancel** when the database has changed. Failed backups keep the app open.
+Without a destination, closing does not force setup. Browser operation retains
+manual backup. Native writing-folder selection opens another SQLite collection;
+it does not move data and waits for safe recovery before switching.
+
+## Run from source or in a browser
+
+Host development requires Elixir/Erlang and the existing dependencies:
+
+```sh
+mix setup
+mix phx.server
+```
+
+Development uses `still_dev.db` unless explicitly overridden. To isolate every
+part of a review session, choose disposable database, state and port settings:
+
+```sh
+STILL_DATABASE_PATH=/tmp/still-review/data/still.db \
+  STILL_LOCAL_STATE_DIRECTORY=/tmp/still-review/state mix ecto.create
+STILL_DATABASE_PATH=/tmp/still-review/data/still.db \
+  STILL_LOCAL_STATE_DIRECTORY=/tmp/still-review/state mix ecto.migrate
+STILL_DATABASE_PATH=/tmp/still-review/data/still.db \
+  STILL_LOCAL_STATE_DIRECTORY=/tmp/still-review/state PORT=4001 mix phx.server
+```
+
+Use an existing disposable root in Storage & Backups before saving files.
+The interface is served locally by Phoenix in both Mac and browser operation.
+Do not expose it beyond localhost. Run one process at a time per collection.
+
+Docker is optional:
+
+```sh
+docker compose up --build
+```
+
+Open `http://localhost:4000`; Docker binds to `127.0.0.1` only. Use
+`STILL_PORT=4010` for another host port. Database data defaults to `./data` or
+`STILL_DATA_DIRECTORY`; rebuilding does not remove it. Stop with
+`docker compose down`. To mount the explicitly chosen file/backup root:
+
+```sh
+STILL_BACKUP_DIRECTORY="/path/to/existing/local-folder" \
+  docker compose -f compose.yaml -f compose.backups.yaml up --build
+```
+
+Enter `/app/backup-destination` in Storage & Backups. The optional mount refuses
+a missing host folder. Stop using the same two Compose files. Plain Compose
+works normally without a file root. A headless container cannot open Finder.
+
+## Native preview and packaging
+
+`./native/build.sh` packages Phoenix, SQLite and the runtime into `dist/Still.app`.
+Run `mix deps.get` before the first build; packaging also needs Xcode command-line
+tools and Python 3. The resulting app needs no terminal, Docker or Homebrew at
+runtime. It is locally signed for the build machine, not a universal notarized
+installer. Building does not install or replace the existing application.
+
+For review, use a separate bundle identity, executable, port, database and state.
+The explicit runtime overrides are essential; build-time hints alone do not
+isolate a fresh preview. See [native/NOTES.md](../native/NOTES.md) for the complete
+safe preview commands, lifecycle details and native checks. Do not point a
+preview at real writing without separate approval.
+
+## Historical preservation and deliberate transition
+
+Imported records retain their exact text, notebook provenance/order,
+relationships and earlier versions in SQLite. Historical reading, editing and
+recovery remain available. Legacy non-imported SQLite pages remain readable
+until an intentional cleanup; new Now never creates SQLite entries. Historical
+edit conflicts can keep a separate copy as a new file in the selected root.
+
+Review a clean-slate plan against an explicitly chosen database:
+
+```sh
+STILL_DATABASE_PATH="/path/to/disposable/still.db" mix still.prepare_transition
+```
+
+This is a dry run. It protects every `origin = before` record and any row with
+import provenance, even ambiguous metadata. Only origin-now records with no
+provenance are candidates. The report lists exact IDs, candidate versions,
+blocked historical references and a fingerprint of one consistent snapshot.
+Apply requires both `--apply 'DELETE NON-IMPORTED WRITING'` and
+`--plan-hash FINGERPRINT` from the reviewed plan. It first makes and verifies a
+consistent SQLite backup, rechecks that the plan is unchanged, then deletes
+only candidates and their revisions in a transaction. Historical references
+that would change block the operation. Protected rows and revisions are
+fingerprinted before/after and any mismatch rolls back.
+
+The tool never runs automatically. No real collection is approved for this
+transition yet. Browser/WebKit recovery data is separate and remains untouched;
+review obsolete experimental drafts deliberately after preserving needed
+historical recovery copies. The new file editor does not load old SQLite Now
+draft keys. Future historical imports remain a separate intentional workflow.
+
+For an independent SQLite preservation copy or JSON export:
+
+```sh
+STILL_DATABASE_PATH="/path/to/collection/still.db" mix run -e 'IO.puts(Still.Preservation.backup!())'
+STILL_DATABASE_PATH="/path/to/collection/still.db" mix run -e 'IO.puts(Still.Preservation.export!())'
+```
+
+These commands produce `backups/` and `exports/` beside that database and include
+its historical revisions and provenance. They do not include new file writing.
+Stop every process before restoring a snapshot; preserve the prior database and
+its WAL/SHM files before replacing it. Never restore a live database.
+
+## Verification
+
+```sh
+mix precommit
+mix assets.build
+node --test scripts/test_file_recovery.mjs scripts/test_writing_focus.mjs scripts/test_echo_attention.mjs
+python3 -m unittest discover -s scripts -p 'test_*.py'
+python3 native/smoke.py --bundle "dist/Still Preview.app"
+```
+
+Tests use synthetic writing and disposable folders. Native smoke covers empty
+and established databases, occupied ports, rapid reopening and backend owner
+cleanup. Pure Swift lifecycle/location checks and actual UI checks are described
+in the native notes. Source and data must remain separate; see
+[PUBLISHING.md](../PUBLISHING.md) for the reviewed publishing procedure.
+
+### The writing page
+
+Now offers a wider page with inner margins. Long lines wrap on screen; Save retains the
+line breaks and indentation you actually entered. A title is always optional. Saved writing
+without one is listed by its first nonblank line (up to 60 characters, including an ellipsis).
+The first line remains in the body exactly as written. Save records the automatic
+title separately in metadata with `title_source: "first_line"`; the optional title
+input shows it as a hint. Editing the first line updates an automatic title on
+Save. An explicit title stays unchanged when the body changes. Folder names begin
+with this title and retain a full UUID suffix so duplicate titles are safe.
+
+While you type in the body, the title and room controls fade. Move the pointer, press
+Escape, or focus a control to bring them back. Escape moves to Save; Tab within the body
+continues to indent. Warnings and recovery notices stay visible, and older Lists can still
+appear beside the page. Reduced-motion preferences remove the fade animation.
+
+**New**, beside Save, opens a blank page after the current words are saved. If there are
+unsaved changes, it keeps them on the page and asks you to Save first; it never silently
+discards them or writes to an unconfigured collection.
+
+Readable folder names use the `still-poems-v2` collection marker. This version still reads
+original v1/UUID-only collections without modifying them. An explicit Save (or Restore
+from Trash) enables v2 before publishing readable names; older applications then refuse
+the newer format instead of silently overlooking its writing. Keep the full ID suffix
+and metadata when renaming a folder outside Still.
+
+## Correspondence
+
+Correspondence keeps file-backed writing, manually maintained journals, ordered
+submission packets, and replies together in the selected collection. Sent manuscripts
+keep immutable copies; nothing is submitted automatically. The historical Lists and
+the Now writing experience keep their existing behavior. The editorial workspace
+uses a wide blue-grey layout, with an explicitly chosen work on the desk, shortlisted Places, side-by-side work history,
+a curated Places directory, and a live ordered manuscript in packet preparation.
+It opens dark and offers an optional light appearance within Correspondence.
+
+See [the Correspondence guide](correspondence.md) for the workflow, portable
+record layout, recovery boundaries, and a disposable synthetic preview. The preview
+runs separately from the installed application:
+
+```sh
+./scripts/preview_correspondence.sh
+```
+
+Places can be added from a reviewed JSON upload using **Correspondence → Places →
+Import Places**. The page includes an example to share with a researcher; a portable
+copy is in `docs/places-import-example.json`. Places can also be deactivated and
+reactivated without losing submission history. See [Correspondence](correspondence.md).
+
+## Threads — a word travels
+
+**Threads**, in the main navigation, follows literal recurring words between historical
+notebooks and saved file writing. Choose a word already found in the collection, or
+open **A word of your own** and enter one. Matching is case-insensitive and uses whole
+Unicode words: `river` does not silently become `rivers`. Current words are used;
+Trash, unsaved drafts, and earlier versions stay outside this reading room.
+
+Two passages appear beside one another, favoring a crossing between an older List
+and a saved page, or between notebooks. **Whole pages** unfolds both complete texts;
+**Passages** returns to their original matching stanzas. **Another crossing** changes
+the pairing. Other matching passages continue beneath, and **Open this page** leads
+to the normal reading view. **Let another word find me** follows another discovered
+word. **Follow a word**, beneath a historical List or saved page, begins with words
+from that particular piece.
+
+This is a reading surface: it creates no categories, scores, saved arrangements, or
+interpretations. Discovery and pairing do not write files or database records. Exact
+source text and stanza whitespace remain intact. An original List and its explicitly
+saved edition share a source identity, so they cannot create a false recurrence or
+be paired as independent pages. If a chosen collection folder becomes unavailable,
+Still explains the problem and leaves historical notebooks readable. Interrupted saves
+are reported without replaying their journals or creating collection locks.
+
+Saved file reading also offers one quiet historical companion when the existing
+literal echo system finds a strong connection. Its own imported original is excluded;
+weak connections leave the page quiet. Following the companion leaves the current
+writing position intact.
+
+### A separate, disposable preview
+
+```sh
+./scripts/preview_threads.sh
+```
+
+Open **http://localhost:4097/threads**. Docker binds only to localhost. This builds the
+current checkout into `still-threads-preview:local`, starts one container, and prepares
+invented notebooks and saved pages in one named volume. It mounts no host writing
+folders and uses separate settings, database, collection, and browser origin. A small
+banner identifies the preview. Subsequent starts keep your experiments in that volume.
+Set `STILL_PREVIEW_PORT=4098` to use another port. Docker must already be running.
+
+```sh
+./scripts/preview_threads.sh stop     # keep the preview for later
+./scripts/preview_threads.sh remove   # remove its container, data volume, and image
+```
+
+Removal deletes only this preview's disposable writing. It leaves the installed Still
+app, your real collection, other containers, and the source checkout alone. There is no
+extra worktree or installed application to clean up.
+
+The same disposable preview includes **A page to listen beside**. Open it from Saved
+writing, place the caret in the orchard stanza and then the harbor stanza, and pause
+to let the company change. Hover or Tab to the echo to hear a little more of its
+source. The historical **Orchard:Harbor:** List offers the same passage listening
+while reading. Both examples are invented; existing preview pages stay intact.
