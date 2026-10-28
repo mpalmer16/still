@@ -12,5 +12,10 @@
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
   </head>
-  <body>{@inner_content}</body>
+  <body>
+    <div :if={Application.get_env(:still, :threads_preview, false)} class="threads-preview-banner">
+      <a href="/threads">Still preview</a><span aria-hidden="true"> · </span>Invented writing. A separate collection.
+    </div>
+    {@inner_content}
+  </body>
 </html>

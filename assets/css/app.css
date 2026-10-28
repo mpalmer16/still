@@ -1,5 +1,6 @@
 @import "./type.css";
 @import "./correspondence.css";
+@import "./threads.css";
 
 :root {
   color-scheme: dark;

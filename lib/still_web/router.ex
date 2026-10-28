@@ -23,6 +23,7 @@ defmodule StillWeb.Router do
       live "/w/:id", EntryLive, :show
       live "/before", EntryLive, :before
       live "/wander", EntryLive, :wander
+      live "/threads", ThreadsLive, :index
       live "/pages", ArchiveLive, :index
       live "/notebooks", NotebookLive, :index
       live "/storage", StorageLive, :index

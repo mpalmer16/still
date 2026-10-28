@@ -324,3 +324,54 @@ Places can be added from a reviewed JSON upload using **Correspondence → Place
 Import Places**. The page includes an example to share with a researcher; a portable
 copy is in `docs/places-import-example.json`. Places can also be deactivated and
 reactivated without losing submission history. See [Correspondence](docs/correspondence.md).
+
+## Threads — a word travels
+
+**Threads**, in the main navigation, follows literal recurring words between historical
+notebooks and saved file writing. Choose a word already found in the collection, or
+open **A word of your own** and enter one. Matching is case-insensitive and uses whole
+Unicode words: `river` does not silently become `rivers`. Current words are used;
+Trash, unsaved drafts, and earlier versions stay outside this reading room.
+
+Two passages appear beside one another, favoring a crossing between an older List
+and a saved page, or between notebooks. **Whole pages** unfolds both complete texts;
+**Passages** returns to their original matching stanzas. **Another crossing** changes
+the pairing. Other matching passages continue beneath, and **Open this page** leads
+to the normal reading view. **Let another word find me** follows another discovered
+word. **Follow a word**, beneath a historical List or saved page, begins with words
+from that particular piece.
+
+This is a reading surface: it creates no categories, scores, saved arrangements, or
+interpretations. Discovery and pairing do not write files or database records. Exact
+source text and stanza whitespace remain intact. An original List and its explicitly
+saved edition share a source identity, so they cannot create a false recurrence or
+be paired as independent pages. If a chosen collection folder becomes unavailable,
+Still explains the problem and leaves historical notebooks readable. Interrupted saves
+are reported without replaying their journals or creating collection locks.
+
+Saved file reading also offers one quiet historical companion when the existing
+literal echo system finds a strong connection. Its own imported original is excluded;
+weak connections leave the page quiet. Following the companion leaves the current
+writing position intact.
+
+### A separate, disposable preview
+
+```sh
+./scripts/preview_threads.sh
+```
+
+Open **http://localhost:4097/threads**. Docker binds only to localhost. This builds the
+current checkout into `still-threads-preview:local`, starts one container, and prepares
+invented notebooks and saved pages in one named volume. It mounts no host writing
+folders and uses separate settings, database, collection, and browser origin. A small
+banner identifies the preview. Subsequent starts keep your experiments in that volume.
+Set `STILL_PREVIEW_PORT=4098` to use another port. Docker must already be running.
+
+```sh
+./scripts/preview_threads.sh stop     # keep the preview for later
+./scripts/preview_threads.sh remove   # remove its container, data volume, and image
+```
+
+Removal deletes only this preview's disposable writing. It leaves the installed Still
+app, your real collection, other containers, and the feature branch alone. There is no
+extra worktree or installed application to clean up.

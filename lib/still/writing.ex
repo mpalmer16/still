@@ -263,6 +263,7 @@ defmodule Still.Writing do
   def wander_entry(opts \\ []), do: Connections.wander_entry(opts)
   def nearby(entry), do: Connections.nearby(entry)
   def echo(entry), do: Connections.echo(entry)
+  def saved_echo(piece), do: Gravity.saved_echo(piece)
   def connections(entry), do: Connections.for_entry(entry)
   def gravity(body, opts \\ []), do: Gravity.draw(body, opts)
   def gravity_field(body, opts \\ []), do: Gravity.field(body, opts)

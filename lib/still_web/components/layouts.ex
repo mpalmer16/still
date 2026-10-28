@@ -54,6 +54,12 @@ defmodule StillWeb.Layouts do
               class={if(@active == "before", do: "nav-active", else: nil)}
             >Wander</.link>
             <.link
+              id="open-threads"
+              navigate={~p"/threads"}
+              aria-current={if @active == "threads", do: "page"}
+              class={if(@active == "threads", do: "nav-active", else: nil)}
+            >Threads</.link>
+            <.link
               navigate={~p"/pages"}
               aria-current={if @active == "pages", do: "page"}
               class={if(@active == "pages", do: "nav-active", else: nil)}

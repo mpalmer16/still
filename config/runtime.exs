@@ -1,5 +1,7 @@
 import Config
 
+config :still, :threads_preview, System.get_env("STILL_THREADS_PREVIEW") == "true"
+
 # A per-launch native control key is never persisted in writing or exports.
 config :still, :native_control_token, System.get_env("STILL_NATIVE_CONTROL_TOKEN")
 

@@ -20,6 +20,20 @@ Each presence has a stable place and distance. Stronger language can bring it cl
 
 The field is scarce; weakly related pieces remain imperceptible. Its positions describe a relationship to the current words rather than a ranking. Source neighborhoods remain an open geography. Dark light has no theme names or swatches, and motion settles after an arrival or crossing. Cards, dashboards, and explanations of why a piece was recommended would make the interface compete with the writing.
 
+## A word travels
+
+Threads is a deliberate place to follow literal language between historical Lists
+and saved pages. A few recurring words offer entrances. Two original passages can
+meet across the room, then unfold into complete pages; other passages remain
+reachable below. These are authored stanzas, never generated collages. A source and
+its saved edition remain one family for discovery and pairing. Nothing is filed,
+scored, rearranged, or saved by wandering here.
+
+The page follows the room's light and letters. Its columns become a reading sequence
+in a narrow window. Saved reading can also offer one historical companion beneath
+the words, using the same scarce literal evidence as the existing field. Its own
+historical original is excluded. Now continues to hold the writer's current page.
+
 ## A local body
 
 An AppKit window and WKWebView give the existing Phoenix application a native macOS body: Dock presence, a generous first window, remembered size and position, ordinary title-bar zoom, and native fullscreen. The title bar belongs to AppKit, with a Window menu for the same native actions. Browser swipe navigation, pinch zoom, and link previews are disabled in the shell. Native arrow and text cursors remain ordinary. The shell starts and stops a bundled local BEAM backend. Docker and ordinary host development remain available against the same SQLite collection.

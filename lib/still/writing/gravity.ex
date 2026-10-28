@@ -76,6 +76,29 @@ defmodule Still.Writing.Gravity do
     end
   end
 
+  @doc "One historical companion for a saved page, excluding its own historical source."
+  def saved_echo(piece) do
+    exclude_ids =
+      case Map.get(piece, :historical_source) do
+        %{"source_key" => source_key} when is_binary(source_key) ->
+          case Repo.get_by(Entry, source_key: source_key) do
+            nil -> []
+            entry -> [entry.id]
+          end
+
+        _ ->
+          []
+      end
+
+    field(piece.body,
+      reading: true,
+      historical_only: true,
+      title: Still.Poems.display_title(piece),
+      exclude_ids: exclude_ids
+    )
+    |> List.first()
+  end
+
   defp candidates(body, opts) do
     index = index(opts)
     query = if is_binary(opts[:title]), do: opts[:title] <> "\n" <> body, else: body

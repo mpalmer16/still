@@ -931,6 +931,11 @@ defmodule StillWeb.EntryLive do
             phx-click="add_to_saved_writing"
             phx-disable-with="Opening saved writing…"
           >Add to saved writing</button>
+          <.link
+            id="follow-historical-words"
+            navigate={~p"/threads?from=#{"before:#{@entry.id}"}"}
+            class="quiet-link"
+          >Follow a word</.link>
           <button type="button" class="quiet-link" phx-click="toggle_versions">Earlier words</button>
           <.link
             :if={@entry.origin == "before" && @entry.notebook}

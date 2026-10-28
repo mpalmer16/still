@@ -12,7 +12,8 @@ defmodule StillWeb.WritingLive do
        field_waiting: [],
        field_transition: nil,
        gravity_timer: nil,
-       resume_active: false
+       resume_active: false,
+       reading_echo: nil
      )}
   end
 
@@ -30,6 +31,7 @@ defmodule StillWeb.WritingLive do
             socket.assigns.live_action == :edit && socket.assigns[:editing]
 
         editing = socket.assigns.live_action != :show
+        reading_echo = if editing, do: nil, else: Writing.saved_echo(piece)
         history = if piece.token, do: Poems.revisions(location, piece.id), else: {:ok, []}
 
         {revisions, problem} =
@@ -54,6 +56,7 @@ defmodule StillWeb.WritingLive do
            notice: nil,
            recovery_waiting: false,
            resume_active: resume?,
+           reading_echo: reading_echo,
            beside: beside,
            page_title: if(editing, do: "Now", else: Poems.display_title(piece)),
            delete_confirm: false
@@ -69,6 +72,7 @@ defmodule StillWeb.WritingLive do
            problem: message,
            page_title: "Now",
            gravity_field: [],
+           reading_echo: nil,
            editing: false
          )}
     end
@@ -549,7 +553,21 @@ defmodule StillWeb.WritingLive do
           <.link id="edit-file" navigate={~p"/writing/#{@piece.id}/edit"} class="quiet-link">Change these words</.link>
           <.link navigate={~p"/writing"} class="quiet-link">Saved writing</.link>
           <button id="delete-file" phx-click="request_delete" class="quiet-link">Delete</button>
+          <.link
+            id="follow-file-words"
+            navigate={~p"/threads?from=#{"file:#{@piece.id}"}"}
+            class="quiet-link"
+          >Follow a word</.link>
         </div>
+        <aside :if={@reading_echo} id="reading-company" class="drift-room" aria-label="Earlier words">
+          <p class="section-whisper">In the company of earlier words</p>
+          <div class="echo-door">
+            <span class="echo-phrase">{@reading_echo.line}</span>
+            <.link navigate={~p"/w/#{@reading_echo.entry.id}?read=1"} class="door-title">
+              {Writing.opening(@reading_echo.entry)}
+            </.link>
+          </div>
+        </aside>
         <section
           :if={@delete_confirm}
           id="delete-confirmation"

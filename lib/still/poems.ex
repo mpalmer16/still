@@ -152,6 +152,56 @@ defmodule Still.Poems do
     end)
   end
 
+  @doc "Lists saved writing without replaying or removing any interrupted-save journal."
+  def list_read_only(location) do
+    case Still.Storage.collection_location() do
+      %{configured: true, available: true, folder: root, scope: scope} when is_binary(root) ->
+        passed_scope = if is_map(location), do: location[:scope] || location["scope"], else: nil
+
+        cond do
+          is_binary(passed_scope) and passed_scope != scope ->
+            {:error, "The active collection changed. Reopen the writing before continuing."}
+
+          File.dir?(root) ->
+            list_read_only_root(root, scope)
+
+          true ->
+            {:error,
+             "The selected collection folder became unavailable. Reconnect it before continuing."}
+        end
+
+      %{configured: false} ->
+        {:error, "Choose a collection folder before reading saved writing."}
+
+      %{available: false, error: error} ->
+        {:error, error || "The selected collection folder is unavailable."}
+
+      _ ->
+        {:error, "The selected collection folder is unavailable."}
+    end
+  end
+
+  defp list_read_only_root(root, scope) do
+    case poems_root(root, false) do
+      :missing ->
+        {:ok, []}
+
+      {:ok, poems} ->
+        with {:ok, ids} <- File.ls(poems),
+             {:ok, entries} <- read_entries_read_only(poems, ids) do
+          {:ok,
+           entries
+           |> Enum.map(&Map.put(&1, :scope, scope))
+           |> Enum.sort_by(&{&1.updated_at || "", &1.id}, :desc)}
+        else
+          {:error, reason} -> {:error, explain(reason)}
+        end
+
+      error ->
+        normalize_error(error)
+    end
+  end
+
   def get(location, id) do
     with_location(location, fn root, scope ->
       case read_poem(root, id) do
@@ -474,6 +524,41 @@ defmodule Still.Poems do
           {:halt, normalize_error(error)}
       end
     end)
+  end
+
+  defp read_entries_read_only(poems, ids) do
+    ids = ids |> Enum.map(&directory_id/1) |> Enum.reject(&is_nil/1)
+
+    Enum.reduce_while(ids, {:ok, []}, fn id, {:ok, acc} ->
+      case read_poem_dir(poems, id) do
+        {:ok, poem} ->
+          with {:ok, dir} <- poem_dir_from_poems(poems, id),
+               :ok <- no_interrupted_journal(dir, id) do
+            {:cont, {:ok, [poem | acc]}}
+          else
+            {:error, reason} -> {:halt, {:error, explain(reason)}}
+          end
+
+        {:skip, _} ->
+          {:cont, {:ok, acc}}
+
+        error ->
+          {:halt, normalize_error(error)}
+      end
+    end)
+  end
+
+  defp no_interrupted_journal(dir, id) do
+    case safe_file(Path.join(dir, @journal)) do
+      {:error, :enoent} ->
+        :ok
+
+      :ok ->
+        {:error, "Writing folder #{id} has an interrupted save; its files were left untouched."}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   # Accept original UUID folders and readable labels carrying the full stable ID.
