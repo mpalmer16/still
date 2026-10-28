@@ -195,3 +195,27 @@ The source reference is also visible under **Text file** when reading saved writ
 The UTF-8 text file remains ordinary text; only this saved edition's title and text
 change as you revise it. No two-way synchronization with the historical original
 is implied. Older writing files without this field remain unchanged and readable.
+
+## Then & now
+
+Open a work and choose **Then & now**, or use **Compare with current words** beside
+one of its sent copies or earlier saves. The earlier manuscript and current saved
+page appear together. **Look back to** moves between the exact versions sent to
+places and the work’s earlier saved versions. Destination names and sent dates come
+from the frozen packet, even if a place is renamed later.
+
+**What changed** shades changed passages and marks changed titles. **Just read**
+removes the shading so both complete pages can be read quietly. Line breaks,
+indentation, blank stanzas, tabs, and trailing spaces remain in their own versions.
+Spacing-only and line-ending-only changes are identified explicitly. Very long
+versions appear as complete pages without detailed passage markings.
+
+The comparison does not merge, restore, save, export, or send a manuscript. Continue
+editing through **Continue in Now**, or open the recorded correspondence from a sent
+copy. A missing or unrelated version is reported instead of being substituted.
+There are no new collection formats or migrations.
+
+The separate Docker preview also includes **What the rain leaves**, an invented
+work with two sent copies and two earlier saves. Run `./scripts/preview_threads.sh`
+and open it from **Correspondence → Works → Then & now**. Existing preview pages
+and desk choices are preserved. The same `remove` command removes the entire preview.

@@ -3,10 +3,15 @@ defmodule StillWeb.CorrespondenceWork do
   use StillWeb, :html
 
   alias Still.Poems
+  alias StillWeb.CorrespondenceProof
 
   attr :piece, :map, default: nil
   attr :revisions, :list, default: []
   attr :history, :list, default: []
+  attr :proof_sources, :list, default: []
+  attr :comparison, :any, default: nil
+  attr :proof_problem, :string, default: nil
+  attr :proof_plain, :boolean, default: false
 
   def detail(assigns) do
     ~H"""
@@ -15,11 +20,17 @@ defmodule StillWeb.CorrespondenceWork do
         <.link patch={~p"/correspondence/writing"}>Works</.link>
       </div>
 
-      <header class="editorial-work-heading">
+      <header :if={!@comparison} class="editorial-work-heading">
         <div>
           <h1>{title(@piece)}</h1>
         </div>
         <div class="editorial-work-actions">
+          <.link
+            :if={@proof_sources != []}
+            id="open-work-proof"
+            patch={~p"/correspondence/writing/#{@piece.id}?compare=latest"}
+            class="corr-text-link"
+          >Then &amp; now <span aria-hidden="true">↗</span></.link>
           <.link navigate={~p"/writing/#{value(@piece, :id)}/edit"} class="corr-text-link">
             Edit in Now <span aria-hidden="true">↗</span>
           </.link>
@@ -30,7 +41,17 @@ defmodule StillWeb.CorrespondenceWork do
         </div>
       </header>
 
-      <div class="editorial-work-layout">
+      <p :if={@proof_problem} id="proof-problem" class="corr-message" role="status">
+        {@proof_problem}
+      </p>
+      <CorrespondenceProof.reading
+        :if={@comparison}
+        piece={@piece}
+        comparison={@comparison}
+        sources={@proof_sources}
+        plain={@proof_plain}
+      />
+      <div :if={!@comparison} class="editorial-work-layout">
         <article class="corr-manuscript editorial-work-manuscript" aria-label="Current manuscript">
           <div class="editorial-work-revision">
             Current revision · revised {date(value(@piece, :updated_at))}
@@ -91,6 +112,14 @@ defmodule StillWeb.CorrespondenceWork do
                 </p>
               </div>
 
+              <.link
+                :if={Enum.any?(@proof_sources, &(&1.key == "sent:#{value(row.packet, :id)}"))}
+                id={"compare-sent-#{value(row.packet, :id)}"}
+                patch={
+                  ~p"/correspondence/writing/#{@piece.id}?compare=#{"sent:#{value(row.packet, :id)}"}"
+                }
+                class="editorial-work-link"
+              >Compare with current words <span aria-hidden="true">↗</span></.link>
               <details :if={row.snapshot} class="editorial-work-snapshot">
                 <summary>Read the exact version sent</summary>
                 <pre>{row.snapshot.body}</pre>
@@ -120,6 +149,13 @@ defmodule StillWeb.CorrespondenceWork do
                 )}
               </summary>
               <pre>{revision.body}</pre>
+              <.link
+                :if={Enum.any?(@proof_sources, &(&1.key == "saved:#{value(revision, :id)}"))}
+                patch={
+                  ~p"/correspondence/writing/#{@piece.id}?compare=#{"saved:#{value(revision, :id)}"}"
+                }
+                class="editorial-work-link"
+              >Compare with current words <span aria-hidden="true">↗</span></.link>
             </details>
             <p :if={@revisions == []} class="editorial-work-empty">No earlier versions are saved.</p>
           </section>

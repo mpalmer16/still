@@ -89,3 +89,58 @@ else
   File.write!(marker, "Invented preview writing; safe to remove with preview_threads.sh remove.\n")
   IO.puts("Prepared a separate collection of invented notebooks and pages.")
 end
+
+# Add a new invented work for Then & now. Existing preview works and choices stay intact.
+proof_marker = "/app/data/.proof-preview-seeded.json"
+
+if File.exists?(proof_marker) do
+  proof_demo = proof_marker |> File.read!() |> Jason.decode!()
+  if !is_binary(proof_demo["piece_id"]), do: raise("The disposable preview setup was interrupted. Remove only this preview and start it again.")
+  IO.puts("Then & now: /correspondence/writing/#{proof_demo["piece_id"]}?compare=latest")
+else
+  File.write!(proof_marker, "{\"preparing\":true}\n")
+  location = Storage.collection_location()
+  true = location.folder == root
+
+  {:ok, first_place} = Still.Correspondence.save_journal(location, %{
+    name: "North Window (preview)", website: "https://example.com",
+    notes: "An invented destination for trying the manuscript comparison.",
+    verified: false, shortlisted: true
+  })
+  {:ok, second_place} = Still.Correspondence.save_journal(location, %{
+    name: "Field & Form (preview)", website: "https://example.com",
+    notes: "Another invented destination. No policies or availability are implied.",
+    verified: false, shortlisted: true
+  })
+
+  {:ok, first} = Poems.save(location, Poems.new(location), %{
+    title: "A room for the rain",
+    body: "The rain has stopped.\nI leave the window open\nfor whatever comes after.\n\n  On the table,\na letter without an address.\n"
+  })
+  {:ok, packet} = Still.Correspondence.save_packet(location, %{
+    title: "A room for the rain / North Window", journal_id: first_place.id, piece_ids: [first.id],
+    cover_letter: "Dear editors,\n\nPlease consider the enclosed poem. Thank you for reading.\n"
+  })
+  {:ok, packet} = Still.Correspondence.submit(location, packet.id, packet.token, "2026-09-12")
+  {:ok, _} = Still.Correspondence.respond(location, packet.id, packet.token, "declined",
+    "Thank you for letting us read this piece. (Invented preview reply.)", "2026-10-01")
+
+  {:ok, middle} = Poems.save(location, first, %{
+    title: "After the rain",
+    body: "The rain has stopped.\nI leave the window open\nfor the shape of its leaving.\n\n  On the table,\na letter waiting for a name.\n"
+  })
+  {:ok, packet} = Still.Correspondence.save_packet(location, %{
+    title: "After the rain / Field & Form", journal_id: second_place.id, piece_ids: [middle.id],
+    cover_letter: "Dear editors,\n\nPlease consider the enclosed poem. Thank you for your time.\n"
+  })
+  {:ok, packet} = Still.Correspondence.submit(location, packet.id, packet.token, "2026-10-14")
+  {:ok, packet} = Still.Correspondence.set_status(location, packet.id, packet.token, "awaiting")
+
+  {:ok, current} = Poems.save(location, middle, %{
+    title: "What the rain leaves",
+    body: "The rain has stopped.\nI leave the window open\nfor the shape of its leaving.\n\n  On the table,\nan envelope holding\nthe quiet of the room.\n"
+  })
+  File.write!(proof_marker, Jason.encode!(%{piece_id: current.id, latest_packet_id: packet.id}) <> "\n")
+  IO.puts("Created a separate invented work with two sent copies and two earlier saves.")
+  IO.puts("Then & now: /correspondence/writing/#{current.id}?compare=latest")
+end

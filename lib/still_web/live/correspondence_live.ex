@@ -2,7 +2,7 @@ defmodule StillWeb.CorrespondenceLive do
   use StillWeb, :live_view
 
   alias Still.{Correspondence, Poems, Storage}
-  alias Still.Correspondence.PlaceImport
+  alias Still.Correspondence.{PlaceImport, Proofs}
 
   alias StillWeb.{
     CorrespondenceHome,
@@ -28,7 +28,11 @@ defmodule StillWeb.CorrespondenceLive do
        packet_search: "",
        import_plan: nil,
        import_result: nil,
-       correspondence_light?: false
+       correspondence_light?: false,
+       proof_sources: [],
+       comparison: nil,
+       proof_problem: nil,
+       proof_plain: false
      )}
   end
 
@@ -58,7 +62,7 @@ defmodule StillWeb.CorrespondenceLive do
         load_overview(socket, location, action)
 
       action == :piece ->
-        load_piece(socket, location, params["id"])
+        load_piece(socket, location, params["id"], params)
 
       action in [:new_journal, :journal] ->
         load_journal(socket, location, params["id"])
@@ -101,10 +105,30 @@ defmodule StillWeb.CorrespondenceLive do
     end
   end
 
-  defp load_piece(socket, location, id) do
+  defp load_piece(socket, location, id, params) do
     with {:ok, piece} <- Poems.get(location, id),
          {:ok, history} <- Correspondence.history(location, id),
          {:ok, revisions} <- Poems.revisions(location, id) do
+      sources = Proofs.sources(piece, revisions, history)
+      requested = params["compare"]
+
+      source =
+        if requested == "latest",
+          do: List.first(sources),
+          else: Enum.find(sources, &(&1.key == requested))
+
+      proof_problem =
+        cond do
+          requested == "latest" && sources == [] ->
+            "This work has no earlier saves or sent copies yet."
+
+          requested && is_nil(source) ->
+            "That version isn't available for this work. Your current words are shown."
+
+          true ->
+            nil
+        end
+
       {:noreply,
        assign(socket,
          location: location,
@@ -112,6 +136,10 @@ defmodule StillWeb.CorrespondenceLive do
          piece: piece,
          history: history,
          revisions: revisions,
+         proof_sources: sources,
+         comparison: if(source, do: Proofs.compare(source, piece)),
+         proof_problem: proof_problem,
+         proof_plain: params["view"] == "plain",
          journal: nil,
          packet: nil,
          page_title: Poems.display_title(piece),
@@ -237,6 +265,22 @@ defmodule StillWeb.CorrespondenceLive do
     do: assign(socket, desk: %{piece_id: nil, token: nil, updated_at: nil}, desk_problem: nil)
 
   @impl true
+  def handle_event(
+        "compare_work",
+        %{"proof" => %{"source" => key}},
+        %{assigns: %{live_action: :piece, piece: piece}} = socket
+      )
+      when not is_nil(piece) do
+    if Enum.any?(socket.assigns.proof_sources, &(&1.key == key)) do
+      params = [compare: key] ++ if(socket.assigns.proof_plain, do: [view: "plain"], else: [])
+      {:noreply, push_patch(socket, to: ~p"/correspondence/writing/#{piece.id}?#{params}")}
+    else
+      {:noreply, assign(socket, :proof_problem, "That version isn't available for this work.")}
+    end
+  end
+
+  def handle_event("compare_work", _, socket), do: {:noreply, socket}
+
   def handle_event("place_on_desk", %{"id" => id}, socket) do
     result =
       if socket.assigns.desk_problem,
@@ -837,6 +881,10 @@ defmodule StillWeb.CorrespondenceLive do
           piece={@piece}
           revisions={@revisions}
           history={@history}
+          proof_sources={@proof_sources}
+          comparison={@comparison}
+          proof_problem={@proof_problem}
+          proof_plain={@proof_plain}
         />
         <section
           :if={@live_action == :journals && @location.configured && @location.available}
