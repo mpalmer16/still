@@ -144,3 +144,40 @@ else
   IO.puts("Created a separate invented work with two sent copies and two earlier saves.")
   IO.puts("Then & now: /correspondence/writing/#{current.id}?compare=latest")
 end
+
+# A new invented listening example, separate from all existing preview writing.
+echo_marker = "/app/data/.echo-preview-seeded.json"
+
+if File.exists?(echo_marker) do
+  echo_demo = echo_marker |> File.read!() |> Jason.decode!()
+  if !is_binary(echo_demo["piece_id"]), do: raise("The disposable echo preview setup was interrupted. Remove only this preview and start it again.")
+  IO.puts("Listening page: /writing/#{echo_demo["piece_id"]}/edit")
+  IO.puts("Listening while reading: /w/#{echo_demo["entry_id"]}?read=1")
+else
+  location = Storage.collection_location()
+  true = location.folder == root
+  File.write!(echo_marker, "{\"preparing\":true}\n")
+  for {key, title, body, notebook} <- [
+    {"echo-preview:orchard", "Ladder:Lichen:",
+      "The ladder wears its lichen\nlike a sleeve of slow weather.\nI wait in the orchard\nuntil the light changes its mind.\n\nA different afternoon begins.\n",
+      "Early Notebooks / The orchard"},
+    {"echo-preview:harbor", "Harbor:Brass:",
+      "In the harbor, the brass bell\nlets the tide pass through its voice.\nA lantern waits beneath the pier.\n\nNo one calls this silence.\n",
+      "Later Notebooks / The harbor"}
+  ] do
+    Repo.insert!(Entry.changeset(%Entry{}, %{origin: "before", source_key: key,
+      source_group: key, title: title, body: body, notebook: notebook, source_order: 100,
+      source: %{"provenance" => "Invented echo preview"}}))
+  end
+  body = "In the orchard, the ladder\nwears a sleeve of lichen.\n\nAcross the harbor, a brass bell\nwaits for the tide to answer.\n"
+  anchor = Repo.insert!(Entry.changeset(%Entry{}, %{origin: "before",
+    source_key: "echo-preview:two-passages", source_group: "echo-preview:two-passages",
+    title: "Orchard:Harbor:", body: body, notebook: "Notebooks / Two places", source_order: 100,
+    source: %{"provenance" => "Invented echo preview"}}))
+  {:ok, piece} = Poems.from_historical(location, anchor)
+  {:ok, piece} = Poems.save(location, piece, %{title: "A page to listen beside", body: piece.body})
+  File.write!(echo_marker, Jason.encode!(%{piece_id: piece.id, entry_id: anchor.id}) <> "\n")
+  IO.puts("Created an invented listening page and its earlier company.")
+  IO.puts("Listening page: /writing/#{piece.id}/edit")
+  IO.puts("Listening while reading: /w/#{anchor.id}?read=1")
+end

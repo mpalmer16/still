@@ -1,6 +1,7 @@
 defmodule StillWeb.WritingLive do
   use StillWeb, :live_view
   alias Still.{Desk, Poems, Storage, Writing}
+  alias Still.Writing.Attention
 
   @impl true
   def mount(_, _, socket) do
@@ -13,7 +14,9 @@ defmodule StillWeb.WritingLive do
        field_transition: nil,
        gravity_timer: nil,
        resume_active: false,
-       reading_echo: nil
+       reading_echo: nil,
+       echo_attention: nil,
+       listening_line: nil
      )}
   end
 
@@ -57,6 +60,8 @@ defmodule StillWeb.WritingLive do
            recovery_waiting: false,
            resume_active: resume?,
            reading_echo: reading_echo,
+           echo_attention: if(same_editor?, do: socket.assigns.echo_attention),
+           listening_line: nil,
            beside: beside,
            page_title: if(editing, do: "Now", else: Poems.display_title(piece)),
            delete_confirm: false
@@ -150,6 +155,76 @@ defmodule StillWeb.WritingLive do
      socket
      |> assign(draft: draft, dirty: draft != words(socket.assigns.piece), notice: nil)
      |> settle(draft.body)}
+  end
+
+  def handle_event(
+        "echo_attention",
+        %{"id" => id, "body" => body, "start" => first, "end" => last},
+        socket
+      ) do
+    piece = socket.assigns.piece
+
+    if socket.assigns.editing && piece && id == piece.id do
+      case Attention.locate(body, first, last) do
+        {:ok, focus} ->
+          {:noreply,
+           socket
+           |> assign(
+             echo_attention: %{body: body, focus: focus},
+             field_transition: nil,
+             field_waiting: []
+           )
+           |> settle(socket.assigns.draft.body)}
+
+        _ ->
+          {:noreply,
+           socket
+           |> assign(echo_attention: nil, field_transition: nil, field_waiting: [])
+           |> settle(socket.assigns.draft.body)}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("echo_attention", _, socket), do: {:noreply, socket}
+
+  def handle_event("listen_passage", %{"line" => value}, socket) do
+    piece = socket.assigns.piece
+
+    with false <- socket.assigns.editing,
+         true <- not is_nil(piece),
+         true <- is_binary(value),
+         {line, ""} <- Integer.parse(value),
+         passage when not is_nil(passage) <-
+           Enum.find(
+             Attention.passages(piece.body),
+             &(&1.kind == :passage && &1.first_line == line)
+           ) do
+      previous = Enum.reject(socket.assigns.gravity_field, & &1.departing)
+      field = Writing.saved_field(piece, passage.text, previous: previous)
+
+      {:noreply,
+       socket |> assign(:listening_line, line) |> move_field(field, piece.id, piece.body)}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("listen_passage", _, socket), do: {:noreply, socket}
+
+  def handle_event("listen_whole", _, socket) do
+    if socket.assigns.editing do
+      {:noreply, socket}
+    else
+      {:noreply,
+       assign(socket,
+         listening_line: nil,
+         gravity_field: [],
+         field_waiting: [],
+         field_transition: nil
+       )}
+    end
   end
 
   def handle_event("save_file", %{"writing" => attrs} = params, socket) do
@@ -289,13 +364,20 @@ defmodule StillWeb.WritingLive do
          socket.assigns.draft.body == body do
       previous = Enum.reject(socket.assigns.gravity_field, & &1.departing)
 
+      attention = socket.assigns.echo_attention
+      focused = attention && attention.body == String.replace(body, ~r/\r\n?/, "\n")
+      query = if focused, do: attention.focus.text, else: body
+
       field =
-        Writing.gravity_field(body,
+        Writing.gravity_field(query,
           previous: previous,
           historical_only: true,
-          title: socket.assigns.draft.title,
+          title: if(focused, do: nil, else: socket.assigns.draft.title),
+          selection: focused && attention.focus.kind == :selection,
           list: true,
-          exclude_ids: if(socket.assigns.beside, do: [socket.assigns.beside.id], else: [])
+          exclude_ids:
+            Writing.historical_source_ids(socket.assigns.piece) ++
+              if(socket.assigns.beside, do: [socket.assigns.beside.id], else: [])
         )
 
       {:noreply, socket |> assign(:gravity_timer, nil) |> move_field(field, id, body)}
@@ -305,8 +387,12 @@ defmodule StillWeb.WritingLive do
   end
 
   def handle_info({:release_before, id, body, transition}, socket) do
-    if socket.assigns.field_transition == transition && socket.assigns.editing &&
-         socket.assigns.piece.id == id && socket.assigns.draft.body == body do
+    if socket.assigns.field_transition == transition && socket.assigns.piece &&
+         socket.assigns.piece.id == id &&
+         if(socket.assigns.editing,
+           do: socket.assigns.draft.body,
+           else: socket.assigns.piece.body
+         ) == body do
       {:noreply,
        assign(socket,
          gravity_field: socket.assigns.field_waiting,
@@ -547,7 +633,14 @@ defmodule StillWeb.WritingLive do
       <StillWeb.Echoes.field :if={@piece && @editing} fragments={@gravity_field} />
       <article :if={@piece && !@editing} class="reading-room file-reading">
         <h1 class="file-title">{Poems.display_title(@piece)}</h1>
-        <div id="file-text" class="file-lines">{@piece.body}</div>
+        <div id="file-text" class="file-lines">
+          <StillWeb.Echoes.reading
+            body={@piece.body}
+            id_prefix="file-passage"
+            active_line={@listening_line}
+          />
+        </div>
+        <StillWeb.Echoes.field :if={@listening_line} fragments={@gravity_field} />
         <p :if={@piece.body == ""} id="file-empty" class="file-note">An empty page, kept here.</p>
         <div class="file-reading-actions">
           <.link id="edit-file" navigate={~p"/writing/#{@piece.id}/edit"} class="quiet-link">Change these words</.link>
@@ -559,7 +652,12 @@ defmodule StillWeb.WritingLive do
             class="quiet-link"
           >Follow a word</.link>
         </div>
-        <aside :if={@reading_echo} id="reading-company" class="drift-room" aria-label="Earlier words">
+        <aside
+          :if={@reading_echo && !@listening_line}
+          id="reading-company"
+          class="drift-room"
+          aria-label="Earlier words"
+        >
           <p class="section-whisper">In the company of earlier words</p>
           <div class="echo-door">
             <span class="echo-phrase">{@reading_echo.line}</span>

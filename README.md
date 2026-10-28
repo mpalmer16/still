@@ -31,6 +31,25 @@ returns to the same file or local draft, preserving words, caret, selection and
 scroll in the same browser/profile where possible. A changed disk token makes
 recovery explicit rather than silently treating a local copy as current.
 
+Echoes now follow the passage around your caret after a short pause. Moving back
+into an earlier stanza lets its language draw different company. A selected word
+or phrase is a deliberate listening point; one uncommon selected word can admit a
+faint echo, while ordinary isolated typing keeps the existing restraint. Blank
+stanza gaps leave the field quiet. Listening never changes the words, caret, or
+selection, and an imported saved edition excludes its own historical original.
+
+Lean toward an echo with the pointer, or Tab to its link: a little of its original
+surrounding language unfolds. The neighboring lines come from the same authored
+stanza. Leaving folds them back; following the link still opens the source. Long
+contexts keep the original glimpse. Nothing cycles or keeps moving while idle;
+reduced-motion preferences remove the unfolding transition.
+
+When reading a current List or saved page, **Listen here** appears beside each
+passage on approach or keyboard focus. In a narrow window its small circle stays
+visible. Choose it to let echoes listen beside that passage, then **Whole page**
+to return to the complete piece. Authored line breaks, indentation, blank stanzas,
+and search passage targets remain in place. The listening position is temporary.
+
 **Light**, **Letters**, the room map, notebook order, **Find**, **Wander** and
 **Back where I was** retain the historical reading experience. Find searches
 the SQLite collection, including earlier words when requested. Saved new writing
@@ -265,7 +284,7 @@ its WAL/SHM files before replacing it. Never restore a live database.
 ```sh
 mix precommit
 mix assets.build
-node --test scripts/test_file_recovery.mjs
+node --test scripts/test_file_recovery.mjs scripts/test_writing_focus.mjs scripts/test_echo_attention.mjs
 python3 -m unittest discover -s scripts -p 'test_*.py'
 python3 native/smoke.py --bundle "dist/Still Preview.app"
 ```
@@ -375,3 +394,9 @@ Set `STILL_PREVIEW_PORT=4098` to use another port. Docker must already be runnin
 Removal deletes only this preview's disposable writing. It leaves the installed Still
 app, your real collection, other containers, and the feature branch alone. There is no
 extra worktree or installed application to clean up.
+
+The same disposable preview includes **A page to listen beside**. Open it from Saved
+writing, place the caret in the orchard stanza and then the harbor stanza, and pause
+to let the company change. Hover or Tab to the echo to hear a little more of its
+source. The historical **Orchard:Harbor:** List offers the same passage listening
+while reading. Both examples are invented; existing preview pages stay intact.

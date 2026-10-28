@@ -1,5 +1,6 @@
 import {WritingFocus} from "./writing_focus"
 import {FileRecovery} from "./file_recovery"
+import {echoAttention} from "./echo_attention"
 import "phoenix_html"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
@@ -87,6 +88,22 @@ const scheduleRecoveryCheck = hook => {
     hook.checkScheduled = false
     if (!hook.recoveryDestroyed) hook.checkRecovery()
   })
+}
+
+const AttentiveFileRecovery = {
+  ...FileRecovery,
+  mounted() {
+    FileRecovery.mounted.call(this)
+    this.echoAttention = echoAttention(this.el, payload => this.pushEvent("echo_attention", payload), {
+      documentId: () => this.el.dataset.documentId,
+    })
+  },
+  disconnected() { this.echoAttention?.disconnect() },
+  reconnected() { this.echoAttention?.reconnect() },
+  destroyed() {
+    this.echoAttention?.destroy()
+    FileRecovery.destroyed.call(this)
+  },
 }
 
 const DraftRecovery = {
@@ -279,9 +296,15 @@ const DraftRecovery = {
       }
       scheduleRecoveryCheck(this)
     })
+    this.echoAttention = echoAttention(this.el, payload => this.pushEvent("echo_attention", payload), {
+      documentId: () => this.el.dataset.entryId,
+    })
   },
-  updated() { this.fit() },
+  updated() { this.fit(); this.echoAttention?.schedule() },
+  disconnected() { this.echoAttention?.disconnect() },
+  reconnected() { this.echoAttention?.reconnect() },
   destroyed() {
+    this.echoAttention?.destroy()
     this.recoveryDestroyed = true
     this.form.removeEventListener("input", this.onInput)
     this.form.removeEventListener("keydown", this.onKeydown)
@@ -404,7 +427,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, FileRecovery, WritingFocus},
+  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, FileRecovery: AttentiveFileRecovery, WritingFocus},
 })
 
 liveSocket.connect()

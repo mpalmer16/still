@@ -2,6 +2,7 @@ defmodule StillWeb.EntryLive do
   use StillWeb, :live_view
 
   alias Still.Writing
+  alias Still.Writing.Attention
 
   @impl true
   def mount(_params, _session, socket) do
@@ -39,6 +40,8 @@ defmodule StillWeb.EntryLive do
      |> assign(:field_waiting, [])
      |> assign(:field_transition, nil)
      |> assign(:gravity_timer, nil)
+     |> assign(:listening_line, nil)
+     |> assign(:echo_attention, nil)
      |> assign(:arrival, nil)
      |> assign(:connections, %{siblings: [], nearby: nil, echo: nil, far: nil})
      |> assign(:companions, [])}
@@ -139,6 +142,8 @@ defmodule StillWeb.EntryLive do
          |> assign(:search_query, "")
          |> assign(:search_line, nil)
          |> assign(:previous_reading, nil)
+         |> assign(:listening_line, nil)
+         |> assign(:echo_attention, nil)
          |> assign(:notebook_neighbors, nil)
          |> assign(:form, to_form(Writing.change_entry(Writing.new_entry())))
          |> assign(:page_title, "Now")
@@ -170,6 +175,77 @@ defmodule StillWeb.EntryLive do
   def handle_event("dismiss_search_highlights", _, socket),
     do: {:noreply, assign(socket, :search_highlights, false)}
 
+  def handle_event("listen_passage", %{"line" => line}, socket) do
+    case listened_passage(socket, line) do
+      {:ok, passage} ->
+        entry = socket.assigns.entry
+
+        field =
+          Writing.gravity_field(passage.text,
+            reading: true,
+            entry_id: entry.id,
+            exclude_ids: source_sibling_ids(entry),
+            previous: Enum.reject(socket.assigns.gravity_field, & &1.departing)
+          )
+
+        {:noreply,
+         socket
+         |> assign(:listening_line, passage.first_line)
+         |> move_field(field, entry.id, entry.body)}
+
+      :error ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("listen_passage", _, socket), do: {:noreply, socket}
+
+  def handle_event("listen_whole", _, socket) do
+    if current_historical_reading?(socket) do
+      entry = socket.assigns.entry
+
+      {:noreply,
+       socket
+       |> assign(:listening_line, nil)
+       |> move_field(reading_field(entry), entry.id, entry.body)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event(
+        "echo_attention",
+        %{"id" => id, "body" => body, "start" => start, "end" => ending},
+        socket
+      ) do
+    entry = socket.assigns.entry
+
+    attention =
+      if socket.assigns.editing && entry && (is_binary(id) || is_integer(id)) &&
+           to_string(entry.id) == to_string(id) &&
+           normalize_lines(body) == normalize_lines(entry.body) do
+        case Attention.locate(body, start, ending) do
+          {:ok, focus} ->
+            Map.put(focus, :body, normalize_lines(body))
+
+          _ ->
+            nil
+        end
+      end
+
+    socket =
+      socket
+      |> assign(:echo_attention, attention)
+      |> assign(:field_transition, nil)
+      |> assign(:field_waiting, [])
+
+    socket = if attention, do: settle_before(socket, entry.body), else: socket
+    {:noreply, socket}
+  end
+
+  def handle_event("echo_attention", _, socket),
+    do: {:noreply, assign(socket, :echo_attention, nil)}
+
   def handle_event("save", %{"entry" => attrs}, socket), do: save(attrs, socket, false)
 
   def handle_event("finish", %{"entry" => %{"action" => "save"} = attrs}, socket),
@@ -189,6 +265,8 @@ defmodule StillWeb.EntryLive do
     {:noreply,
      socket
      |> assign(:editing, true)
+     |> assign(:listening_line, nil)
+     |> assign(:echo_attention, nil)
      |> assign(:search_query, "")
      |> assign(:search_line, nil)
      |> assign(:checkpoint, true)
@@ -316,17 +394,20 @@ defmodule StillWeb.EntryLive do
   def handle_info({:settle_before, id, body}, socket) do
     entry = socket.assigns.entry
 
-    if socket.assigns.editing && entry && entry.id == id &&
-         entry.body == body do
+    if socket.assigns.editing && entry && entry.id == id && entry.body == body do
+      attention = socket.assigns.echo_attention
+      attentive? = attention_matches?(attention, entry.body)
+      query = if attentive?, do: attention.text, else: body
       excluded = [entry.id] ++ if(socket.assigns.beside, do: [socket.assigns.beside.id], else: [])
       previous = Enum.reject(socket.assigns.gravity_field, & &1.departing)
 
       field =
-        Writing.gravity_field(body,
+        Writing.gravity_field(query,
           previous: previous,
           exclude_ids: excluded,
-          title: entry.title,
-          list: socket.assigns.list_writing
+          title: if(attentive?, do: nil, else: entry.title),
+          selection: attentive? && attention.kind == :selection,
+          list: !attentive? && socket.assigns.list_writing
         )
 
       {:noreply, socket |> assign(:gravity_timer, nil) |> move_field(field, id, body)}
@@ -336,7 +417,8 @@ defmodule StillWeb.EntryLive do
   end
 
   def handle_info({:release_before, id, body, transition}, socket) do
-    if socket.assigns.field_transition == transition && socket.assigns.editing &&
+    if socket.assigns.field_transition == transition &&
+         (socket.assigns.editing || current_historical_reading?(socket)) &&
          socket.assigns.entry && socket.assigns.entry.id == id &&
          socket.assigns.entry.body == body do
       {:noreply,
@@ -496,6 +578,8 @@ defmodule StillWeb.EntryLive do
     |> assign(:form, to_form(Writing.change_entry(entry)))
     |> assign(:page_title, Writing.opening(entry))
     |> assign(:editing, editing)
+    |> assign(:listening_line, nil)
+    |> assign(:echo_attention, nil)
     |> assign(:place, Writing.geography(entry))
     |> clear_field()
     |> assign(:list_writing, list?)
@@ -570,6 +654,40 @@ defmodule StillWeb.EntryLive do
     )
     |> Enum.map(&Map.merge(&1, %{departing: false, delay: 0}))
   end
+
+  defp current_historical_reading?(%{
+         assigns: %{editing: false, historical_version: nil, entry: %{origin: "before"}}
+       }),
+       do: true
+
+  defp current_historical_reading?(_socket), do: false
+
+  defp listened_passage(socket, line) do
+    if current_historical_reading?(socket) do
+      with {number, ""} <- Integer.parse(to_string(line)),
+           passage <-
+             Enum.find(Attention.passages(socket.assigns.entry.body), fn passage ->
+               passage.kind == :passage && passage.first_line == number
+             end),
+           %{} <- passage do
+        {:ok, passage}
+      else
+        _ -> :error
+      end
+    else
+      :error
+    end
+  end
+
+  defp source_sibling_ids(entry), do: Writing.source_siblings(entry) |> Enum.map(& &1.id)
+
+  defp attention_matches?(%{body: body}, entry_body),
+    do: body == normalize_lines(entry_body)
+
+  defp attention_matches?(_attention, _entry_body), do: false
+
+  defp normalize_lines(body) when is_binary(body), do: String.replace(body, ~r/\r\n?/, "\n")
+  defp normalize_lines(_body), do: ""
 
   defp lookup_beside(nil), do: nil
 
@@ -893,7 +1011,16 @@ defmodule StillWeb.EntryLive do
           </h1>
         </header>
         <div class="list-body" id="list-body">
+          <StillWeb.Echoes.reading
+            :if={@entry.origin == "before"}
+            body={@entry.body}
+            query={if @search_highlights, do: @search_query, else: ""}
+            id_prefix="passage"
+            target_line={@search_line}
+            active_line={@listening_line}
+          />
           <.shaped_words
+            :if={@entry.origin != "before"}
             body={@entry.body}
             query={if @search_highlights, do: @search_query, else: ""}
             id_prefix="passage"

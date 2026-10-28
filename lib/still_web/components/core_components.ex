@@ -52,10 +52,18 @@ defmodule StillWeb.CoreComponents do
   attr :query, :string, default: ""
   attr :id_prefix, :string, default: nil
   attr :target_line, :integer, default: nil
+  attr :start_line, :integer, default: 1
+  attr :trim_terminal_line, :boolean, default: false
 
   def shaped_words(assigns) do
-    assigns =
-      assign(assigns, :lines, String.split(assigns.body, "\n", trim: false) |> Enum.with_index(1))
+    lines = String.split(assigns.body, "\n", trim: false)
+
+    lines =
+      if assigns.trim_terminal_line && String.ends_with?(assigns.body, "\n"),
+        do: Enum.drop(lines, -1),
+        else: lines
+
+    assigns = assign(assigns, :lines, Enum.with_index(lines, assigns.start_line))
 
     ~H"""
     <div

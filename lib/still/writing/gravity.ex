@@ -77,26 +77,31 @@ defmodule Still.Writing.Gravity do
   end
 
   @doc "One historical companion for a saved page, excluding its own historical source."
-  def saved_echo(piece) do
-    exclude_ids =
-      case Map.get(piece, :historical_source) do
-        %{"source_key" => source_key} when is_binary(source_key) ->
-          case Repo.get_by(Entry, source_key: source_key) do
-            nil -> []
-            entry -> [entry.id]
-          end
+  def saved_echo(piece), do: saved_field(piece) |> List.first()
 
-        _ ->
-          []
-      end
-
-    field(piece.body,
+  @doc "A historical field for a saved page or one of its literal passages."
+  def saved_field(piece, passage \\ nil, opts \\ []) do
+    field(passage || piece.body,
       reading: true,
       historical_only: true,
-      title: Still.Poems.display_title(piece),
-      exclude_ids: exclude_ids
+      title: if(is_nil(passage), do: Still.Poems.display_title(piece)),
+      exclude_ids: historical_source_ids(piece) ++ Keyword.get(opts, :exclude_ids, []),
+      previous: Keyword.get(opts, :previous, [])
     )
-    |> List.first()
+  end
+
+  @doc "The imported original of a saved edition, so it does not echo itself."
+  def historical_source_ids(piece) do
+    case Map.get(piece, :historical_source) do
+      %{"source_key" => source_key} when is_binary(source_key) ->
+        case Repo.get_by(Entry, source_key: source_key) do
+          nil -> []
+          entry -> [entry.id]
+        end
+
+      _ ->
+        []
+    end
   end
 
   defp candidates(body, opts) do
@@ -142,7 +147,9 @@ defmodule Still.Writing.Gravity do
     [word] = Map.keys(matches)
 
     MapSet.member?(formed, word) or
-      (opts[:reading] && String.length(word) >= 6 && Map.get(index.frequencies, word, 0) <= 2)
+      ((opts[:reading] || opts[:selection]) &&
+         String.length(word) >= if(opts[:selection], do: 4, else: 6) &&
+         Map.get(index.frequencies, word, 0) <= 2)
   end
 
   defp singleton?(_matches, _formed, _index, _opts), do: false

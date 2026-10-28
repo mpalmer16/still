@@ -18,6 +18,18 @@ Writing in Now can draw a small field of Before toward the edges after a pause. 
 
 Each presence has a stable place and distance. Stronger language can bring it closer; changing direction lets it recede. Replacements wait for departing words to leave. Pausing leaves the field settled rather than making it perform. Following a fragment brings the List forward from that side; near and far crossings move with different restraint. Escape returns to the same caret and scroll position. The field asks for no response, keeps no engagement score, and generates no interpretation. Editing or restoring an old List changes what can be drawn toward Now.
 
+Attention has a place in that attraction. The writer's caret follows an authored
+stanza; an explicit selection can ask one uncommon word to draw a faint presence.
+A blank interval can be quiet. Current reading offers the same choice beside a
+passage, with a way back to the whole page. These positions belong to the current
+interaction, not a record of reading behavior. They never become edits or marks in
+the collection. Late transitions cannot restore a voice from an abandoned position.
+
+An echo can unfold a few original neighboring lines when the pointer or keyboard
+focus leans toward it. Its source home stays put, its authored stanza sets the
+boundary, and leaving lets it close again. It neither invents a continuation nor
+moves on its own to ask for attention. Reduced motion leaves a direct, still reveal.
+
 The field is scarce; weakly related pieces remain imperceptible. Its positions describe a relationship to the current words rather than a ranking. Source neighborhoods remain an open geography. Dark light has no theme names or swatches, and motion settles after an arrival or crossing. Cards, dashboards, and explanations of why a piece was recommended would make the interface compete with the writing.
 
 ## A word travels

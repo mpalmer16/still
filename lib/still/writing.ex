@@ -264,6 +264,11 @@ defmodule Still.Writing do
   def nearby(entry), do: Connections.nearby(entry)
   def echo(entry), do: Connections.echo(entry)
   def saved_echo(piece), do: Gravity.saved_echo(piece)
+  def historical_source_ids(piece), do: Gravity.historical_source_ids(piece)
+
+  def saved_field(piece, passage \\ nil, opts \\ []),
+    do: Gravity.saved_field(piece, passage, opts)
+
   def connections(entry), do: Connections.for_entry(entry)
   def gravity(body, opts \\ []), do: Gravity.draw(body, opts)
   def gravity_field(body, opts \\ []), do: Gravity.field(body, opts)
