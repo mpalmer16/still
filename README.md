@@ -33,6 +33,8 @@ word find you.
 **Correspondence** holds the life around the work: places to consider, manuscripts
 to arrange, submissions to remember, replies to keep. **Then & now** places an
 earlier or submitted version beside today's words, so you can see what changed.
+Places can suggest saved pieces through shared keywords, keep your own possible
+connections, and record your sense of reach with a note.
 
 You decide when the work leaves the room. Still keeps the exact words you sent.
 

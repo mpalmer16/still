@@ -4,7 +4,7 @@ defmodule Still.Correspondence.PlaceImport do
 
   @max_bytes 1_048_576
   @max_places 200
-  @fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted)
+  @fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted keywords reach reach_note)
 
   def example do
     Jason.encode!(
@@ -14,6 +14,9 @@ defmodule Still.Correspondence.PlaceImport do
           website: "https://example.org",
           submission_url: "https://example.org/submit",
           interests: "Poetry and short prose",
+          keywords: "landscape, memory, rural life",
+          reach: "stretch",
+          reach_note: "A personal impression; read a recent issue before choosing.",
           guidelines: "Up to three poems. Check the publication's current guidelines.",
           windows: "Unknown — check the publication",
           fee: "",

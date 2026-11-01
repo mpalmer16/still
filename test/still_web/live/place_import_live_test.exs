@@ -1,7 +1,7 @@
 defmodule StillWeb.PlaceImportLiveTest do
   use StillWeb.ConnCase
   import Phoenix.LiveViewTest
-  alias Still.{Correspondence, Storage}
+  alias Still.{Correspondence, Poems, Storage}
 
   @moduletag :tmp_dir
   setup %{tmp_dir: root} do
@@ -111,6 +111,55 @@ defmodule StillWeb.PlaceImportLiveTest do
     {:ok, directory, _} = live(conn, ~p"/correspondence/journals")
     assert has_element?(directory, ".editorial-place-card", "Synthetic Place")
     refute has_element?(directory, "#inactive-places")
+  end
+
+  test "place suggestions and personal connections appear on both sides, survive editing, and reject stale tabs",
+       %{conn: conn, location: location} do
+    {:ok, piece} =
+      Poems.save(location, Poems.new(location), %{title: "Winter field", body: "Snow falls"})
+
+    {:ok, other} =
+      Poems.save(location, Poems.new(location), %{title: "Water", body: "An unrelated piece"})
+
+    {:ok, journal} =
+      Correspondence.save_journal(location, %{
+        name: "Echo Review",
+        keywords: "winter",
+        reach: "stretch",
+        reach_note: "Read recent issues"
+      })
+
+    {:ok, place, _} = live(conn, ~p"/correspondence/journals/#{journal.id}")
+    {:ok, stale, _} = live(conn, ~p"/correspondence/journals/#{journal.id}")
+    assert has_element?(place, "#place-possibilities", "Winter field")
+    assert has_element?(place, "#place-possibilities", "Shares: winter")
+    render_submit(element(place, "#keep-possible-piece"), %{possibility: %{piece_id: other.id}})
+    assert has_element?(place, "#place-possibilities", "Kept by you")
+    render_submit(element(stale, "#keep-possible-piece"), %{possibility: %{piece_id: piece.id}})
+    assert render(stale) =~ "This record changed on disk"
+    assert {:ok, kept} = Correspondence.journal(location, journal.id)
+    assert kept.possible_piece_ids == [other.id]
+    render_click(element(place, "button[phx-click=toggle_shortlist]"))
+
+    render_submit(element(place, "#journal-form"), %{
+      journal: %{
+        name: "Echo Review",
+        keywords: "winter",
+        reach: "long_shot",
+        reach_note: "Worth trying"
+      }
+    })
+
+    {:ok, work, _} = live(conn, ~p"/correspondence/writing/#{piece.id}")
+    assert has_element?(work, "#work-places", "Shares: winter")
+    assert has_element?(work, "#work-places", "A long shot")
+    assert has_element?(work, "#work-places", "Worth trying")
+    {:ok, manual, _} = live(conn, ~p"/correspondence/writing/#{other.id}")
+    assert has_element?(manual, "#work-places", "Kept by you")
+    {:ok, reopened, _} = live(conn, ~p"/correspondence/journals/#{journal.id}")
+    render_click(element(reopened, "button[phx-click=remove_possible_piece]"))
+    {:ok, manual, _} = live(conn, ~p"/correspondence/writing/#{other.id}")
+    refute has_element?(manual, "#work-places a", "Echo Review")
   end
 
   defp review(view, json) do

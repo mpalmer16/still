@@ -2,10 +2,11 @@ defmodule StillWeb.CorrespondenceWork do
   @moduledoc "Manuscript-centered presentation for a piece and its correspondence."
   use StillWeb, :html
 
-  alias Still.Poems
+  alias Still.{Correspondence, Poems}
   alias StillWeb.CorrespondenceProof
 
   attr :piece, :map, default: nil
+  attr :places, :list, default: []
   attr :revisions, :list, default: []
   attr :history, :list, default: []
   attr :proof_sources, :list, default: []
@@ -64,6 +65,25 @@ defmodule StillWeb.CorrespondenceWork do
           class="corr-history editorial-work-rail"
           aria-label="Manuscript history"
         >
+          <section id="work-places" class="editorial-work-section" aria-labelledby="work-places-title">
+            <h2 id="work-places-title">Places to consider</h2>
+            <p :if={@places == []}>
+              No connections yet. Add keywords or keep a personal connection from Places.
+            </p>
+            <article :for={match <- @places} class="editorial-work-event">
+              <h3>
+                <.link patch={~p"/correspondence/journals/#{match.journal.id}"}>{match.journal.name}</.link>
+              </h3>
+              <p :if={match.keywords != []}>Shares: {Enum.join(match.keywords, ", ")}</p>
+              <p :if={match.manual}>Kept by you as a possibility.</p>
+              <p>Reach: {Correspondence.reach_label(match.journal.reach)}</p>
+              <p :if={match.journal.reach_note not in [nil, ""]}>{match.journal.reach_note}</p>
+            </article>
+            <p :if={@places != []} class="corr-meta">
+              Shared words are starting points for reading. Check the place’s interests and guidelines.
+            </p>
+            <.link patch={~p"/correspondence/journals"} class="corr-text-link">Browse Places →</.link>
+          </section>
           <section class="editorial-work-section" aria-labelledby="work-correspondence-title">
             <div class="editorial-work-section-heading">
               <h2 id="work-correspondence-title">Its correspondence</h2>

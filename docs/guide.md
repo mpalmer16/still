@@ -344,7 +344,20 @@ runs separately from the installed application:
 Places can be added from a reviewed JSON upload using **Correspondence → Places →
 Import Places**. The page includes an example to share with a researcher; a portable
 copy is in `docs/places-import-example.json`. Places can also be deactivated and
-reactivated without losing submission history. See [Correspondence](correspondence.md).
+reactivated without losing submission history. Optional `keywords` (a comma-separated
+string) find literal, case-insensitive word and phrase echoes in current saved titles
+and text. Open a place for **Pieces to consider**, or a work for **Places to consider**;
+each suggestion shows its shared words. These are reading prompts, not editorial-fit
+judgments. From a place you can also keep any saved piece as a personal possibility,
+and remove that connection later. Removing a connection leaves any keyword echo visible.
+Historical Lists and earlier revisions are not searched by these suggestions.
+
+Optional `reach` is `unknown` (the default), `approachable`, `stretch`, or `long_shot`.
+Use `reach_note` for why it feels that way. Reach is your impression, separate from a
+publication’s age, fees, or submission effort. All three fields can be imported and
+edited later. Existing place files open without conversion, with no keywords or personal
+connections and unknown reach; imports still skip existing names rather than updating them.
+See [Correspondence](correspondence.md).
 
 ## Threads — a word travels
 

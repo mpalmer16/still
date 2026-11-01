@@ -228,4 +228,135 @@ defmodule Still.Correspondence.PlaceImportTest do
     File.write!(path, Jason.encode!(Map.put(Jason.decode!(bytes), "inactive", "false")))
     assert {:error, _} = Correspondence.journal(location, journal.id)
   end
+
+  test "keywords and reach import, explain literal echoes, and persist personal possibilities", %{
+    location: location,
+    collection: folder
+  } do
+    json =
+      Jason.encode!([
+        %{
+          name: "Echo Review",
+          keywords: "winter, rural life, art, café, WINTER",
+          reach: "stretch",
+          reach_note: "Read an issue first"
+        }
+      ])
+
+    {:ok, plan} = PlaceImport.preview(location, json)
+    assert %{imported: ["Echo Review"], error: nil} = PlaceImport.commit(plan)
+    {:ok, [journal]} = Correspondence.journals(location)
+
+    {:ok, piece} =
+      Poems.save(location, Poems.new(location), %{
+        title: "WINTER",
+        body: "Rural life beside the café. A cart."
+      })
+
+    {:ok, other} =
+      Poems.save(location, Poems.new(location), %{title: "Elsewhere", body: "Quiet water"})
+
+    assert Correspondence.matching_keywords(journal, piece) == ["winter", "rural life", "café"]
+    assert Correspondence.matching_keywords(journal, other) == []
+
+    assert [%{piece: ^piece, manual: false}] =
+             Correspondence.pieces_to_consider(journal, [piece, other])
+
+    assert [%{journal: ^journal}] = Correspondence.places_to_consider([journal], piece)
+    assert [] = Correspondence.places_to_consider([%{journal | inactive: true}], piece)
+
+    assert {:error, _} =
+             Correspondence.set_possible_piece(
+               location,
+               journal.id,
+               journal.token,
+               Ecto.UUID.generate(),
+               true
+             )
+
+    {:ok, kept} =
+      Correspondence.set_possible_piece(location, journal.id, journal.token, other.id, true)
+
+    assert {:error, _} =
+             Correspondence.set_possible_piece(
+               location,
+               journal.id,
+               journal.token,
+               piece.id,
+               true
+             )
+
+    {:ok, duplicate} =
+      Correspondence.set_possible_piece(location, kept.id, kept.token, other.id, true)
+
+    assert duplicate.possible_piece_ids == [other.id]
+    # An editor that does not send the new fields must preserve them.
+    {:ok, edited} =
+      Correspondence.save_journal(
+        location,
+        %{name: "Echo Review", notes: "New note"},
+        duplicate.id,
+        duplicate.token
+      )
+
+    assert edited.keywords == journal.keywords
+    assert edited.reach == "stretch"
+    assert edited.reach_note == "Read an issue first"
+    assert edited.possible_piece_ids == [other.id]
+    {:ok, reopened} = Correspondence.journal(location, journal.id)
+    assert [%{manual: true, keywords: []}] = Correspondence.pieces_to_consider(reopened, [other])
+
+    {:ok, inactive} =
+      Correspondence.set_journal_active(location, reopened.id, reopened.token, false)
+
+    assert inactive.possible_piece_ids == [other.id]
+
+    {:ok, removed} =
+      Correspondence.set_possible_piece(location, inactive.id, inactive.token, other.id, false)
+
+    assert Correspondence.pieces_to_consider(removed, [other]) == []
+    assert {:ok, ^piece} = Poems.get(location, piece.id)
+    path = Path.join([folder, "correspondence", "journals", journal.id <> ".json"])
+
+    old_bytes =
+      path
+      |> File.read!()
+      |> Jason.decode!()
+      |> Map.drop(~w(keywords reach reach_note possible_piece_ids))
+      |> Jason.encode!()
+
+    File.write!(path, old_bytes)
+    assert {:ok, legacy} = Correspondence.journal(location, journal.id)
+    assert legacy.keywords == nil
+    assert legacy.reach == "unknown"
+    assert legacy.possible_piece_ids == []
+    assert File.read!(path) == old_bytes
+
+    for {key, value} <- [
+          {"keywords", []},
+          {"reach", "easy"},
+          {"reach_note", false},
+          {"possible_piece_ids", ["bad"]}
+        ] do
+      File.write!(path, Jason.encode!(Map.put(Jason.decode!(old_bytes), key, value)))
+      assert {:error, _} = Correspondence.journal(location, journal.id)
+    end
+  end
+
+  test "new import fields reject invalid types and leave an empty collection untouched", %{
+    location: location,
+    collection: folder
+  } do
+    for fields <- [
+          %{keywords: []},
+          %{reach: "easy"},
+          %{reach_note: true},
+          %{possible_piece_ids: []}
+        ] do
+      assert {:error, _} =
+               PlaceImport.preview(location, Jason.encode!([Map.put(fields, :name, "Bad")]))
+
+      refute File.exists?(Path.join(folder, "correspondence"))
+    end
+  end
 end

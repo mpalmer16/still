@@ -11,7 +11,7 @@ defmodule Still.Correspondence do
   @format %{"format" => "still-correspondence-v1"}
   @desk_format "still-correspondence-desk"
   @desk_version 1
-  @journal_fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted verified inactive)
+  @journal_fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted verified inactive keywords reach reach_note possible_piece_ids)
   @packet_fields ~w(title journal_id piece_ids preparation_notes cover_letter)
   @statuses ~w(preparing submitted awaiting declined accepted withdrawn)
 
@@ -23,6 +23,71 @@ defmodule Still.Correspondence do
       needle == "" or
         String.contains?(String.downcase(Poems.display_title(piece) <> " " <> piece.body), needle)
     end)
+  end
+
+  @doc "Literal keyword and phrase echoes in current saved writing; no editorial-fit ranking."
+  def matching_keywords(journal, piece) do
+    texts = Enum.map([Poems.display_title(piece), piece.body], &String.normalize(&1, :nfc))
+
+    journal
+    |> Map.get(:keywords)
+    |> then(&(&1 || ""))
+    |> String.split([",", "\n"], trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq_by(&(String.normalize(&1, :nfc) |> String.downcase()))
+    |> Enum.filter(fn keyword ->
+      pattern =
+        "(?<![\\p{L}\\p{M}\\p{N}_])" <>
+          Regex.escape(String.normalize(keyword, :nfc)) <> "(?![\\p{L}\\p{M}\\p{N}_])"
+
+      case Regex.compile(pattern, "iu") do
+        {:ok, regex} -> Enum.any?(texts, &Regex.match?(regex, &1))
+        {:error, _} -> false
+      end
+    end)
+  end
+
+  def pieces_to_consider(journal, pieces) do
+    Enum.flat_map(pieces, fn piece ->
+      keywords = matching_keywords(journal, piece)
+      manual = piece.id in Map.get(journal, :possible_piece_ids, [])
+
+      if manual || keywords != [],
+        do: [%{piece: piece, keywords: keywords, manual: manual}],
+        else: []
+    end)
+  end
+
+  def places_to_consider(journals, piece) do
+    journals
+    |> Enum.filter(&active_journal?/1)
+    |> Enum.flat_map(fn journal ->
+      case pieces_to_consider(journal, [piece]) do
+        [match] -> [Map.put(match, :journal, journal)]
+        [] -> []
+      end
+    end)
+  end
+
+  def reach_label("approachable"), do: "Approachable"
+  def reach_label("stretch"), do: "A stretch"
+  def reach_label("long_shot"), do: "A long shot"
+  def reach_label(_), do: "Unknown"
+
+  @doc "Keeps or removes a personal possibility with stale-edit protection."
+  def set_possible_piece(location, id, token, piece_id, keep) when is_boolean(keep) do
+    with {:ok, journal} <- journal(location, id),
+         :ok <- fresh(journal, token),
+         {:ok, _} <- Poems.get(location, piece_id) do
+      ids =
+        if keep,
+          do: Enum.uniq(journal.possible_piece_ids ++ [piece_id]),
+          else: List.delete(journal.possible_piece_ids, piece_id)
+
+      attrs = Map.take(journal, Enum.map(@journal_fields, &String.to_existing_atom/1))
+      save_journal(location, Map.put(attrs, :possible_piece_ids, ids), id, token)
+    end
   end
 
   def overview(location) do
@@ -114,7 +179,7 @@ defmodule Still.Correspondence do
          {:ok, d} <- write_store(location),
          {:ok, old} <- existing(d.journals, id, token, :journal),
          :ok <- unique_name(d.journals, vals.name, record_id),
-         vals <- preserve_inactive(vals, attrs, old),
+         vals <- preserve_optional_place_details(vals, attrs, old),
          now <- now(),
          rec <-
            Map.merge(vals, %{
@@ -341,6 +406,10 @@ defmodule Still.Correspondence do
          {:ok, response_expectation} <-
            optional(v["response_expectation"], "Response expectations"),
          {:ok, notes} <- optional(v["notes"], "Personal notes"),
+         {:ok, keywords} <- optional(v["keywords"], "Keywords"),
+         {:ok, reach} <- reach(v["reach"]),
+         {:ok, reach_note} <- optional(v["reach_note"], "Reach note"),
+         {:ok, possible_piece_ids} <- possibility_ids(v["possible_piece_ids"]),
          {:ok, verified} <- bool(v["verified"]),
          {:ok, shortlisted} <- bool(v["shortlisted"]),
          {:ok, inactive} <- bool(v["inactive"]) do
@@ -356,6 +425,10 @@ defmodule Still.Correspondence do
          simultaneous_policy: simultaneous_policy,
          response_expectation: response_expectation,
          notes: notes,
+         keywords: keywords,
+         reach: reach,
+         reach_note: reach_note,
+         possible_piece_ids: possible_piece_ids,
          verified: verified,
          shortlisted: shortlisted,
          inactive: inactive
@@ -363,11 +436,28 @@ defmodule Still.Correspondence do
     end
   end
 
-  defp preserve_inactive(vals, attrs, old) do
-    if old && !Map.has_key?(attrs, :inactive) && !Map.has_key?(attrs, "inactive"),
-      do: Map.put(vals, :inactive, old.inactive),
-      else: vals
+  defp preserve_optional_place_details(vals, attrs, old) do
+    Enum.reduce([:inactive, :keywords, :reach, :reach_note, :possible_piece_ids], vals, fn field,
+                                                                                           acc ->
+      if old && !Map.has_key?(attrs, field) && !Map.has_key?(attrs, Atom.to_string(field)),
+        do: Map.put(acc, field, Map.fetch!(old, field)),
+        else: acc
+    end)
   end
+
+  defp possibility_ids(nil), do: {:ok, []}
+  defp possibility_ids([]), do: {:ok, []}
+
+  defp possibility_ids(ids) do
+    case piece_ids(ids) do
+      {:ok, ids} -> {:ok, ids}
+      _ -> {:error, "Possibilities must contain distinct saved writing identifiers."}
+    end
+  end
+
+  defp reach(value) when value in [nil, "", "unknown"], do: {:ok, "unknown"}
+  defp reach(value) when value in ["approachable", "stretch", "long_shot"], do: {:ok, value}
+  defp reach(_), do: {:error, "Reach must be unknown, approachable, stretch, or long_shot."}
 
   defp active_destination(journal) do
     if active_journal?(journal),
@@ -673,7 +763,21 @@ defmodule Still.Correspondence do
     valid_texts = Enum.all?(text_fields, fn k -> nullable_text?(r[k]) end)
     valid_urls = valid_web_url?(r["website"]) and valid_web_url?(r["submission_url"])
 
-    if Enum.all?(fields, &Map.has_key?(r, &1)) and valid_texts and valid_urls and
+    extensions_valid =
+      match?({:ok, _}, optional(r["keywords"], "Keywords")) and
+        match?({:ok, _}, optional(r["reach_note"], "Reach note")) and
+        Map.get(r, "reach", "unknown") in ["unknown", "approachable", "stretch", "long_shot"] and
+        is_list(Map.get(r, "possible_piece_ids", [])) and
+        match?({:ok, _}, possibility_ids(Map.get(r, "possible_piece_ids", [])))
+
+    r =
+      r
+      |> Map.put_new("keywords", nil)
+      |> Map.put_new("reach", "unknown")
+      |> Map.put_new("reach_note", nil)
+      |> Map.put_new("possible_piece_ids", [])
+
+    if extensions_valid and Enum.all?(fields, &Map.has_key?(r, &1)) and valid_texts and valid_urls and
          is_binary(r["name"]) and
          String.trim(r["name"]) != "" and is_boolean(r["verified"]) and
          is_boolean(r["shortlisted"]) and is_boolean(Map.get(r, "inactive", false)) and
@@ -694,6 +798,10 @@ defmodule Still.Correspondence do
          :shortlisted,
          :verified,
          :inactive,
+         :keywords,
+         :reach,
+         :reach_note,
+         :possible_piece_ids,
          :created_at,
          :updated_at
        ])}

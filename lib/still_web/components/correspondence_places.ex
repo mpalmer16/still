@@ -95,6 +95,10 @@ defmodule StillWeb.CorrespondencePlaces do
       <h3><.link patch={~p"/correspondence/journals/#{@journal.id}"}>{@journal.name}</.link></h3>
       <p :if={@has_interests} class="editorial-place-interest">{@journal.interests}</p>
       <p :if={@has_notes} class="editorial-place-note">{@journal.notes}</p>
+      <p :if={has_text?(value(@journal, :keywords))} class="corr-meta">
+        Keywords: {value(@journal, :keywords)}
+      </p>
+      <p class="corr-meta">Reach: {Correspondence.reach_label(value(@journal, :reach))}</p>
       <div class="editorial-place-facts">
         <span>Simultaneous: {@policy}</span>
         <span>Window: {@windows}</span>
@@ -122,6 +126,10 @@ defmodule StillWeb.CorrespondencePlaces do
   def details(assigns) do
     assigns =
       assigns
+      |> assign(
+        :possibilities,
+        Correspondence.pieces_to_consider(assigns.journal, assigns.pieces)
+      )
       |> assign(:inactive, !Correspondence.active_journal?(assigns.journal))
       |> assign(:website_href, safe_web_url(value(assigns.journal, :website)))
       |> assign(:submission_href, safe_web_url(value(assigns.journal, :submission_url)))
@@ -172,6 +180,48 @@ defmodule StillWeb.CorrespondencePlaces do
           </section>
 
           <section
+            id="place-possibilities"
+            class="editorial-place-profile-section"
+            aria-labelledby="possibilities-title"
+          >
+            <h2 id="possibilities-title">Pieces to consider</h2>
+            <p class="corr-meta">Keywords: {present(value(@journal, :keywords))}</p>
+            <p class="corr-meta">
+              Word and phrase echoes in current saved titles and text are starting points for reading, not judgments of editorial fit.
+            </p>
+            <article :for={match <- @possibilities} class="editorial-place-packet">
+              <h3>
+                <.link patch={~p"/correspondence/writing/#{match.piece.id}"}>{Poems.display_title(
+                  match.piece
+                )}</.link>
+              </h3>
+              <p :if={match.keywords != []}>Shares: {Enum.join(match.keywords, ", ")}</p>
+              <p :if={match.manual}>Kept by you as a possibility.</p>
+              <button
+                :if={match.manual}
+                type="button"
+                phx-click="remove_possible_piece"
+                phx-value-id={match.piece.id}
+                class="corr-text-link"
+              >Remove personal connection</button>
+              <form :if={!match.manual} phx-submit="keep_possible_piece">
+                <input type="hidden" name="possibility[piece_id]" value={match.piece.id} />
+                <button type="submit" class="corr-text-link">Keep as a possibility</button>
+              </form>
+            </article>
+            <p :if={@possibilities == []}>
+              No connections yet. Add keywords or choose a saved piece yourself.
+            </p>
+            <form :if={@pieces != []} id="keep-possible-piece" phx-submit="keep_possible_piece">
+              <label for="possible-piece">Choose a piece yourself</label>
+              <select id="possible-piece" name="possibility[piece_id]" required>
+                <option value="">Choose saved writing…</option>
+                <option :for={piece <- @pieces} value={piece.id}>{Poems.display_title(piece)}</option>
+              </select>
+              <button type="submit" class="corr-button">Keep as a possibility</button>
+            </form>
+          </section>
+          <section
             class="corr-history editorial-place-correspondence"
             aria-labelledby="place-packets-heading"
           >
@@ -218,6 +268,14 @@ defmodule StillWeb.CorrespondencePlaces do
         <aside class="editorial-place-facts-panel" aria-label="Submission details">
           <span class="corr-kicker">SUBMISSION DETAILS</span>
           <dl>
+            <div>
+              <dt>Reach · your impression</dt><dd>
+                {Correspondence.reach_label(value(@journal, :reach))}
+              </dd>
+            </div>
+            <div :if={has_text?(value(@journal, :reach_note))}>
+              <dt>Why it feels that way</dt><dd>{value(@journal, :reach_note)}</dd>
+            </div>
             <div>
               <dt>Website</dt><dd>
                 <.external_link :if={@website_href} href={@website_href} label={@journal.website} /><span :if={
@@ -323,6 +381,11 @@ defmodule StillWeb.CorrespondencePlaces do
             type="url"
             value={value(@form, :submission_url)}
           /></label>
+          <label class="editorial-place-field is-wide">Keywords or phrases<input
+            name="journal[keywords]"
+            value={value(@form, :keywords)}
+            placeholder="landscape, memory, rural life"
+          /><span class="corr-meta">Separate with commas. These find literal echoes in saved writing.</span></label>
           <label class="editorial-place-field is-wide">What they publish<input
             name="journal[interests]"
             value={value(@form, :interests)}
@@ -379,6 +442,26 @@ defmodule StillWeb.CorrespondencePlaces do
           </div>
         </div>
         <div class="editorial-place-fields">
+          <label>Reach · your impression<select name="journal[reach]">
+            <option
+              :for={
+                {key, label} <- [
+                  {"unknown", "Unknown"},
+                  {"approachable", "Approachable"},
+                  {"stretch", "A stretch"},
+                  {"long_shot", "A long shot"}
+                ]
+              }
+              value={key}
+              selected={value(@form, :reach, "unknown") == key}
+            >
+              {label}
+            </option>
+          </select></label>
+          <label class="editorial-place-field is-wide">Why it feels that way<textarea
+            name="journal[reach_note]"
+            rows="2"
+          >{value(@form, :reach_note)}</textarea><span class="corr-meta">Your sense of reach, separate from the publication’s age or the effort of submitting.</span></label>
           <label class="editorial-place-field is-wide">Your notes<textarea
             name="journal[notes]"
             rows="4"

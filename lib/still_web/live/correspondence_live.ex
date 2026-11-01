@@ -108,7 +108,8 @@ defmodule StillWeb.CorrespondenceLive do
   defp load_piece(socket, location, id, params) do
     with {:ok, piece} <- Poems.get(location, id),
          {:ok, history} <- Correspondence.history(location, id),
-         {:ok, revisions} <- Poems.revisions(location, id) do
+         {:ok, revisions} <- Poems.revisions(location, id),
+         {:ok, journals} <- Correspondence.journals(location) do
       sources = Proofs.sources(piece, revisions, history)
       requested = params["compare"]
 
@@ -132,7 +133,7 @@ defmodule StillWeb.CorrespondenceLive do
       {:noreply,
        assign(socket,
          location: location,
-         overview: empty_overview(),
+         overview: %{journals: journals, pieces: [], packets: []},
          piece: piece,
          history: history,
          revisions: revisions,
@@ -440,6 +441,14 @@ defmodule StillWeb.CorrespondenceLive do
   def handle_event("toggle_palette", _, socket),
     do: {:noreply, update(socket, :correspondence_light?, &(!&1))}
 
+  def handle_event("keep_possible_piece", %{"possibility" => %{"piece_id" => id}}, socket) do
+    save_possibility(socket, id, true)
+  end
+
+  def handle_event("remove_possible_piece", %{"id" => id}, socket) do
+    save_possibility(socket, id, false)
+  end
+
   def handle_event("save_journal", %{"journal" => attrs}, socket) do
     journal = socket.assigns.journal
     id = journal && journal.id
@@ -680,12 +689,37 @@ defmodule StillWeb.CorrespondenceLive do
     end
   end
 
+  defp save_possibility(socket, id, keep) do
+    journal = socket.assigns.journal
+
+    if journal do
+      case Correspondence.set_possible_piece(
+             socket.assigns.location,
+             journal.id,
+             journal.token,
+             id,
+             keep
+           ) do
+        {:ok, saved} ->
+          {:noreply, assign(socket, journal: saved, notice: "Possibility saved.", problem: nil)}
+
+        {:error, message} ->
+          {:noreply, assign(socket, problem: message, notice: nil)}
+      end
+    else
+      {:noreply, assign(socket, problem: "Open a place before saving a possibility.")}
+    end
+  end
+
   defp journal_defaults,
     do: %{
       name: "",
       website: "",
       submission_url: "",
       interests: "",
+      keywords: "",
+      reach: "unknown",
+      reach_note: "",
       guidelines: "",
       windows: "",
       fee: "",
@@ -879,6 +913,7 @@ defmodule StillWeb.CorrespondenceLive do
         <CorrespondenceWork.detail
           :if={@live_action == :piece && @piece}
           piece={@piece}
+          places={Correspondence.places_to_consider(@overview.journals, @piece)}
           revisions={@revisions}
           history={@history}
           proof_sources={@proof_sources}

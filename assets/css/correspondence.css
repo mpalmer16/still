@@ -469,3 +469,11 @@
 .corr-import-review h2 { font: 23px/1.4 Georgia, 'Iowan Old Style', serif; }
 .corr-import-example summary { color: var(--corr-blue); cursor: pointer; }
 .corr-import-example pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--corr-paper); padding: 22px; font: 13px/1.65 ui-monospace, monospace; color: var(--corr-ink); }
+
+/* Possibilities use the same quiet reading and form styles as place notes. */
+#place-possibilities h2, #work-places h2 { margin: 0 0 12px; color: var(--corr-ink); font: 400 24px/1.25 Georgia, 'Iowan Old Style', serif; }
+#place-possibilities p, #work-places p { line-height: 1.5; overflow-wrap: anywhere; }
+#keep-possible-piece { display: grid; justify-items: start; gap: 12px; margin-top: 24px; }
+#keep-possible-piece label { color: var(--corr-muted); font-size: 14px; }
+#keep-possible-piece select { width: 100%; min-width: 0; max-width: 100%; min-height: 43px; padding: 10px 12px; border: 1px solid var(--corr-line); border-radius: 2px; background: var(--corr-bg); color: var(--corr-ink); font: 15px/1.45 var(--sans); }
+#place-possibilities .corr-text-link { margin-top: 6px; }

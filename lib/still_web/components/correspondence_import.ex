@@ -35,7 +35,12 @@ defmodule StillWeb.CorrespondenceImport do
       <section :if={@plan} id="places-import-preview" class="corr-import-review">
         <h2>{length(@plan.places)} to add · {length(@plan.skipped)} skipped</h2>
         <ul>
-          <li :for={place <- @plan.places}>{place.name}</li>
+          <li :for={place <- @plan.places}>
+            <strong>{place.name}</strong>
+            <p :if={place.keywords not in [nil, ""]}>Keywords: {place.keywords}</p>
+            <p>Reach: {Still.Correspondence.reach_label(place.reach)}</p>
+            <p :if={place.reach_note not in [nil, ""]}>{place.reach_note}</p>
+          </li>
         </ul>
         <p :if={@plan.skipped != []}>Already present or repeated: {Enum.join(@plan.skipped, ", ")}</p>
         <p>
@@ -68,6 +73,13 @@ defmodule StillWeb.CorrespondenceImport do
           is required; other fields may be omitted. Text fields are strings. <code>shortlisted</code>
           is true or false. <code>simultaneous_policy</code>
           is <code>unknown</code>, <code>allowed</code>, or <code>not_allowed</code>. Use empty strings for unknown details and HTTP or HTTPS links for web addresses.
+        </p>
+        <p>
+          <code>keywords</code>
+          is a comma-separated string of words or phrases. <code>reach</code>
+          is <code>unknown</code>, <code>approachable</code>, <code>stretch</code>, or <code>long_shot</code>.
+          Use <code>reach_note</code>
+          to explain this personal impression. Leaving reach out means unknown.
         </p>
         <pre><code>{@example}</code></pre>
       </details>
