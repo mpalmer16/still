@@ -37,6 +37,8 @@ defmodule StillWeb.CorrespondenceImport do
         <ul>
           <li :for={place <- @plan.places}>
             <strong>{place.name}</strong>
+            <p :if={place.description not in [nil, ""]}>{place.description}</p>
+            <p :if={place.icon_url not in [nil, ""]}>Icon: {place.icon_url}</p>
             <p :if={place.keywords not in [nil, ""]}>Keywords: {place.keywords}</p>
             <p>Reach: {Still.Correspondence.reach_label(place.reach)}</p>
             <p :if={place.reach_note not in [nil, ""]}>{place.reach_note}</p>
@@ -80,6 +82,14 @@ defmodule StillWeb.CorrespondenceImport do
           is <code>unknown</code>, <code>approachable</code>, <code>stretch</code>, or <code>long_shot</code>.
           Use <code>reach_note</code>
           to explain this personal impression. Leaving reach out means unknown.
+        </p>
+        <p>
+          <code>description</code>
+          is an optional short blurb about the place. <code>icon_url</code>
+          is an optional HTTP or HTTPS link to a raster icon or logo.
+          When you open Places, Still automatically saves a local copy, trying the website’s
+          <code>/favicon.ico</code>
+          if needed. Missing images never prevent an import.
         </p>
         <pre><code>{@example}</code></pre>
       </details>

@@ -34,7 +34,8 @@ word find you.
 to arrange, submissions to remember, replies to keep. **Then & now** places an
 earlier or submitted version beside today's words, so you can see what changed.
 Places can suggest saved pieces through shared keywords, keep your own possible
-connections, and record your sense of reach with a note.
+connections, and record your sense of reach with a note. Each place can have a
+short description and an automatically saved website icon or logo.
 
 You decide when the work leaves the room. Still keeps the exact words you sent.
 

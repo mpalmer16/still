@@ -5,6 +5,7 @@ defmodule StillWeb.CorrespondenceHome do
 
   attr :overview, :map, required: true
   attr :desk, :map, required: true
+  attr :icons, :map, default: %{}
 
   def home(assigns) do
     piece_id = value(assigns.desk, :piece_id)
@@ -93,6 +94,13 @@ defmodule StillWeb.CorrespondenceHome do
             </header>
             <div :if={@shortlisted != []} class="editorial-home-place-grid">
               <article :for={journal <- @shortlisted} class="editorial-home-place">
+                <StillWeb.CorrespondencePlaces.icon
+                  journal={journal}
+                  src={Map.get(@icons, journal.id)}
+                />
+                <p :if={has_text?(Map.get(journal, :description))} class="place-description">
+                  {journal.description}
+                </p>
                 <h3>
                   <.link patch={~p"/correspondence/journals/#{journal.id}"}>{journal.name}</.link>
                 </h3>

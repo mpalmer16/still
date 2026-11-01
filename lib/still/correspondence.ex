@@ -11,7 +11,7 @@ defmodule Still.Correspondence do
   @format %{"format" => "still-correspondence-v1"}
   @desk_format "still-correspondence-desk"
   @desk_version 1
-  @journal_fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted verified inactive keywords reach reach_note possible_piece_ids)
+  @journal_fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted verified inactive keywords reach reach_note possible_piece_ids icon_url description)
   @packet_fields ~w(title journal_id piece_ids preparation_notes cover_letter)
   @statuses ~w(preparing submitted awaiting declined accepted withdrawn)
 
@@ -119,6 +119,47 @@ defmodule Still.Correspondence do
   @doc "Reads places without loading manuscripts or submission snapshots."
   def journals(location),
     do: with({:ok, d} <- store(location), do: records(d.journals, :journal))
+
+  @doc "Reads a bounded, optional icon cache without initializing or changing a collection."
+  def read_icon_cache(location, journal) do
+    with {:ok, dirs} <- store(location),
+         dir = Path.join(Path.dirname(dirs.journals), "icons"),
+         :ok <- safe_dir(dir),
+         path = Path.join(dir, icon_cache_name(journal)),
+         {:ok, %{type: :regular, size: size}} when size <= 360_000 <- File.lstat(path),
+         {:ok, bytes} <- File.read(path),
+         {:ok, cache} when is_map(cache) <- Jason.decode(bytes) do
+      {:ok, cache}
+    else
+      _ -> {:error, :unavailable}
+    end
+  end
+
+  @doc "Caches an icon only while its collection and source are still current."
+  def write_icon_cache(location, journal, cache) do
+    with {:ok, dirs} <- write_store(location) do
+      base = Path.dirname(dirs.journals)
+
+      :global.trans({{__MODULE__, base}, self()}, fn ->
+        with_fs_lock(base, location.scope, fn ->
+          with {:ok, current} <- read_record(dirs.journals, journal.id, :journal),
+               true <- icon_cache_name(current) == icon_cache_name(journal),
+               {:ok, dir} <- child(base, "icons"),
+               path = Path.join(dir, icon_cache_name(journal)),
+               :ok <- replaceable(path),
+               :ok <- current_scope(base, location.scope) do
+            atomic(path, Jason.encode!(cache) <> "\n")
+          else
+            _ -> {:error, :changed}
+          end
+        end)
+      end)
+    end
+  end
+
+  defp icon_cache_name(journal) do
+    digest(journal.id <> Still.Correspondence.Icons.source_key(journal)) <> ".json"
+  end
 
   @doc "Validates place details without writing to the collection."
   def validate_journal(attrs), do: normalize_journal(attrs)
@@ -396,6 +437,8 @@ defmodule Still.Correspondence do
     with {:ok, v} <- fields(a, @journal_fields),
          {:ok, name} <- required(v["name"], "Journal name"),
          {:ok, website} <- web_url(v["website"], "Website"),
+         {:ok, icon_url} <- web_url(v["icon_url"], "Icon URL"),
+         {:ok, description} <- optional(v["description"], "Description"),
          {:ok, submission_url} <- web_url(v["submission_url"], "Submission URL"),
          {:ok, interests} <- optional(v["interests"], "Editorial interests"),
          {:ok, guidelines} <- optional(v["guidelines"], "Guidelines"),
@@ -417,6 +460,8 @@ defmodule Still.Correspondence do
        %{
          name: name,
          website: website,
+         icon_url: icon_url,
+         description: description,
          submission_url: submission_url,
          interests: interests,
          guidelines: guidelines,
@@ -437,12 +482,15 @@ defmodule Still.Correspondence do
   end
 
   defp preserve_optional_place_details(vals, attrs, old) do
-    Enum.reduce([:inactive, :keywords, :reach, :reach_note, :possible_piece_ids], vals, fn field,
-                                                                                           acc ->
-      if old && !Map.has_key?(attrs, field) && !Map.has_key?(attrs, Atom.to_string(field)),
-        do: Map.put(acc, field, Map.fetch!(old, field)),
-        else: acc
-    end)
+    Enum.reduce(
+      [:inactive, :keywords, :reach, :reach_note, :possible_piece_ids, :icon_url, :description],
+      vals,
+      fn field, acc ->
+        if old && !Map.has_key?(attrs, field) && !Map.has_key?(attrs, Atom.to_string(field)),
+          do: Map.put(acc, field, Map.fetch!(old, field)),
+          else: acc
+      end
+    )
   end
 
   defp possibility_ids(nil), do: {:ok, []}
@@ -764,7 +812,9 @@ defmodule Still.Correspondence do
     valid_urls = valid_web_url?(r["website"]) and valid_web_url?(r["submission_url"])
 
     extensions_valid =
-      match?({:ok, _}, optional(r["keywords"], "Keywords")) and
+      valid_web_url?(r["icon_url"]) and
+        match?({:ok, _}, optional(r["description"], "Description")) and
+        match?({:ok, _}, optional(r["keywords"], "Keywords")) and
         match?({:ok, _}, optional(r["reach_note"], "Reach note")) and
         Map.get(r, "reach", "unknown") in ["unknown", "approachable", "stretch", "long_shot"] and
         is_list(Map.get(r, "possible_piece_ids", [])) and
@@ -772,6 +822,8 @@ defmodule Still.Correspondence do
 
     r =
       r
+      |> Map.put_new("icon_url", nil)
+      |> Map.put_new("description", nil)
       |> Map.put_new("keywords", nil)
       |> Map.put_new("reach", "unknown")
       |> Map.put_new("reach_note", nil)
@@ -787,6 +839,8 @@ defmodule Still.Correspondence do
          :id,
          :name,
          :website,
+         :icon_url,
+         :description,
          :submission_url,
          :interests,
          :guidelines,

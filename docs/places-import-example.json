@@ -13,6 +13,8 @@
     "shortlisted": false,
     "keywords": "landscape, memory, rural life",
     "reach": "stretch",
-    "reach_note": "A personal impression; read a recent issue before choosing."
+    "reach_note": "A personal impression; read a recent issue before choosing.",
+    "icon_url": "https://example.org/favicon.ico",
+    "description": "An independent journal of poetry and short prose."
   }
 ]

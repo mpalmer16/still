@@ -2,7 +2,7 @@ defmodule StillWeb.CorrespondenceLive do
   use StillWeb, :live_view
 
   alias Still.{Correspondence, Poems, Storage}
-  alias Still.Correspondence.{PlaceImport, Proofs}
+  alias Still.Correspondence.{Icons, PlaceImport, Proofs}
 
   alias StillWeb.{
     CorrespondenceHome,
@@ -22,6 +22,7 @@ defmodule StillWeb.CorrespondenceLive do
        notice: nil,
        problem: nil,
        search: "",
+       place_icons: %{},
        form: %{},
        revisions: [],
        journal_packets: [],
@@ -42,36 +43,129 @@ defmodule StillWeb.CorrespondenceLive do
     action = socket.assigns.live_action
     socket = refresh_desk(socket, location)
 
-    cond do
-      !location.configured || !location.available ->
-        {:noreply,
-         assign(socket,
-           location: location,
-           page_title: "Correspondence",
-           problem: collection_problem(location),
-           overview: %{journals: [], packets: [], pieces: []},
-           piece: nil,
-           journal: nil,
-           packet: nil,
-           history: [],
-           overlap: [],
-           form: %{}
-         )}
+    {:noreply, socket} =
+      cond do
+        !location.configured || !location.available ->
+          {:noreply,
+           assign(socket,
+             location: location,
+             page_title: "Correspondence",
+             problem: collection_problem(location),
+             overview: %{journals: [], packets: [], pieces: []},
+             piece: nil,
+             journal: nil,
+             packet: nil,
+             history: [],
+             overlap: [],
+             form: %{}
+           )}
 
-      action in [:home, :collection, :journals, :import_journals, :packets] ->
-        load_overview(socket, location, action)
+        action in [:home, :collection, :journals, :import_journals, :packets] ->
+          load_overview(socket, location, action)
 
-      action == :piece ->
-        load_piece(socket, location, params["id"], params)
+        action == :piece ->
+          load_piece(socket, location, params["id"], params)
 
-      action in [:new_journal, :journal] ->
-        load_journal(socket, location, params["id"])
+        action in [:new_journal, :journal] ->
+          load_journal(socket, location, params["id"])
 
-      action in [:new_packet, :packet] ->
-        load_packet(socket, location, params["id"], params)
+        action in [:new_packet, :packet] ->
+          load_packet(socket, location, params["id"], params)
 
-      true ->
-        {:noreply, socket}
+        true ->
+          {:noreply, socket}
+      end
+
+    {:noreply, load_place_icons(socket)}
+  end
+
+  defp load_place_icons(socket) do
+    journals =
+      cond do
+        not is_nil(socket.assigns.problem) ->
+          []
+
+        socket.assigns.live_action == :journal && socket.assigns.journal ->
+          [socket.assigns.journal]
+
+        socket.assigns.live_action == :journals ->
+          socket.assigns.overview.journals
+
+        socket.assigns.live_action == :home ->
+          Enum.filter(
+            socket.assigns.overview.journals,
+            &(&1.shortlisted && Correspondence.active_journal?(&1))
+          )
+
+        true ->
+          []
+      end
+
+    location = socket.assigns.location
+
+    icons =
+      Map.new(journals, fn journal ->
+        uri =
+          case Icons.cached(location, journal) do
+            {:ok, uri} -> uri
+            _ -> nil
+          end
+
+        {journal.id, uri}
+      end)
+
+    socket = assign(socket, place_icons: icons)
+
+    if connected?(socket) do
+      socket = cancel_async(socket, :place_icons)
+
+      if Application.get_env(:still, :fetch_place_icons, true) && journals != [] do
+        parent = self()
+
+        fetcher =
+          Application.get_env(
+            :still,
+            :place_icon_fetcher,
+            &Still.Correspondence.IconFetcher.fetch/1
+          )
+
+        start_async(socket, :place_icons, fn ->
+          journals
+          |> Task.async_stream(
+            fn journal ->
+              uri = Icons.ensure(location, journal, fetcher)
+
+              send(
+                parent,
+                {:place_icon, location.scope, journal.id, Icons.source_key(journal), uri}
+              )
+            end,
+            max_concurrency: 4,
+            timeout: 30_000,
+            on_timeout: :kill_task
+          )
+          |> Stream.run()
+        end)
+      else
+        socket
+      end
+    else
+      socket
+    end
+  end
+
+  @impl true
+  def handle_async(:place_icons, _result, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_info({:place_icon, scope, id, source_key, uri}, socket) do
+    journal = Enum.find(socket.assigns.overview.journals, &(&1.id == id))
+
+    if socket.assigns.location.scope == scope && Storage.collection_location().scope == scope &&
+         journal && Icons.source_key(journal) == source_key do
+      {:noreply, assign(socket, place_icons: Map.put(socket.assigns.place_icons, id, uri))}
+    else
+      {:noreply, socket}
     end
   end
 
@@ -717,6 +811,8 @@ defmodule StillWeb.CorrespondenceLive do
       website: "",
       submission_url: "",
       interests: "",
+      description: "",
+      icon_url: "",
       keywords: "",
       reach: "unknown",
       reach_note: "",
@@ -851,6 +947,7 @@ defmodule StillWeb.CorrespondenceLive do
         </div>
         <CorrespondenceHome.home
           :if={@live_action == :home && @location.configured && @location.available}
+          icons={@place_icons}
           overview={@overview}
           desk={@desk}
         />
@@ -925,7 +1022,7 @@ defmodule StillWeb.CorrespondenceLive do
           :if={@live_action == :journals && @location.configured && @location.available}
           class="corr-page"
         >
-          <CorrespondencePlaces.directory journals={@overview.journals} />
+          <CorrespondencePlaces.directory journals={@overview.journals} icons={@place_icons} />
         </section>
         <section
           :if={@live_action == :import_journals && @location.configured && @location.available}
@@ -939,6 +1036,7 @@ defmodule StillWeb.CorrespondenceLive do
         </section>
         <section :if={@live_action == :journal && @journal} class="corr-page">
           <CorrespondencePlaces.details
+            icon={Map.get(@place_icons, @journal.id)}
             journal={@journal}
             packets={@journal_packets}
             pieces={@overview.pieces}

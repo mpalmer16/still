@@ -1,5 +1,8 @@
 import Config
 
+# Ordinary UI tests never contact publication websites.
+config :still, :fetch_place_icons, false
+
 # Tests never read the user's machine-local backup settings.
 config :still, :storage_state_directory, Path.expand("../tmp/storage-test-state", __DIR__)
 

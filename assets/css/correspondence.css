@@ -477,3 +477,11 @@
 #keep-possible-piece label { color: var(--corr-muted); font-size: 14px; }
 #keep-possible-piece select { width: 100%; min-width: 0; max-width: 100%; min-height: 43px; padding: 10px 12px; border: 1px solid var(--corr-line); border-radius: 2px; background: var(--corr-bg); color: var(--corr-ink); font: 15px/1.45 var(--sans); }
 #place-possibilities .corr-text-link { margin-top: 6px; }
+
+.place-name-with-icon { display: flex; align-items: center; gap: 15px; min-width: 0; }
+.place-name-with-icon h1, .place-name-with-icon h3 { min-width: 0; overflow-wrap: anywhere; }
+.place-icon { display: inline-flex; flex: 0 0 48px; width: 48px; height: 48px; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--corr-line); border-radius: 4px; background: var(--corr-surface); color: var(--corr-muted); font: 24px/1 Georgia, 'Iowan Old Style', serif; }
+.place-icon img { display: block; width: 100%; height: 100%; padding: 5px; object-fit: contain; }
+.is-profile .place-icon { flex-basis: 64px; width: 64px; height: 64px; }
+.place-description { max-width: 70ch; margin: 14px 0; color: var(--corr-ink); font: 17px/1.55 Georgia, 'Iowan Old Style', serif; white-space: pre-wrap; overflow-wrap: anywhere; }
+.editorial-home-place > .place-icon { margin-bottom: 12px; }

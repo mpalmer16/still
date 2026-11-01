@@ -359,6 +359,22 @@ edited later. Existing place files open without conversion, with no keywords or 
 connections and unknown reach; imports still skip existing names rather than updating them.
 See [Correspondence](correspondence.md).
 
+Places also accept an optional `description` (a short blurb) and `icon_url` (an
+HTTP or HTTPS link to a PNG, JPEG, GIF, WebP, or ICO image). Opening the directory,
+a place, or the home shortlist downloads missing icons automatically without
+blocking the page. Still tries the supplied image first, then the website’s
+`/favicon.ico`; unavailable images use the publication’s initial. Existing places
+with websites get the same automatic fallback without reimporting. Change the
+image link in **Edit place details** to replace it.
+
+Successful images are saved locally and work offline. Failed attempts are retried
+on a later visit after one day. Downloads are limited to 256 KiB each and public
+web addresses; SVG and HTML are not displayed as icons. No writing, cookies, or
+personal notes are sent. Imports only validate image links; they never require a
+successful download. Copy the entire collection, including `correspondence/icons/`,
+to retain the saved images. SQLite-only backups and manuscript exports do not
+include the file collection or its icons.
+
 ## Threads — a word travels
 
 **Threads**, in the main navigation, follows literal recurring words between historical

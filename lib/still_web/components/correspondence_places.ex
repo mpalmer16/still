@@ -4,6 +4,7 @@ defmodule StillWeb.CorrespondencePlaces do
   alias Still.{Correspondence, Poems}
 
   attr :journals, :list, required: true
+  attr :icons, :map, default: %{}
 
   def directory(assigns) do
     assigns =
@@ -50,7 +51,11 @@ defmodule StillWeb.CorrespondencePlaces do
           <h2 id="all-places-heading">Active places</h2>
         </div>
         <div :if={@active != []} class="editorial-place-grid">
-          <.journal_card :for={journal <- @active} journal={journal} />
+          <.journal_card
+            :for={journal <- @active}
+            journal={journal}
+            icon={Map.get(@icons, journal.id)}
+          />
         </div>
         <div :if={@active == []} class="editorial-place-empty">
           <p class="editorial-place-empty-title">The directory is open.</p>
@@ -76,6 +81,8 @@ defmodule StillWeb.CorrespondencePlaces do
 
   attr :journal, :map, required: true
 
+  attr :icon, :string, default: nil
+
   defp journal_card(assigns) do
     assigns =
       assigns
@@ -92,7 +99,13 @@ defmodule StillWeb.CorrespondencePlaces do
           do: "You marked source checked",
           else: "Personal record"}</span>
       </div>
-      <h3><.link patch={~p"/correspondence/journals/#{@journal.id}"}>{@journal.name}</.link></h3>
+      <div class="place-name-with-icon">
+        <.icon journal={@journal} src={@icon} />
+        <h3><.link patch={~p"/correspondence/journals/#{@journal.id}"}>{@journal.name}</.link></h3>
+      </div>
+      <p :if={has_text?(value(@journal, :description))} class="place-description">
+        {value(@journal, :description)}
+      </p>
       <p :if={@has_interests} class="editorial-place-interest">{@journal.interests}</p>
       <p :if={@has_notes} class="editorial-place-note">{@journal.notes}</p>
       <p :if={has_text?(value(@journal, :keywords))} class="corr-meta">
@@ -123,6 +136,8 @@ defmodule StillWeb.CorrespondencePlaces do
   attr :pieces, :list, required: true
   attr :form, :map, required: true
 
+  attr :icon, :string, default: nil
+
   def details(assigns) do
     assigns =
       assigns
@@ -140,7 +155,13 @@ defmodule StillWeb.CorrespondencePlaces do
       <.link patch={~p"/correspondence/journals"} class="editorial-place-back">← All places</.link>
       <header class="editorial-place-profile-head">
         <div>
-          <h1 id="place-title">{@journal.name}</h1>
+          <div class="place-name-with-icon is-profile">
+            <.icon journal={@journal} src={@icon} />
+            <h1 id="place-title">{@journal.name}</h1>
+          </div>
+          <p :if={has_text?(value(@journal, :description))} class="place-description">
+            {value(@journal, :description)}
+          </p>
         </div>
         <button
           type="button"
@@ -381,6 +402,17 @@ defmodule StillWeb.CorrespondencePlaces do
             type="url"
             value={value(@form, :submission_url)}
           /></label>
+          <label class="editorial-place-field is-wide">Short description<textarea
+            name="journal[description]"
+            rows="3"
+            placeholder="A few words about the publication"
+          >{value(@form, :description)}</textarea></label>
+          <label class="editorial-place-field is-wide">Icon or logo URL<input
+            type="url"
+            name="journal[icon_url]"
+            value={value(@form, :icon_url)}
+            placeholder="Optional — otherwise try the website’s favicon"
+          /><span class="corr-meta">A PNG, JPEG, GIF, WebP, or ICO image. Still saves a local copy automatically.</span></label>
           <label class="editorial-place-field is-wide">Keywords or phrases<input
             name="journal[keywords]"
             value={value(@form, :keywords)}
@@ -487,6 +519,29 @@ defmodule StillWeb.CorrespondencePlaces do
         <.link patch={~p"/correspondence/journals"} class="corr-text-link">Cancel</.link>
       </div>
     </.form>
+    """
+  end
+
+  attr :journal, :map, required: true
+  attr :src, :string, default: nil
+
+  def icon(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :initial,
+        assigns.journal.name
+        |> String.trim()
+        |> String.first()
+        |> then(&(&1 || "?"))
+        |> String.upcase()
+      )
+
+    ~H"""
+    <span class="place-icon" aria-hidden="true">
+      <img :if={@src} src={@src} alt="" width="48" height="48" decoding="async" />
+      <span :if={!@src}>{@initial}</span>
+    </span>
     """
   end
 

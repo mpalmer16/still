@@ -81,6 +81,22 @@ journal and packet JSON lives in `revisions/<record-id>/<content-hash>.json`. JS
 can be inspected with ordinary tools. Record tokens detect external edits, and sent
 snapshots carry content hashes. Keep the whole directory together when copying it.
 
+Places have optional `description` and `icon_url` fields. Older records open with
+both absent; no conversion is required. Icons are fetched automatically from the
+specified link, falling back to the website’s `/favicon.ico`. Only public HTTP(S)
+addresses and bounded raster images are fetched. Each redirect is checked and its
+resolved address pinned. Unavailable images leave an initial; a failed attempt
+waits one day before another visit can retry.
+
+Verified local image copies (base64 image bytes, MIME type, and SHA-256) live in
+`icons/<source-hash>.json` beneath `correspondence/`. The source hash includes the
+place ID, website, and icon URL; changing either URL selects a new cache entry.
+Prior image files remain available in the collection. Downloads do not change a
+journal’s edit token, notes, history, or submitted snapshots. A late download cannot
+publish into a different collection or for changed source URLs. Copy this folder
+with the rest of the collection for offline use; SQLite-only backups and manuscript
+exports do not include correspondence records or icon files.
+
 The optional `correspondence/desk.json` stores `format: still-correspondence-desk`,
 `version: 1`, a work UUID (or explicit null when cleared), and an update timestamp.
 It contains no manuscript text or machine paths. An older collection without this file

@@ -162,6 +162,73 @@ defmodule StillWeb.PlaceImportLiveTest do
     refute has_element?(manual, "#work-places a", "Echo Review")
   end
 
+  test "descriptions and automatic local icons appear without changing the place edit token", %{
+    conn: conn,
+    location: location
+  } do
+    old_enabled = Application.get_env(:still, :fetch_place_icons)
+    old_fetcher = Application.get_env(:still, :place_icon_fetcher)
+    parent = self()
+
+    png =
+      Base.decode64!(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+      )
+
+    Application.put_env(:still, :fetch_place_icons, true)
+
+    Application.put_env(:still, :place_icon_fetcher, fn url ->
+      send(parent, {:icon_fetch, url})
+      {:ok, %{bytes: png}}
+    end)
+
+    on_exit(fn ->
+      Application.put_env(:still, :fetch_place_icons, old_enabled)
+
+      if old_fetcher,
+        do: Application.put_env(:still, :place_icon_fetcher, old_fetcher),
+        else: Application.delete_env(:still, :place_icon_fetcher)
+    end)
+
+    {:ok, journal} =
+      Correspondence.save_journal(location, %{
+        name: "Small Review",
+        website: "https://review.example",
+        description: "<script>A small journal</script>",
+        shortlisted: true
+      })
+
+    {:ok, view, _} = live(conn, ~p"/correspondence/journals")
+    render_async(view)
+    assert_received {:icon_fetch, "https://review.example/favicon.ico"}
+    assert has_element?(view, ".place-icon img[src^='data:image/png;base64,']")
+    assert has_element?(view, ".place-description", "<script>A small journal</script>")
+    refute has_element?(view, "script", "A small journal")
+    assert {:ok, ^journal} = Correspondence.journal(location, journal.id)
+    {:ok, place, _} = live(conn, ~p"/correspondence/journals/#{journal.id}")
+    render_async(place)
+    refute_received {:icon_fetch, _}
+    assert has_element?(place, ".is-profile .place-icon img")
+
+    render_submit(element(place, "#journal-form"), %{
+      journal: %{
+        name: journal.name,
+        description: "An edited short blurb",
+        icon_url: "https://images.example/new.png"
+      }
+    })
+
+    render_async(place)
+    assert_received {:icon_fetch, "https://images.example/new.png"}
+    assert {:ok, updated} = Correspondence.journal(location, journal.id)
+    assert updated.description == "An edited short blurb"
+    assert updated.icon_url == "https://images.example/new.png"
+    {:ok, home, _} = live(conn, ~p"/correspondence")
+    render_async(home)
+    assert has_element?(home, ".editorial-home-place .place-description", "An edited short blurb")
+    assert has_element?(home, ".editorial-home-place .place-icon img")
+  end
+
   defp review(view, json) do
     upload =
       file_input(view, "#places-import-form", :places, [
