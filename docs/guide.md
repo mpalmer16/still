@@ -295,7 +295,7 @@ Tests use synthetic writing and disposable folders. Native smoke covers empty
 and established databases, occupied ports, rapid reopening and backend owner
 cleanup. Pure Swift lifecycle/location checks and actual UI checks are described
 in the native notes. Source and data must remain separate; see
-[PUBLISHING.md](../PUBLISHING.md) for the reviewed publishing procedure.
+[AGENTS.md](../AGENTS.md#repository-maintenance) for repository maintenance and publication boundaries.
 
 ### The writing page
 
