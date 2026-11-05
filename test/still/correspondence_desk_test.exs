@@ -1,7 +1,7 @@
 defmodule Still.CorrespondenceDeskTest do
-  use ExUnit.Case, async: false
+  use Still.DataCase, async: false
 
-  alias Still.{Correspondence, Poems, Storage}
+  alias Still.{Correspondence, LocalRecord, Poems, Repo, Storage}
 
   setup do
     root =
@@ -40,7 +40,6 @@ defmodule Still.CorrespondenceDeskTest do
   end
 
   test "pin, change, explicit clear, and reload use compare-and-swap tokens", %{
-    collection: collection,
     location: location
   } do
     {:ok, first} = save_piece(location, "First", "First exact body.")
@@ -69,108 +68,43 @@ defmodule Still.CorrespondenceDeskTest do
     assert is_binary(cleared.updated_at)
     assert {:ok, ^cleared} = Correspondence.desk(location)
 
-    raw =
-      Path.join([collection, "correspondence", "desk.json"])
-      |> File.read!()
-      |> Jason.decode!()
+    row = Repo.get_by!(LocalRecord, scope: location.scope, kind: "desk", record_key: "desk")
+    assert row.data["format"] == "still-correspondence-desk"
+    assert row.data["version"] == 1
+    assert row.data["piece_id"] == nil
 
-    assert raw["format"] == "still-correspondence-desk"
-    assert raw["version"] == 1
-    assert raw["piece_id"] == nil
+    revisions =
+      Repo.all(
+        Ecto.Query.from(r in LocalRecord,
+          where: r.scope == ^location.scope and r.kind == "revision"
+        )
+      )
 
-    revision =
-      Path.join([
-        collection,
-        "correspondence",
-        "revisions",
-        "desk",
-        second_desk.token <> ".json"
-      ])
-
-    assert File.read!(revision) != ""
+    revision = Enum.find(revisions, &(&1.data["piece_id"] == second.id))
+    assert revision
   end
 
-  test "a missing file with an old token is stale and external writes invalidate old tokens", %{
-    collection: collection,
-    location: location
-  } do
+  test "deleting a desk invalidates its old token", %{location: location} do
     {:ok, piece} = save_piece(location, "Pinned", "Pinned body.")
     {:ok, pinned} = Correspondence.place_on_desk(location, piece.id, nil)
-    desk_path = Path.join([collection, "correspondence", "desk.json"])
-
-    File.rm!(desk_path)
+    row = Repo.get_by!(LocalRecord, scope: location.scope, kind: "desk", record_key: "desk")
+    Repo.delete!(row)
     assert {:error, _} = Correspondence.clear_desk(location, pinned.token)
     assert {:ok, %{piece_id: nil, token: nil, updated_at: nil}} = Correspondence.desk(location)
-
-    {:ok, repinned} = Correspondence.place_on_desk(location, piece.id, nil)
-
-    external_bytes =
-      Jason.encode!(
-        %{
-          "format" => "still-correspondence-desk",
-          "version" => 1,
-          "piece_id" => nil,
-          "updated_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-        },
-        pretty: true
-      ) <> "\n"
-
-    File.write!(desk_path, external_bytes)
-    assert {:error, message} = Correspondence.clear_desk(location, repinned.token)
-    assert message =~ "changed since it was opened"
-    assert File.read!(desk_path) == external_bytes
-    assert {:ok, external_state} = Correspondence.desk(location)
-    assert external_state.piece_id == nil
-    assert external_state.token != repinned.token
   end
 
-  test "malformed and symlink desk records are rejected without replacing their target", %{
-    collection: collection,
-    root: root,
-    location: location
-  } do
+  test "malformed desk rows are rejected and retained for recovery", %{location: location} do
     {:ok, piece} = save_piece(location, "Pinned", "Pinned body.")
     {:ok, _} = Correspondence.place_on_desk(location, piece.id, nil)
-    desk_path = Path.join([collection, "correspondence", "desk.json"])
-
-    File.write!(desk_path, "{broken json")
+    row = Repo.get_by!(LocalRecord, scope: location.scope, kind: "desk", record_key: "desk")
+    row |> LocalRecord.changeset(%{data: %{"piece_id" => "not-an-id"}}) |> Repo.update!()
     assert {:error, _} = Correspondence.desk(location)
-    assert File.read!(desk_path) == "{broken json"
 
-    updated_at = DateTime.utc_now() |> DateTime.to_iso8601()
+    assert Repo.get_by!(LocalRecord, scope: location.scope, kind: "desk", record_key: "desk").data[
+             "piece_id"
+           ] == "not-an-id"
 
-    missing_piece_id =
-      Jason.encode!(%{
-        "format" => "still-correspondence-desk",
-        "version" => 1,
-        "updated_at" => updated_at
-      })
-
-    File.write!(desk_path, missing_piece_id)
-    assert {:error, _} = Correspondence.desk(location)
-    assert File.read!(desk_path) == missing_piece_id
-
-    unknown_format =
-      Jason.encode!(%{
-        "format" => "other-desk-format",
-        "version" => 1,
-        "piece_id" => piece.id,
-        "updated_at" => updated_at
-      })
-
-    File.write!(desk_path, unknown_format)
-    assert {:error, _} = Correspondence.desk(location)
-    assert File.read!(desk_path) == unknown_format
-
-    File.rm!(desk_path)
-    target = Path.join(root, "external.json")
-    File.write!(target, "leave this alone")
-    File.ln_s!(target, desk_path)
-
-    assert {:error, _} = Correspondence.desk(location)
     assert {:error, _} = Correspondence.clear_desk(location, nil)
-    assert File.read!(target) == "leave this alone"
-    assert File.lstat!(desk_path).type == :symlink
   end
 
   test "a desk cannot be read or changed after switching collections", %{
@@ -206,7 +140,6 @@ defmodule Still.CorrespondenceDeskTest do
   end
 
   test "pinning and clearing leave source and packet bytes unchanged", %{
-    collection: collection,
     location: location
   } do
     {:ok, piece} =
@@ -222,14 +155,19 @@ defmodule Still.CorrespondenceDeskTest do
       })
 
     source_bytes = File.read!(piece.path)
-    packet_path = Path.join([collection, "correspondence", "packets", packet.id <> ".json"])
-    packet_bytes = File.read!(packet_path)
+
+    packet_row =
+      Repo.get_by!(LocalRecord, scope: location.scope, kind: "packet", record_key: packet.id)
+
+    packet_data = packet_row.data
 
     {:ok, pinned} = Correspondence.place_on_desk(location, piece.id, nil)
     assert {:ok, _cleared} = Correspondence.clear_desk(location, pinned.token)
 
     assert File.read!(piece.path) == source_bytes
-    assert File.read!(packet_path) == packet_bytes
+
+    assert Repo.get_by!(LocalRecord, scope: location.scope, kind: "packet", record_key: packet.id).data ==
+             packet_data
   end
 
   defp save_piece(location, title, body),

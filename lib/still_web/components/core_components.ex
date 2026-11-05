@@ -27,13 +27,41 @@ defmodule StillWeb.CoreComponents do
     """
   end
 
+  attr :marked, :boolean, required: true
+  attr :piece_id, :string, required: true
+  attr :submitted, :boolean, default: false
+  attr :show_link, :boolean, default: true
+
+  def submission_mark(assigns) do
+    ~H"""
+    <div class="submission-focus">
+      <button
+        type="button"
+        id="submission-focus"
+        phx-click="toggle_submission_focus"
+        class="quiet-link"
+        aria-pressed={to_string(@marked)}
+      >
+        {if @marked, do: "Marked for Correspondence", else: "Mark for Correspondence"}
+      </button>
+      <.link
+        :if={@show_link && (@marked || @submitted)}
+        navigate={"/correspondence/writing/#{@piece_id}"}
+        class="quiet-link"
+      >
+        {if @submitted, do: "Submission history", else: "Open in Correspondence"}
+      </.link>
+    </div>
+    """
+  end
+
   attr :text, :string, required: true
 
   def list_title(assigns) do
     assigns = assign(assigns, :words, String.split(assigns.text, ~r/(?<=:)/, trim: true))
 
     ~H"""
-    <span :for={word <- @words} class="title-word">{word}</span>
+    <span class="list-title-text" phx-no-format><%= for word <- @words do %><span class="title-word">{word}</span><% end %></span>
     """
   end
 

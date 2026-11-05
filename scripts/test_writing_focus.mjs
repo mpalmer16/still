@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {test} from 'node:test'
 const source = await readFile(new URL('../assets/js/writing_focus.js', import.meta.url), 'utf8')
-const {writingFocus, automaticWritingTitle} = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
+const {writingFocus} = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 class Surface {
   handlers = new Map()
   addEventListener(name, fn) { this.handlers.set(name, fn) }
@@ -46,16 +46,12 @@ test('disconnect and navigation cancel pending fades; destroy removes all listen
   for (const surface of [r.page,r.doc,r.clock]) assert.equal(surface.handlers.size, 0)
 })
 
-test('automatic title hint follows the first line without filling in an explicit title or changing text', () => {
+test('typing changes only the complete text and does not synthesize a separate title', () => {
   const r = room()
-  assert.equal(r.title.placeholder, 'words')
+  assert.equal(r.title.placeholder, undefined)
   r.body.value = '\n  A different opening  \r\nrest'
-  r.page.fire('still:writing-display-changed')
-  assert.equal(r.title.placeholder, 'A different opening')
+  r.type()
   assert.equal(r.title.value, '')
   assert.equal(r.body.value, '\n  A different opening  \r\nrest')
-  assert.equal(automaticWritingTitle('é'.repeat(61)), 'é'.repeat(59)+'…')
-  r.body.value = ''; r.type()
-  assert.equal(r.title.placeholder, 'A title, if you like.')
   r.focus.destroy()
 })

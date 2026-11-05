@@ -17,7 +17,7 @@ defmodule Still.Manuscript do
 
   @doc false
   def encode(pieces, "txt") do
-    {:ok, Enum.map_join(pieces, "\n\n\f\n\n", &(&1.title <> "\n\n" <> &1.body))}
+    {:ok, Enum.map_join(pieces, "\n\n\f\n\n", &full_text/1)}
   end
 
   def encode(pieces, "docx") do
@@ -28,8 +28,12 @@ defmodule Still.Manuscript do
         |> Enum.map_join(fn {piece, index} ->
           page_break = if index > 0, do: "<w:pageBreakBefore/>", else: ""
 
-          "<w:p><w:pPr><w:pStyle w:val=\"Title\"/>#{page_break}</w:pPr>#{run(piece.title)}</w:p>" <>
-            "<w:p><w:pPr><w:spacing w:after=\"0\" w:line=\"300\" w:lineRule=\"auto\"/></w:pPr>#{run(piece.body)}</w:p>"
+          if piece[:title_in_body] do
+            "<w:p><w:pPr>#{page_break}<w:spacing w:after=\"0\" w:line=\"300\" w:lineRule=\"auto\"/></w:pPr>#{run(piece.body)}</w:p>"
+          else
+            "<w:p><w:pPr><w:pStyle w:val=\"Title\"/>#{page_break}</w:pPr>#{run(piece.title)}</w:p>" <>
+              "<w:p><w:pPr><w:spacing w:after=\"0\" w:line=\"300\" w:lineRule=\"auto\"/></w:pPr>#{run(piece.body)}</w:p>"
+          end
         end)
 
       document = """
@@ -75,6 +79,9 @@ defmodule Still.Manuscript do
   end
 
   # Line endings are rendered as line breaks; the authoritative UTF-8 snapshot remains exact.
+  defp full_text(%{title_in_body: true, body: body}), do: body
+  defp full_text(piece), do: piece.title <> "\n\n" <> piece.body
+
   defp run(text) do
     contents =
       Regex.split(~r/(\r\n|\r|\n|\t)/, text, include_captures: true)

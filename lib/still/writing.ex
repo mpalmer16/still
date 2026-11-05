@@ -21,9 +21,49 @@ defmodule Still.Writing do
   @snapshot_interval 15 * 60
 
   def new_entry, do: %Entry{}
+
+  def with_collection_snapshot(fun, opts \\ []),
+    do: Still.Writing.Discovery.with_snapshot(fun, opts)
+
   def change_entry(entry, attrs \\ %{}), do: Entry.changeset(entry, attrs)
-  def get_entry(id), do: Repo.get(Entry, id)
-  def get_entry!(id), do: Repo.get!(Entry, id)
+
+  def get_entry(id) do
+    case Repo.get(Entry, id) do
+      %Entry{file_id: file_id} = entry when is_binary(file_id) ->
+        case Still.Poems.get(Still.Storage.collection_location(), file_id) do
+          {:ok, _} -> Repo.get(Entry, entry.id)
+          _ -> nil
+        end
+
+      entry ->
+        entry
+    end
+  end
+
+  def get_entry!(id), do: get_entry(id) || raise(Ecto.NoResultsError, queryable: Entry)
+
+  @doc "Refresh the projection of current files; errors remain visible to the reading interface."
+  def refresh_files do
+    location = Still.Storage.collection_location()
+
+    if Still.Writing.Discovery.current(location) != :none do
+      Still.Writing.Discovery.problem(location)
+    else
+      cond do
+        not location.configured ->
+          location.error
+
+        not location.available ->
+          location.error || "The selected writing folder is unavailable."
+
+        true ->
+          case Still.Writing.Files.synchronize(location) do
+            {:ok, _} -> nil
+            {:error, message} -> message
+          end
+      end
+    end
+  end
 
   @doc "Adds an explicit editable saved version; never updates the historical database entry."
   def add_to_saved_writing(location, id) do
@@ -80,6 +120,23 @@ defmodule Still.Writing do
       %Entry{}
       |> Entry.changeset(Map.put(attrs, :beside_id, Keyword.get(opts, :beside_id)))
       |> Repo.insert()
+    end
+  end
+
+  def save_entry(%Entry{file_id: id} = seen, body, opts) when is_binary(id) and is_binary(body) do
+    location = Still.Storage.collection_location()
+
+    with {:ok, piece} <- Still.Poems.get(location, id),
+         true <- seen.lock_version == Repo.get!(Entry, seen.id).lock_version,
+         {:ok, saved} <-
+           Still.Poems.save(location, piece, %{
+             body: body,
+             title_line: Keyword.get(opts, :title_line, seen.title_line)
+           }) do
+      {:ok, Repo.get!(Entry, saved.entry_id)}
+    else
+      false -> {:error, {:stale, Repo.get(Entry, seen.id)}}
+      error -> error
     end
   end
 
@@ -210,8 +267,16 @@ defmodule Still.Writing do
     end
   end
 
-  def list_entries(opts \\ []), do: Search.entries(opts)
-  def find_entries(opts \\ []), do: Search.find(opts)
+  def list_entries(opts \\ []) do
+    refresh_files()
+    Search.entries(opts)
+  end
+
+  def find_entries(opts \\ []) do
+    refresh_files()
+    Search.find(opts)
+  end
+
   def search_passage(body, query), do: Search.passage(body, query)
   def search_query(value), do: Search.query(value)
   def notebook_neighbors(entry), do: Notebooks.neighbors(entry)
@@ -240,8 +305,15 @@ defmodule Still.Writing do
 
   def restore_version(%Entry{} = entry, version_id) do
     case Repo.get_by(Version, id: version_id, entry_id: entry.id) do
-      nil -> {:error, :missing}
-      version -> save_entry(entry, version.body, title: version.title, checkpoint: true)
+      nil ->
+        {:error, :missing}
+
+      version ->
+        save_entry(entry, version.body,
+          title: version.title,
+          title_line: version.title_line,
+          checkpoint: true
+        )
     end
   end
 
@@ -270,10 +342,20 @@ defmodule Still.Writing do
     do: Gravity.saved_field(piece, passage, opts)
 
   def connections(entry), do: Connections.for_entry(entry)
-  def gravity(body, opts \\ []), do: Gravity.draw(body, opts)
-  def gravity_field(body, opts \\ []), do: Gravity.field(body, opts)
+
+  def gravity(body, opts \\ []) do
+    refresh_files()
+    Gravity.draw(body, opts)
+  end
+
+  def gravity_field(body, opts \\ []) do
+    refresh_files()
+    Gravity.field(body, opts)
+  end
 
   @doc "Original source-file number, only when preserved artifact filenames agree. Never an inferred date or position."
+  def source_number(%{list_label: label}) when is_binary(label) and label != "", do: label
+
   def source_number(%{origin: "before", source: source}) when is_map(source) do
     artifacts = source["artifacts"]
 
@@ -300,9 +382,32 @@ defmodule Still.Writing do
   def source_number(_), do: nil
 
   def geography(entry), do: Geography.for_entry(entry)
+
+  def reference_label(entry),
+    do: Geography.reference_label(geography(entry), source_number(entry))
+
   def places, do: Geography.places()
   def notebooks, do: Notebooks.all()
   def notebook(key), do: Notebooks.get(key)
+  def create_notebook(attrs), do: Notebooks.create(attrs)
+
+  def create_folder_notebook(attrs) do
+    location = Still.Storage.collection_location()
+    relative = Map.get(attrs, "relative_path", "") |> String.trim()
+    relative = if relative == "", do: Map.get(attrs, "label", ""), else: relative
+
+    if location.available,
+      do: Notebooks.create_folder(location, relative, Map.drop(attrs, ["relative_path"])),
+      else: {:error, location.error || "Choose a writing folder before adding a notebook."}
+  end
+
+  def update_notebook(notebook, attrs), do: Notebooks.update(notebook, attrs)
+  def choose_current_notebook(id), do: Notebooks.choose_current(id)
+  def current_notebook, do: Notebooks.current()
+
+  def assign_entry_to_notebook(entry, notebook, attrs \\ %{}),
+    do: Notebooks.assign_entry(entry, notebook, attrs)
+
   def place_distance(left, right), do: Geography.distance(left, right)
 
   def room_light do
@@ -496,6 +601,15 @@ defmodule Still.Writing do
         Repo.one(
           from e in older, order_by: [asc: e.inserted_at, asc: e.id], offset: ^index, limit: 1
         )
+    end
+  end
+
+  def opening(%Entry{file_id: id} = entry) when is_binary(id) do
+    if entry.title_line && not entry.title_needs_review do
+      String.trim(entry.title || "")
+    else
+      Still.Writing.TextFile.filename_label(entry.relative_path, entry.list_label) ||
+        opening(%Entry{body: entry.body})
     end
   end
 

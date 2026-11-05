@@ -9,11 +9,17 @@ defmodule Still.Application do
   def start(_type, _args) do
     children = [
       Still.Repo,
+      Still.Writing.IndexCache,
       {Ecto.Migrator,
        repos: Application.fetch_env!(:still, :ecto_repos), skip: skip_migrations?()},
       {Phoenix.PubSub, name: Still.PubSub},
       StillWeb.Endpoint
     ]
+
+    children =
+      if Application.get_env(:still, :automatic_backup, false),
+        do: children ++ [Still.AutomaticBackup],
+        else: children
 
     # See https://elixir.hexdocs.pm/Supervisor.html
     # for other strategies and supported options

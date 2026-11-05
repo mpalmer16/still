@@ -7,7 +7,7 @@ A poem, a list, a fragment. A title if you want one. Room to begin again.
 
 <br>
 
-### Begin with Now
+### Begin with Write
 
 One blank page. As you write, the controls fall quiet. Your line breaks,
 indentation, and spaces stay yours. Save keeps your words as ordinary text files,
@@ -19,8 +19,22 @@ Echoes gather at the edges when your language meets words you have written befor
 They listen near the caret, or beside a word you select. Lean toward one and a
 little more of its original passage unfolds.
 
-While reading, **Listen here** lets a particular passage draw its own company.
+While wandering or reading a saved page, pause over a passage or select its text
+to draw echoes from that passage.
 Sometimes the page stays quiet.
+
+### Read a notebook
+
+**Notebooks** opens each notebook with its index beside the words. Move through
+its pages in order, return to your reading place, or choose **Wander with this**.
+**Find** opens a focused reader and keeps the route back to your search results.
+New Lists take the next number in the selected notebook and include it in the
+filename. Change it in **Page details → List number** when needed. Collections
+such as Poems can turn off automatic numbering when they are added.
+Hover over a notebook title, or focus it with the keyboard, for **Read**,
+**Wander**, and **Delete**. **Delete** asks for confirmation before permanently
+removing that List's local text file and saved earlier words. Submitted
+correspondence retains its exact submitted text.
 
 ### Follow a word
 
@@ -49,10 +63,15 @@ Still runs on your computer. No account, cloud API, or analytics.
 Echoes follow shared words in your own writing. They offer company, without
 inventing an interpretation.
 
-New writing lives in readable text files; historical notebooks remain in their
-local database. Earlier words, recovery copies, Trash, and verified database
-backups each have their place. The [guide](docs/guide.md) explains how to care
-for the whole collection.
+Current new writing lives in ordinary text files. Stable identities, indexes,
+revisions, notebook metadata, Places and correspondence live in the local
+database alongside historical notebooks and Lists. Earlier words, recovery
+copies, Trash and one verified database backup each have their place. The
+[guide](docs/guide.md) explains how to care for both the text folder and database.
+
+The [ordinary-text storage model](docs/storage-model.md) describes current new
+writing: ordinary local text files, with history and collection records in the
+machine-local database. Archive preparation remains separate from ordinary file access.
 
 ### Come in
 

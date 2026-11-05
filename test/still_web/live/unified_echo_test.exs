@@ -39,7 +39,7 @@ defmodule StillWeb.UnifiedEchoTest do
     assert Writing.list_versions(historical) == []
 
     view
-    |> form("#file-writing-form", writing: %{body: body, title: "New file"})
+    |> form("#file-writing-form", writing: %{body: body, title_line: "2"})
     |> render_submit()
 
     {:ok, [saved]} = Poems.list(Storage.collection_location())
@@ -64,7 +64,7 @@ defmodule StillWeb.UnifiedEchoTest do
     {:ok, first, _} = live(conn, ~p"/?new=1")
 
     first
-    |> form("#file-writing-form", writing: %{body: "old new writing", title: "First"})
+    |> form("#file-writing-form", writing: %{body: "First\nold new writing", title_line: "1"})
     |> render_submit()
 
     {:ok, [previous]} = Poems.list(Storage.collection_location())
@@ -73,13 +73,13 @@ defmodule StillWeb.UnifiedEchoTest do
     refute cursor.saved
     assert cursor.id != previous.id
     assert has_element?(blank, "#file-writing-body[data-resume-active='false']")
-    blank |> form("#file-writing-form", writing: %{body: "", title: ""}) |> render_submit()
+    blank |> form("#file-writing-form", writing: %{body: "", title_line: ""}) |> render_submit()
     assert {:ok, %{id: id, saved: true}} = Desk.current(Storage.collection_location())
     assert id == cursor.id
     {:ok, now, _} = live(conn, ~p"/")
     assert has_element?(now, "#file-writing-body[data-document-id='#{id}']")
     assert Poems.get(Storage.collection_location(), previous.id) == {:ok, previous}
-    assert Writing.list_entries() == []
+    assert Enum.any?(Writing.list_entries(), &(&1.file_id == previous.id))
   end
 
   test "Read saves the current text before opening the reading view", %{conn: conn} do
@@ -102,7 +102,10 @@ defmodule StillWeb.UnifiedEchoTest do
     location = Storage.collection_location()
 
     {:ok, piece} =
-      Poems.save(location, Poems.new(location), %{title: "Synthetic", body: "keep both copies"})
+      Poems.save(location, Poems.new(location), %{
+        title_line: 1,
+        body: "Synthetic\nkeep both copies"
+      })
 
     {:ok, _} = Poems.trash(location, piece)
     {:ok, trash, _} = live(conn, ~p"/writing?trash=1")
@@ -110,13 +113,12 @@ defmodule StillWeb.UnifiedEchoTest do
     assert has_element?(trash, "#purge-confirmation")
     other = folder <> "-other"
     File.mkdir!(other)
-    File.cp_r!(Path.join(folder, "poems"), Path.join(other, "poems"))
     on_exit(fn -> File.rm_rf!(other) end)
     {:ok, _} = Storage.set_folder(other)
     trash |> element("#refresh-writing") |> render_click()
     refute has_element?(trash, "#purge-confirmation")
     render_hook(trash, "confirm_purge", %{})
-    assert File.regular?(Path.join([folder, "poems", ".trash", piece.id, "poem.txt"]))
-    assert File.regular?(Path.join([other, "poems", ".trash", piece.id, "poem.txt"]))
+    refute File.exists?(piece.path)
+    assert File.ls!(other) == []
   end
 end

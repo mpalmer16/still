@@ -55,7 +55,7 @@ defmodule StillWeb.ManuscriptControllerTest do
     {:ok, _} = Poems.save(loc, piece, %{title: "Different title", body: "different words"})
     response = get(conn, "/correspondence/packets/#{p.id}/export/txt")
     assert response.status == 200
-    assert response.resp_body == "A synthetic manuscript\n\n" <> piece.body
+    assert response.resp_body == piece.body
     assert {:ok, reopened} = Correspondence.packet(loc, p.id)
     assert reopened.token == sent.token
   end

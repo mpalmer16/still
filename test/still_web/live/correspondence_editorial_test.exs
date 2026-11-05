@@ -77,7 +77,7 @@ defmodule StillWeb.CorrespondenceEditorialTest do
     assert has_element?(work, "#work-history", "A thoughtful reply.")
     assert has_element?(work, "a[href='/correspondence/journals/#{journal.id}']")
     assert has_element?(work, "a[href='/correspondence/packets/#{replied.id}']")
-    assert has_element?(work, "a[href='/writing/#{piece.id}/edit']", "Edit in Now")
+    assert has_element?(work, "a[href='/writing/#{piece.id}/edit']", "Edit in Write")
 
     {:ok, journal_view, _} = live(conn, "/correspondence/journals/#{journal.id}")
     assert has_element?(journal_view, "h1", "Small Press")
@@ -110,6 +110,10 @@ defmodule StillWeb.CorrespondenceEditorialTest do
       save_piece(location, "First in selection", "First exact words\r\nwith a second line.\n")
 
     {:ok, second} = save_piece(location, "Second in selection", "Second exact words\n")
+
+    for piece <- [first, second],
+        do: assert(:ok = Correspondence.set_focus(location, piece.id, true))
+
     {:ok, journal} = save_journal(location, "Workflow Review")
     {:ok, _legacy} = Writing.save_entry(nil, "SQLite-only legacy words")
     sqlite_before = Writing.list_entries()
@@ -161,8 +165,8 @@ defmodule StillWeb.CorrespondenceEditorialTest do
     packet = Enum.find(overview.packets, &(&1.title == "Two piece packet"))
 
     assert Enum.map(packet.snapshot.pieces, & &1.body) == [
-             "Second exact words\n",
-             "First exact words\r\nwith a second line.\n"
+             "Second in selection\n\nSecond exact words\n",
+             "First in selection\n\nFirst exact words\r\nwith a second line.\n"
            ]
 
     render_submit(element(packet_view, "#response-form"), %{
@@ -184,7 +188,10 @@ defmodule StillWeb.CorrespondenceEditorialTest do
     {:ok, again, _} = live(conn, "/correspondence/packets/new?from=#{packet.id}")
     assert has_element?(again, "#packet-preview", "First in selection")
     assert has_element?(again, "#packet-form")
-    assert Writing.list_entries() == sqlite_before
+
+    assert Enum.filter(Writing.list_entries(), &is_nil(&1.file_id)) ==
+             Enum.filter(sqlite_before, &is_nil(&1.file_id))
+
     refute render(again) =~ "SQLite-only"
   end
 
@@ -193,6 +200,7 @@ defmodule StillWeb.CorrespondenceEditorialTest do
     location: location
   } do
     pieces = for n <- 1..12, do: save_piece!(location, "Established piece #{n}", "Body #{n}.")
+    for piece <- pieces, do: assert(:ok = Correspondence.set_focus(location, piece.id, true))
     journals = for n <- 1..4, do: save_journal!(location, "Established journal #{n}")
 
     for n <- 1..8 do

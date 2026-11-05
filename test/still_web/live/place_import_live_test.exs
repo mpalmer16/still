@@ -121,6 +121,9 @@ defmodule StillWeb.PlaceImportLiveTest do
     {:ok, other} =
       Poems.save(location, Poems.new(location), %{title: "Water", body: "An unrelated piece"})
 
+    for candidate <- [piece, other],
+        do: assert(:ok = Correspondence.set_focus(location, candidate.id, true))
+
     {:ok, journal} =
       Correspondence.save_journal(location, %{
         name: "Echo Review",

@@ -10,6 +10,7 @@ defmodule Still.Correspondence.Proofs do
   @doc "Returns immutable sent snapshots and saved revisions belonging to this piece."
   def sources(piece, revisions, history) do
     piece_id = value(piece, :id)
+    entry_id = value(piece, :entry_id)
 
     if is_binary(piece_id) and piece_id != "" do
       sent =
@@ -19,7 +20,7 @@ defmodule Still.Correspondence.Proofs do
 
       saved =
         list(revisions)
-        |> Enum.flat_map(&saved_source(&1, piece_id))
+        |> Enum.flat_map(&saved_source(&1, piece_id, entry_id))
         |> Enum.sort_by(&{date_key(&1.date), &1.key}, :desc)
 
       sent ++ saved
@@ -107,15 +108,15 @@ defmodule Still.Correspondence.Proofs do
     end
   end
 
-  defp saved_source(revision, piece_id) do
+  defp saved_source(revision, piece_id, entry_id) do
     id = value(revision, :id)
     body = value(revision, :body)
     date = value(revision, :updated_at) || value(revision, :created_at)
     owner = value(revision, :piece_id) || value(revision, :entry_id)
 
     valid? =
-      is_binary(id) and id != "" and is_binary(body) and is_binary(date) and valid_date?(date) and
-        (is_nil(owner) or owner == piece_id)
+      valid_revision_id?(id) and is_binary(body) and is_binary(date) and valid_date?(date) and
+        (is_nil(owner) or owner in [piece_id, entry_id])
 
     if valid? do
       [
@@ -133,6 +134,10 @@ defmodule Still.Correspondence.Proofs do
       []
     end
   end
+
+  defp valid_revision_id?(id) when is_integer(id), do: id > 0
+  defp valid_revision_id?(id) when is_binary(id), do: id != ""
+  defp valid_revision_id?(_), do: false
 
   defp diff_segments(source_body, current_body) do
     source_lines = lines(source_body)

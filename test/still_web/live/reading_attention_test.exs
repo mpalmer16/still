@@ -24,13 +24,13 @@ defmodule StillWeb.ReadingAttentionTest do
     assert has_element?(view, "#drawn-before-#{first.id}")
     refute has_element?(view, "#drawn-before-#{sibling.id}")
 
-    render_click(element(view, "#listen-passage-3"))
+    render_hook(view, "focus_passage", %{"id" => to_string(anchor.id), "line" => "3"})
     release_transition(view, anchor.id, anchor.body)
 
     assert has_element?(view, "#drawn-before-#{second.id}")
     refute has_element?(view, "#drawn-before-#{sibling.id}")
 
-    render_click(element(view, "#listen-whole"))
+    render_click(element(view, "#whole-page-echoes"))
     release_transition(view, anchor.id, anchor.body)
 
     assert has_element?(view, "#drawn-before-#{first.id}")
@@ -54,10 +54,10 @@ defmodule StillWeb.ReadingAttentionTest do
     {:ok, view, _} = live(conn, ~p"/w/#{anchor.id}?read=1")
     assert has_element?(view, "#drawn-before-#{first.id}")
 
-    render_click(view, "listen_passage", %{"line" => "2"})
+    render_hook(view, "focus_passage", %{"id" => to_string(anchor.id), "line" => "2"})
     assert has_element?(view, "#drawn-before-#{first.id}")
 
-    render_click(view, "listen_passage", %{"line" => "999"})
+    render_hook(view, "focus_passage", %{"id" => to_string(anchor.id), "line" => "999"})
     assert has_element?(view, "#drawn-before-#{first.id}")
     refute has_element?(view, "#drawn-before-#{second.id}")
   end
@@ -121,7 +121,7 @@ defmodule StillWeb.ReadingAttentionTest do
     anchor = historical("opal quartz orchard\n\nlantern compass resting")
 
     {:ok, view, _} = live(conn, ~p"/w/#{anchor.id}?read=1")
-    render_click(element(view, "#listen-passage-3"))
+    render_hook(view, "focus_passage", %{"id" => to_string(anchor.id), "line" => "3"})
     release_transition(view, anchor.id, anchor.body)
     assert has_element?(view, "#drawn-before-#{second.id}")
 

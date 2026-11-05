@@ -66,42 +66,41 @@ defmodule Still.Writing.ThreadsTest do
     folder: folder
   } do
     before = historical("still-readable", "A line held in Before")
-    poems = Path.join(folder, "poems")
-    File.mkdir_p!(poems)
-    File.write!(Path.join(poems, ".still-poems.json"), "not json")
-
+    File.write!(Path.join(folder, "unsupported document"), <<255, 0>>)
     assert %{documents: [doc], problem: problem} = Threads.load(Storage.collection_location())
     assert doc.id == before.id
-    assert problem =~ "unknown format"
+    assert problem =~ "UTF-8"
   end
 
-  test "load preserves an interrupted save journal and every collection byte", %{folder: folder} do
+  test "load leaves an interrupted database save and every collection byte untouched", %{
+    folder: folder
+  } do
     historical("journal-neighbor", "A saved page beside an earlier page")
 
     {:ok, saved} =
       Poems.save(Storage.collection_location(), Poems.new(nil), %{
-        title: "Kept",
-        body: "A saved page"
+        body: "A saved page",
+        title_line: nil
       })
 
-    journal = Path.join(Path.dirname(saved.path), ".save-journal.json")
-    metadata_path = Path.join(Path.dirname(saved.path), "metadata.json")
-    old_metadata = File.read!(metadata_path)
+    row = Repo.get!(Entry, saved.entry_id)
 
-    new_metadata =
-      old_metadata |> Jason.decode!() |> Map.put("title", "After interruption") |> Jason.encode!()
+    pending = %{
+      "kind" => "save",
+      "old_token" => row.file_token,
+      "body" => "A changed page",
+      "prefix" => "",
+      "title_line" => nil,
+      "title_anchor" => nil,
+      "metadata" => %{
+        "notebook_id" => nil,
+        "notebook" => nil,
+        "source_order" => nil,
+        "list_label" => nil
+      }
+    }
 
-    journal_bytes =
-      Jason.encode!(%{
-        "filename" => "poem.txt",
-        "old_body" => Base.encode64(saved.body),
-        "old_metadata" => Base.encode64(old_metadata),
-        "new_body" => Base.encode64("A changed page"),
-        "new_metadata" => Base.encode64(new_metadata)
-      })
-
-    File.write!(journal, journal_bytes)
-    # This recoverable half-save would be completed by the ordinary shelf reader.
+    row |> Ecto.Changeset.change(pending: pending) |> Repo.update!()
     File.write!(saved.path, "A changed page")
     before = snapshot(folder)
 
@@ -110,8 +109,7 @@ defmodule Still.Writing.ThreadsTest do
 
     assert problem =~ "interrupted save"
     assert snapshot(folder) == before
-    assert File.read!(journal) == journal_bytes
-    assert File.read!(metadata_path) == old_metadata
+    assert Repo.get!(Entry, row.id).pending == pending
   end
 
   test "an unavailable storage-setting error remains visible when no folder is configured" do
@@ -204,6 +202,33 @@ defmodule Still.Writing.ThreadsTest do
            ]
 
     assert Threads.passages([second], "accordion") == []
+  end
+
+  test "derived words and passages refresh when a document changes under the same key" do
+    original = doc("before:reused", :before, "family:reused", "Notebook", "amber waits\n")
+    other = doc("before:other", :before, "family:other", "Notebook Two", "amber waits")
+    assert "waits" in Threads.words([original, other])
+
+    assert Threads.passages([original], "amber") == [
+             %{document: original, text: "amber waits\n", line: 1}
+           ]
+
+    replacement =
+      doc(
+        "before:reused",
+        :before,
+        "family:reused",
+        "Notebook",
+        "quiet opening\n\nCobalt returns here\r\n"
+      )
+
+    assert Threads.passages([replacement], "cobalt") == [
+             %{document: replacement, text: "Cobalt returns here\r\n", line: 3}
+           ]
+
+    revised_other = doc("before:other", :before, "family:other", "Notebook Two", "cobalt violet")
+    assert "cobalt" in Threads.words([replacement, revised_other])
+    refute "waits" in Threads.words([replacement, revised_other])
   end
 
   test "pairs count unique family crossings with canonical Before and file orientation" do

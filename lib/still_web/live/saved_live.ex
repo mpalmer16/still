@@ -3,12 +3,54 @@ defmodule StillWeb.SavedLive do
   alias Still.{Desk, Poems, Storage}
 
   @impl true
-  def mount(_, _, socket), do: {:ok, assign(socket, confirmation: nil, notice: nil)}
+  def mount(_, _, socket),
+    do:
+      {:ok,
+       assign(socket,
+         confirmation: nil,
+         notice: nil,
+         reconciliation: %{missing: [], ambiguous: []}
+       )}
+
   @impl true
   def handle_params(params, _, socket), do: {:noreply, load(socket, params["trash"] == "1")}
   @impl true
   def handle_event("refresh_writing", _, socket),
     do: {:noreply, load(socket, socket.assigns.trash?)}
+
+  def handle_event("relink_file", %{"piece_id" => id, "path" => path}, socket) do
+    case Poems.relink(socket.assigns.location, id, path) do
+      {:ok, _piece} ->
+        {:noreply, socket |> assign(:notice, "Writing location updated.") |> load(false)}
+
+      {:error, message} ->
+        {:noreply, socket |> load(false) |> assign(:problem, message)}
+    end
+  end
+
+  def handle_event("adopt_file", %{"path" => path}, socket) do
+    case Poems.adopt(socket.assigns.location, path) do
+      {:ok, _piece} ->
+        {:noreply, socket |> assign(:notice, "Text file added to Saved writing.") |> load(false)}
+
+      {:error, message} ->
+        {:noreply, socket |> load(false) |> assign(:problem, message)}
+    end
+  end
+
+  def handle_event("resolve_file_conflict", %{"piece_id" => id, "choice" => choice}, socket)
+      when choice in ["keep_file", "use_proposed"] do
+    case Poems.resolve_pending(socket.assigns.location, id, choice) do
+      {:ok, _result} ->
+        {:noreply, socket |> assign(:notice, "Writing conflict resolved.") |> load(false)}
+
+      :ok ->
+        {:noreply, socket |> assign(:notice, "Writing conflict resolved.") |> load(false)}
+
+      {:error, message} ->
+        {:noreply, socket |> load(false) |> assign(:problem, message)}
+    end
+  end
 
   def handle_event("restore_file", %{"id" => id}, socket) do
     case Poems.restore(socket.assigns.location, id) do
@@ -72,12 +114,35 @@ defmodule StillWeb.SavedLive do
         {:error, message} -> {[], message}
       end
 
+    {reconciliation, reconciliation_problem} =
+      if location.available and not trash? do
+        case Poems.reconciliation(location) do
+          {:ok, result} -> {result, nil}
+          {:error, message} -> {%{missing: [], ambiguous: []}, message}
+        end
+      else
+        {%{missing: [], ambiguous: []}, nil}
+      end
+
+    pending_reviews =
+      if location.available and not trash? do
+        case Poems.pending_recovery(location) do
+          {:ok, reviews} -> reviews
+          _ -> []
+        end
+      else
+        []
+      end
+
     assign(socket,
       confirmation: nil,
       page_title: if(trash?, do: "Trash", else: "Saved writing"),
       location: location,
       pieces: pieces,
-      problem: problem,
+      submission_focus: Still.Correspondence.writing_status(location).focused,
+      problem: problem || reconciliation_problem,
+      reconciliation: reconciliation,
+      pending_reviews: pending_reviews,
       trash?: trash?
     )
   end
@@ -113,12 +178,86 @@ defmodule StillWeb.SavedLive do
           <.link id="new-writing" navigate={~p"/?new=1"} class="file-link">A blank page</.link>
         </header>
         <p :if={!@location.configured} id="writing-local-only" class="file-note">
-          No collection folder is chosen. You can draft in Now;
+          No collection folder is chosen. You can draft in Write;
           <.link navigate={~p"/storage"}>choose a folder</.link>
           before saving as a file.
         </p>
         <p :if={@problem} id="writing-problem" role="alert" class="file-note">{@problem}</p>
         <p :if={@notice} role="status" class="file-note">{@notice}</p>
+        <section :if={@pending_reviews != []} id="file-conflict-review" class="recovery-note">
+          <h2>Writing changed in two places</h2>
+          <p>
+            Review both versions before choosing which words belong in the file. The other version will remain in Earlier words.
+          </p>
+          <article :for={review <- @pending_reviews} id={"pending-review-#{review.id}"}>
+            <h3>{review.path}</h3>
+            <p :if={review.problem} role="alert">{review.problem}</p>
+            <div class="file-conflict-versions">
+              <section>
+                <h4>Words now in the file</h4>
+                <pre>{review.current_body}</pre>
+              </section>
+              <section>
+                <h4>Words Still was ready to save</h4>
+                <pre>{review.proposed_body}</pre>
+              </section>
+            </div>
+            <button
+              phx-click="resolve_file_conflict"
+              phx-value-piece_id={review.id}
+              phx-value-choice="keep_file"
+              class="quiet-link"
+            >Keep the file version</button>
+            <button
+              phx-click="resolve_file_conflict"
+              phx-value-piece_id={review.id}
+              phx-value-choice="use_proposed"
+              class="quiet-link"
+            >Use Still's saved words</button>
+          </article>
+        </section>
+        <section :if={!@trash? && @location.available} id="file-reconciliation" class="recovery-note">
+          <h2>File locations</h2>
+          <p :if={@reconciliation.missing != [] || @reconciliation.ambiguous != []}>
+            Some saved writing needs a location choice.
+          </p>
+          <p :if={@reconciliation.missing == [] && @reconciliation.ambiguous == []}>
+            Add a readable text file when you want Still to keep its place here.
+          </p>
+          <ul>
+            <li :for={missing <- @reconciliation.missing} id={"missing-file-#{missing.id}"}>
+              <span>{Map.get(missing, :path) || Map.get(missing, :relative_path) || "Unknown location"}</span><span>File not found.</span>
+              <form phx-submit="relink_file">
+                <input type="hidden" name="piece_id" value={missing.id} />
+                <label>
+                  Enter its new relative path
+                  <input name="path" required autocomplete="off" placeholder="Notebook 3/12" />
+                </label>
+                <button type="submit" class="quiet-link">Use this file</button>
+              </form>
+            </li>
+            <li :for={item <- @reconciliation.ambiguous} id={"ambiguous-file-#{item.id}"}>
+              <span>{item.relative_path}</span>
+              <form phx-submit="relink_file">
+                <input type="hidden" name="piece_id" value={item.id} />
+                <label>
+                  Choose its location
+                  <select name="path" required>
+                    <option :for={path <- item.candidates} value={path}>{path}</option>
+                  </select>
+                </label>
+                <button type="submit" class="quiet-link">Use this file</button>
+              </form>
+            </li>
+          </ul>
+          <form id="adopt-text-file" phx-submit="adopt_file">
+            <label>
+              Recognize another text file by its relative path
+              <input name="path" required autocomplete="off" placeholder="Notebook 2/12" />
+            </label>
+            <button type="submit" class="quiet-link">Add this file</button>
+          </form>
+        </section>
         <section
           :if={@confirmation}
           id="purge-confirmation"
@@ -137,6 +276,7 @@ defmodule StillWeb.SavedLive do
           <article :for={piece <- @pieces} id={"saved-#{piece.id}"} class="file-piece">
             <.link :if={!@trash?} navigate={~p"/writing/#{piece.id}"}>
               <span class="file-piece-title">{Poems.display_title(piece)}</span>
+              <span :if={@submission_focus[piece.id]} class="submission-indicator">Correspondence</span>
               <span class="file-opening">{opening(piece.body)}</span>
             </.link>
             <div :if={@trash?}>
@@ -155,13 +295,13 @@ defmodule StillWeb.SavedLive do
         <footer class="file-collection-note">
           <.link :if={!@trash?} id="open-trash" patch={~p"/writing?trash=1"} class="quiet-link">Trash</.link>
           <.link :if={@trash?} id="back-saved" patch={~p"/writing"} class="quiet-link">Saved writing</.link>
-          <.link navigate={~p"/"} class="quiet-link">Return to Now</.link>
+          <.link navigate={~p"/"} class="quiet-link">Return to Write</.link>
           <button id="refresh-writing" phx-click="refresh_writing" class="quiet-link">Refresh collection</button>
           <.link navigate={~p"/storage"} class="quiet-link">Storage &amp; Backups</.link>
-          <p>Now also lets you return to this browser or Mac profile’s local draft.</p>
+          <p>Write also lets you return to this browser or Mac profile’s local draft.</p>
           <details :if={@location.configured}>
-            <summary>Collection folder</summary><code>{Path.join(@location.folder, "poems")}</code><p>
-              Writing is kept as ordinary text files, separate from the historical Lists.
+            <summary>Collection folder</summary><code>{@location.folder}</code><p>
+              Writing is kept as ordinary text files in the selected folder.
             </p>
           </details>
         </footer>

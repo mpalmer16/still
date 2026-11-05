@@ -2,6 +2,7 @@
 from pathlib import Path
 import argparse
 import errno
+import json
 import os
 import plistlib
 import signal
@@ -85,7 +86,9 @@ with tempfile.TemporaryDirectory(prefix="still-native-") as temporary:
 
     established = root / "established"
     established.mkdir()
-    source = sqlite3.connect(f"file:{empty / 'still.db'}?mode=ro", uri=True)
+    # The synthetic backend has fully stopped. Open writable so SQLite can
+    # checkpoint its WAL before taking the disposable established fixture copy.
+    source = sqlite3.connect(empty / "still.db")
     db = sqlite3.connect(established / "still.db")
     source.backup(db)
     source.close()
@@ -121,9 +124,12 @@ with tempfile.TemporaryDirectory(prefix="still-native-") as temporary:
     print("Established synthetic collection: all fields of 3 pieces, 2 earlier versions, and room state preserved through native start/stop.")
 
     env = environment(established, 4051)
+    control_token = "synthetic-native-control-token-" + os.urandom(12).hex()
     env.update(DATABASE_PATH=str(established / "still.db"),
                SECRET_KEY_BASE=(established / ".secret_key_base").read_text(),
                PHX_HOST="localhost", PHX_SERVER="true", STILL_NATIVE="true", PORT="4051",
+               STILL_NATIVE_CONTROL_TOKEN=control_token,
+               STILL_LOCAL_STATE_DIRECTORY=str(root / "native-state"),
                RELEASE_DISTRIBUTION="none", RELEASE_TMP=str(root), ERL_FLAGS="+S 2:2")
     owner_code = "import subprocess,time; p=subprocess.Popen(" + repr([str(guard), str(release)]) + ",stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); print(p.pid,flush=True); time.sleep(60)"
     owner = subprocess.Popen(["/usr/bin/python3", "-c", owner_code], env=env,
@@ -137,6 +143,42 @@ with tempfile.TemporaryDirectory(prefix="still-native-") as temporary:
             except OSError:
                 time.sleep(.1)
         else: raise AssertionError("Guarded backend never became ready")
+
+        def native_request(method, route, payload=None):
+            data = None if payload is None else json.dumps(payload).encode()
+            request = urllib.request.Request(
+                "http://127.0.0.1:4051" + route, data=data, method=method,
+                headers={"x-still-native-token": control_token,
+                         "Content-Type": "application/json"})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                return json.loads(response.read())
+
+        writing = root / "ordinary-writing-files"
+        writing.mkdir()
+        (writing / "letter.md").write_text("synthetic words, no Still wrapper")
+        configured = native_request("PUT", "/native/storage", {"folder": str(writing)})
+        writing = writing.resolve()
+        assert configured["folder"] == str(writing) and configured["available"]
+        backed = native_request("POST", "/native/backup", {})
+        backup = writing / "still-backup.sqlite3"
+        assert backed["last_backup"]["path"] == str(backup) and backup.is_file()
+        assert not (writing / "still.db").exists(), "The writing root must not become the live database root"
+        assert sorted(path.name for path in writing.iterdir()) == ["letter.md", "still-backup.sqlite3"]
+        try:
+            request = urllib.request.Request(
+                "http://127.0.0.1:4051/native/storage", data=json.dumps({"folder": str(established)}).encode(),
+                method="PUT", headers={"x-still-native-token": control_token,
+                                        "Content-Type": "application/json"})
+            urllib.request.urlopen(request, timeout=5)
+            raise AssertionError("A folder containing the live database must not be selected as the writing root")
+        except urllib.error.HTTPError as error:
+            assert error.code == 422
+        assert native_request("GET", "/native/storage")["folder"] == str(writing)
+        verify = sqlite3.connect(established / "still.db")
+        assert verify.execute("pragma integrity_check").fetchone()[0] == "ok"
+        verify.close()
+        print("Writing root: arbitrary text folder accepted, one verified backup written, and live database kept outside it.")
+
         owner.kill()
         owner.wait(timeout=3)
         for _ in range(150):

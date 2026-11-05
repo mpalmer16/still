@@ -26,22 +26,17 @@ final class Backend {
     private let guardURL: URL
     private var log: FileHandle?
 
-    init(directory: URL? = nil) throws {
+    init() throws {
         let env = ProcessInfo.processInfo.environment
         guard let resources = Bundle.main.resourceURL,
               let executable = Bundle.main.executableURL
         else { throw StillError.message("Still could not find its local room.") }
-        let defaults = UserDefaults.standard
-        let explicit = directory?.path ?? env["STILL_DATA_DIRECTORY"]
+        let explicit = env["STILL_DATA_DIRECTORY"]
         let fallback = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Still/Writing", isDirectory: true)
-        let legacy = Bundle.main.object(forInfoDictionaryKey: "StillLegacyDataDirectory") as? String ??
-            Bundle.main.object(forInfoDictionaryKey: "StillDataDirectory") as? String
         dataDirectory = try WritingLocation.resolve(override: explicit,
-            bookmark: defaults.data(forKey: WritingLocation.bookmarkKey), legacyPath: legacy, fallback: fallback)
-        let rememberedProfile = explicit == nil && defaults.data(forKey: WritingLocation.bookmarkKey) != nil
-            ? defaults.string(forKey: WritingLocation.profileKey) : nil
-        profile = WritingLocation.profile(for: dataDirectory, remembered: rememberedProfile)
+            bookmark: nil, legacyPath: nil, fallback: fallback)
+        profile = WritingLocation.profile(for: dataDirectory)
         let configuredPort = env["STILL_NATIVE_PORT"] ?? Bundle.main.object(forInfoDictionaryKey: "StillNativePort") as? String
         port = Int(configuredPort ?? "4040") ?? 4040
         guard (1024...65535).contains(port) else { throw StillError.message("Still’s local port is invalid.") }
@@ -249,33 +244,21 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
 
-    private func openRoom(directory: URL? = nil) async throws {
+    private func openRoom() async throws {
         openingRoom = true
         defer { openingRoom = false }
-        let room = try Backend(directory: directory)
+        let room = try Backend()
         do {
             try room.start()
             try await room.ready()
-            if directory != nil || ProcessInfo.processInfo.environment["STILL_DATA_DIRECTORY"] == nil {
-                let bookmark = try WritingLocation.bookmark(for: room.dataDirectory)
-                UserDefaults.standard.set(bookmark, forKey: WritingLocation.bookmarkKey)
-                UserDefaults.standard.set(room.profile.uuidString, forKey: WritingLocation.profileKey)
-            }
         } catch {
             await room.stop()
             throw error
         }
         backend = room
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: room.profile)
-        webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.underPageBackgroundColor = window.backgroundColor
-        webView.allowsBackForwardNavigationGestures = false
-        webView.allowsMagnification = false
-        webView.allowsLinkPreview = false
-        webView.navigationDelegate = self
-        webView.uiDelegate = self
-        window.contentView = webView
+        let status = try? await room.storageStatus()
+        let profile = status?.folder.map { WritingLocation.profile(for: URL(fileURLWithPath: $0, isDirectory: true)) } ?? room.profile
+        webView = makeWebView(profile: profile)
         webView.load(URLRequest(url: reopeningURL(room)))
         room.process?.terminationHandler = { [weak self, weak room] _ in
             Task { @MainActor in
@@ -284,6 +267,20 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 }
             }
         }
+    }
+
+    private func makeWebView(profile: UUID) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: profile)
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        view.underPageBackgroundColor = window.backgroundColor
+        view.allowsBackForwardNavigationGestures = false
+        view.allowsMagnification = false
+        view.allowsLinkPreview = false
+        view.navigationDelegate = self
+        view.uiDelegate = self
+        window.contentView = view
+        return view
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -318,9 +315,11 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     cancelClose()
                     return
                 }
-                let editorReady = await editorReadyForBackup()
-                let status = try? await backend?.storageStatus()
-                if status?.changed != false || !editorReady {
+                let remindersEnabled = UserDefaults.standard.bool(forKey: "Still.backupReminderOnClose")
+                let editorReady = remindersEnabled ? await editorReadyForBackup() : true
+                let status = remindersEnabled ? (try? await backend?.storageStatus()) : nil
+                if ClosePolicy.resolve(changed: status?.changed != false, editorReady: editorReady,
+                                       remindersEnabled: remindersEnabled) == .askForChoice {
                     let choice = await askCloseChoice(hasFolder: status?.configured == true && status?.available == true)
                     switch ClosePolicy.resolve(changed: status?.changed != false, editorReady: editorReady, choice: choice,
                                                 hasBackupFolder: status?.configured == true && status?.available == true) {
@@ -328,7 +327,7 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     case .close: await finishClose(); return
                     case .backUp: break
                     case .chooseBackupFolder:
-                        showCloseError("Choose a backup folder from File → Choose Backup Folder… before backing up and closing.")
+                        showCloseError("Choose a writing folder from File → Choose Writing Folder… before backing up and closing.")
                         cancelClose(); return
                     case .askForChoice: break
                     }
@@ -364,7 +363,7 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
             alert.messageText = "Back up your writing before closing?"
             alert.informativeText = hasFolder
                 ? "Your database has changed since its last backup. New writing files and local drafts are separate from this database snapshot."
-                : "Your collection has changed and has no available backup folder. You can close now and choose a folder later."
+                : "Your collection has changed and has no available writing folder for its database backup. You can close now and choose a folder later."
             alert.addButton(withTitle: "Back Up & Close")
             alert.addButton(withTitle: "Close Without Backing Up")
             alert.addButton(withTitle: "Cancel")
@@ -461,9 +460,12 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if closeInProgress || backingUp { return false }
+        if item.action == #selector(toggleBackupReminder(_:)) {
+            item.state = UserDefaults.standard.bool(forKey: "Still.backupReminderOnClose") ? .on : .off
+            return !quitting
+        }
         if item.action == #selector(chooseWritingFolder(_:)) { return !quitting && !openingRoom && !choosingFolder }
-        if item.action == #selector(chooseBackupFolder(_:)) || item.action == #selector(clearBackupFolder(_:)) ||
-            item.action == #selector(backupNow(_:)) || item.action == #selector(showBackupFolder(_:)) {
+        if item.action == #selector(clearWritingFolder(_:)) || item.action == #selector(backupNow(_:)) {
             return !quitting && !openingRoom && !choosingFolder
         }
         if item.action == #selector(fullscreen(_:)) {
@@ -744,41 +746,33 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     @objc func showWritingFolder(_ sender: Any?) {
-        if let directory = backend?.dataDirectory { NSWorkspace.shared.open(directory) }
+        Task {
+            do {
+                guard let status = try await backend?.storageStatus(),
+                      status.configured, let folder = status.folder else {
+                    showStorageNotice("Choose a writing folder first.")
+                    return
+                }
+                guard status.available else {
+                    showStorageNotice(status.error ?? "The writing folder is unavailable.")
+                    return
+                }
+                guard NSWorkspace.shared.open(URL(fileURLWithPath: folder, isDirectory: true)) else {
+                    showStorageNotice("Still could not open the writing folder.")
+                    return
+                }
+            } catch { showCloseError(error.localizedDescription) }
+        }
     }
 
     @objc func openStorageSettings(_ sender: Any?) { navigate(to: "/storage") }
 
-    @objc func chooseBackupFolder(_ sender: Any?) {
-        guard !quitting, !closeInProgress, !choosingFolder else { return }
-        choosingFolder = true
-        let panel = NSOpenPanel()
-        panel.title = "Choose Still’s backup folder"
-        panel.message = "Choose a separate synchronized folder for verified backups of this collection."
-        panel.prompt = "Use This Folder"
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = true
-        panel.beginSheetModal(for: window) { [weak self] response in
-            guard let self else { return }
-            self.choosingFolder = false
-            guard response == .OK, let folder = panel.url else { return }
-            Task { await self.updateBackupFolder(folder.path) }
-        }
-    }
+    @objc func clearWritingFolder(_ sender: Any?) { Task { await switchWritingFolder(to: nil) } }
 
-    @objc func clearBackupFolder(_ sender: Any?) { Task { await updateBackupFolder(nil) } }
-
-    private func updateBackupFolder(_ folder: String?) async {
-        guard !backingUp, !closeInProgress, let backend else { return }
-        do {
-            if let folder { _ = try await backend.storageRequest("PUT", body: ["folder": folder]) }
-            else { _ = try await backend.storageRequest("DELETE") }
-            showStorageNotice(folder == nil
-                ? "Backup folder cleared. Existing backups are unchanged."
-                : "Backup folder updated.")
-        } catch { showCloseError(error.localizedDescription) }
+    @objc func toggleBackupReminder(_ sender: NSMenuItem) {
+        let enabled = !UserDefaults.standard.bool(forKey: "Still.backupReminderOnClose")
+        UserDefaults.standard.set(enabled, forKey: "Still.backupReminderOnClose")
+        sender.state = enabled ? .on : .off
     }
 
     @objc func backupNow(_ sender: Any?) {
@@ -808,26 +802,6 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
 
-    @objc func showBackupFolder(_ sender: Any?) {
-        Task {
-            do {
-                guard let status = try await backend?.storageStatus(),
-                      status.configured, let folder = status.folder else {
-                    showStorageNotice("Choose a backup folder first.")
-                    return
-                }
-                guard status.available else {
-                    showStorageNotice(status.error ?? "The backup folder is unavailable.")
-                    return
-                }
-                guard NSWorkspace.shared.open(URL(fileURLWithPath: folder, isDirectory: true)) else {
-                    showStorageNotice("Still could not open the backup folder.")
-                    return
-                }
-            } catch { showCloseError(error.localizedDescription) }
-        }
-    }
-
     private func showStorageNotice(_ message: String) {
         let alert = NSAlert()
         alert.messageText = message
@@ -839,32 +813,22 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         choosingFolder = true
         let panel = NSOpenPanel()
         panel.title = "Choose Still’s writing folder"
-        panel.message = "Choose the folder containing still.db, or an empty folder for a new collection. Existing writing stays in its current folder."
+        panel.message = "Choose an existing local folder for ordinary text files. Still keeps its live database in local application data."
         panel.prompt = "Use This Folder"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = true
+        panel.canCreateDirectories = false
         panel.directoryURL = backend?.dataDirectory
         panel.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
             self.choosingFolder = false
             guard response == .OK, let directory = panel.url else { return }
-            if directory.resolvingSymlinksInPath().path == self.backend?.dataDirectory.resolvingSymlinksInPath().path { return }
-            if !FileManager.default.fileExists(atPath: directory.appendingPathComponent("still.db").path) {
-                let confirmation = NSAlert()
-                confirmation.messageText = "Open an empty collection here?"
-                confirmation.informativeText = "This folder has no Still database. Your existing writing stays in its current folder. Choose that folder again to return to it."
-                confirmation.addButton(withTitle: "Open Empty Collection")
-                confirmation.addButton(withTitle: "Cancel")
-                confirmation.beginSheetModal(for: self.window) { result in
-                    if result == .alertFirstButtonReturn { Task { await self.switchWritingFolder(to: directory) } }
-                }
-            } else { Task { await self.switchWritingFolder(to: directory) } }
+            Task { await self.switchWritingFolder(to: directory) }
         }
     }
 
-    private func switchWritingFolder(to directory: URL) async {
+    private func switchWritingFolder(to directory: URL?) async {
         guard !choosingFolder, !openingRoom, !quitting else { return }
         choosingFolder = true
         defer { choosingFolder = false }
@@ -884,23 +848,27 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
             if pending {
                 let alert = NSAlert()
                 alert.messageText = "Some words are still waiting to be saved."
-                alert.informativeText = "Save or recover them in this collection before choosing another writing folder."
+                alert.informativeText = "Save or recover them before choosing another writing folder."
                 alert.beginSheetModal(for: window, completionHandler: nil)
                 return
             }
         }
-        let previous = backend?.dataDirectory
-        let previousRoom = backend
-        backend = nil
-        await previousRoom?.stop()
-        do { try await openRoom(directory: directory) }
-        catch {
-            if let previous {
-                do { try await openRoom(directory: previous) }
-                catch { showFailure(error); return }
+        do {
+            guard let backend else { throw StillError.message("Still’s local room is not ready.") }
+            if let directory {
+                _ = try await backend.storageRequest("PUT", body: ["folder": directory.path])
+            } else {
+                _ = try await backend.storageRequest("DELETE")
             }
+            let root = try await backend.storageStatus().folder
+            let profile = root.map {
+                WritingLocation.profile(for: URL(fileURLWithPath: $0, isDirectory: true))
+            } ?? backend.profile
+            webView = makeWebView(profile: profile)
+            webView.load(URLRequest(url: reopeningURL(backend)))
+        } catch {
             let alert = NSAlert()
-            alert.messageText = "Still could not open that folder."
+            alert.messageText = "Still could not use that writing folder."
             alert.informativeText = error.localizedDescription
             alert.beginSheetModal(for: window, completionHandler: nil)
         }
@@ -947,14 +915,13 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         file.addItem(.separator())
         let storage = file.addItem(withTitle: "Storage & Backups…", action: #selector(openStorageSettings(_:)), keyEquivalent: "")
         storage.target = self
-        let chooseBackup = file.addItem(withTitle: "Choose Backup Folder…", action: #selector(chooseBackupFolder(_:)), keyEquivalent: "")
-        chooseBackup.target = self
-        let clearBackup = file.addItem(withTitle: "Clear Backup Folder", action: #selector(clearBackupFolder(_:)), keyEquivalent: "")
-        clearBackup.target = self
+        let clearWriting = file.addItem(withTitle: "Clear Writing Folder", action: #selector(clearWritingFolder(_:)), keyEquivalent: "")
+        clearWriting.target = self
         let backup = file.addItem(withTitle: "Back Up Now", action: #selector(backupNow(_:)), keyEquivalent: "")
         backup.target = self
-        let showBackup = file.addItem(withTitle: "Show Backup Folder", action: #selector(showBackupFolder(_:)), keyEquivalent: "")
-        showBackup.target = self
+        let reminder = file.addItem(withTitle: "Remind Me to Back Up on Close", action: #selector(toggleBackupReminder(_:)), keyEquivalent: "")
+        reminder.target = self
+        reminder.state = UserDefaults.standard.bool(forKey: "Still.backupReminderOnClose") ? .on : .off
         let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         bar.addItem(editItem)
         let edit = NSMenu(title: "Edit")

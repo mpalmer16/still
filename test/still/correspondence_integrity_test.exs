@@ -1,7 +1,7 @@
 defmodule Still.CorrespondenceIntegrityTest do
   use Still.DataCase, async: false
 
-  alias Still.{Correspondence, Poems, Storage, Writing}
+  alias Still.{Correspondence, LocalRecord, Poems, Repo, Storage, Writing}
 
   setup do
     root =
@@ -28,15 +28,17 @@ defmodule Still.CorrespondenceIntegrityTest do
     location: location
   } do
     {:ok, legacy} = Writing.save_entry(nil, "SQLite-only legacy list\nwith private words")
-    before_entries = Writing.list_entries()
+    legacy_before = Writing.get_entry(legacy.id)
     {:ok, file_piece} = save_piece("File manuscript", "File-backed words")
     {:ok, _journal} = Correspondence.save_journal(location, journal_attrs())
 
     {:ok, overview} = Correspondence.overview(location)
     assert Enum.map(overview.pieces, & &1.id) == [file_piece.id]
     refute Enum.any?(overview.pieces, &String.contains?(&1.body, "SQLite-only"))
-    assert Writing.list_entries() == before_entries
-    assert legacy in Writing.list_entries()
+    entries = Writing.list_entries()
+    assert Enum.any?(entries, &(&1.id == legacy.id))
+    assert Enum.any?(entries, &(&1.file_id == file_piece.id))
+    assert Writing.get_entry(legacy.id) == legacy_before
     assert Writing.list_versions(legacy) == []
   end
 
@@ -57,7 +59,14 @@ defmodule Still.CorrespondenceIntegrityTest do
     assert {:ok, persisted_packet} = Correspondence.packet(location, packet.id)
     assert persisted_packet.status == "preparing"
     assert persisted_packet.snapshot_ref == nil
-    assert File.ls!(Path.join([location.folder, "correspondence", "snapshots"])) == []
+
+    refute not is_nil(
+             Repo.one(
+               Ecto.Query.from(r in LocalRecord,
+                 where: r.scope == ^location.scope and r.kind == "snapshot"
+               )
+             )
+           )
   end
 
   test "a packet from another collection scope cannot write into the currently selected collection",
@@ -89,66 +98,61 @@ defmodule Still.CorrespondenceIntegrityTest do
     frozen = hd(sent.snapshot.pieces)
 
     {:ok, current} = Poems.get(location, piece.id)
-    {:ok, renamed} = Poems.save(location, current, %{title: "After rename", body: current.body})
-    assert renamed.path != piece.path
+
+    {:ok, renamed} =
+      Poems.save(location, current, %{
+        title_line: 1,
+        body: "After rename\n\nthe exact submitted body\r\nsecond line\r\n"
+      })
+
+    assert renamed.path == piece.path
+    assert renamed.relative_path == piece.relative_path
+    assert renamed.body == "After rename\n\nthe exact submitted body\r\nsecond line\r\n"
     {:ok, _trashed} = Poems.trash(location, renamed)
 
     assert {:ok, exported} = Correspondence.export_packet(location, packet.id)
     assert exported.frozen?
     assert hd(exported.pieces).body == frozen.body
     assert hd(exported.pieces).title == frozen.title
-    assert frozen.body == "the exact submitted body\r\nsecond line\r\n"
+    assert frozen.body == "Before rename\n\nthe exact submitted body\r\nsecond line\r\n"
   end
 
   test "malformed event data and malformed snapshot members return errors instead of crashing", %{
-    location: location,
-    collection: collection
+    location: location
   } do
     {:ok, piece} = save_piece("Malformed", "safe body")
     {:ok, journal} = Correspondence.save_journal(location, journal_attrs())
     {:ok, packet} = Correspondence.save_packet(location, packet_attrs(journal.id, [piece.id]))
-    packet_path = Path.join([collection, "correspondence", "packets", packet.id <> ".json"])
-    raw_packet = Jason.decode!(File.read!(packet_path))
-    File.write!(packet_path, Jason.encode!(Map.put(raw_packet, "events", ["not an event map"])))
-    assert {:error, _} = Correspondence.packet(location, packet.id)
+    row = Repo.get_by!(LocalRecord, scope: location.scope, kind: "packet", record_key: packet.id)
 
-    # Recreate a valid packet, submit it, then alter the snapshot and update the
-    # record digest to model a syntactically valid but structurally malformed file.
-    File.rm!(packet_path)
+    row
+    |> LocalRecord.changeset(%{data: Map.put(row.data, "events", ["not an event map"])})
+    |> Repo.update!()
+
+    assert {:error, _} = Correspondence.packet(location, packet.id)
 
     {:ok, replacement} =
       Correspondence.save_packet(location, packet_attrs(journal.id, [piece.id]))
 
-    packet_path = Path.join([collection, "correspondence", "packets", replacement.id <> ".json"])
     {:ok, sent} = Correspondence.submit(location, replacement.id, replacement.token, "2026-10-23")
 
-    snapshot_path =
-      Path.join([collection, "correspondence", "snapshots", sent.snapshot_ref <> ".json"])
+    snapshot =
+      Repo.get_by!(LocalRecord,
+        scope: location.scope,
+        kind: "snapshot",
+        record_key: sent.snapshot_ref
+      )
 
-    bad_snapshot = snapshot_path |> File.read!() |> Jason.decode!() |> Map.put("pieces", [42])
-    snapshot_bytes = Jason.encode!(bad_snapshot, pretty: true) <> "\n"
-    File.write!(snapshot_path, snapshot_bytes)
-    raw_packet = packet_path |> File.read!() |> Jason.decode!()
-    digest = :crypto.hash(:sha256, snapshot_bytes) |> Base.encode16(case: :lower)
-
-    File.write!(
-      packet_path,
-      Jason.encode!(Map.put(raw_packet, "snapshot_digest", digest), pretty: true) <> "\n"
-    )
-
+    bad = snapshot.bytes |> Jason.decode!() |> Map.put("pieces", [42]) |> Jason.encode!()
+    snapshot |> LocalRecord.changeset(%{bytes: bad}) |> Repo.update!()
     assert {:error, _} = Correspondence.packet(location, sent.id)
-    assert File.read!(snapshot_path) == snapshot_bytes
   end
 
-  test "a preparing packet cannot carry a submitted lifecycle event", %{
-    location: location,
-    collection: collection
-  } do
+  test "a preparing packet cannot carry a submitted lifecycle event", %{location: location} do
     {:ok, piece} = save_piece("Lifecycle", "safe body")
     {:ok, journal} = Correspondence.save_journal(location, journal_attrs())
     {:ok, packet} = Correspondence.save_packet(location, packet_attrs(journal.id, [piece.id]))
-    packet_path = Path.join([collection, "correspondence", "packets", packet.id <> ".json"])
-    raw = packet_path |> File.read!() |> Jason.decode!()
+    row = Repo.get_by!(LocalRecord, scope: location.scope, kind: "packet", record_key: packet.id)
 
     event = %{
       "at" => DateTime.utc_now() |> DateTime.to_iso8601(),
@@ -157,7 +161,7 @@ defmodule Still.CorrespondenceIntegrityTest do
       "note" => nil
     }
 
-    File.write!(packet_path, Jason.encode!(Map.put(raw, "events", [event]), pretty: true) <> "\n")
+    row |> LocalRecord.changeset(%{data: Map.put(row.data, "events", [event])}) |> Repo.update!()
 
     assert {:error, _} = Correspondence.packet(location, packet.id)
   end
@@ -205,9 +209,9 @@ defmodule Still.CorrespondenceIntegrityTest do
     assert Enum.count(completed.events, &(&1.kind == "response")) == 2
     assert {:ok, []} = Correspondence.overlap(location, [first.id, second.id])
     assert {:ok, first_history} = Correspondence.history(location, first.id)
-    assert hd(first_history).snapshot.body == "first"
+    assert hd(first_history).snapshot.body == "First\n\nfirst"
     assert {:ok, second_history} = Correspondence.history(location, second.id)
-    assert hd(second_history).snapshot.body == "second"
+    assert hd(second_history).snapshot.body == "Second\n\nsecond"
   end
 
   defp save_piece(title, body) do

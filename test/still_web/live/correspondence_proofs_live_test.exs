@@ -64,13 +64,16 @@ defmodule StillWeb.CorrespondenceProofsLiveTest do
     assert snapshot(folder) == before
   end
 
-  test "the source chooser can compare an earlier save and a title-only change", %{
-    conn: conn,
-    location: location
-  } do
-    body = "Same words.\n\n  Same space.\n"
-    {:ok, piece} = Poems.save(location, Poems.new(location), %{title: "First title", body: body})
-    {:ok, current} = Poems.save(location, piece, %{title: "Second title", body: body})
+  test "the source chooser compares an earlier save and a changed title role without changing words",
+       %{
+         conn: conn,
+         location: location
+       } do
+    body = "First title\nSecond title\nSame words.\n\n  Same space.\n"
+    {:ok, piece} = Poems.save(location, Poems.new(location), %{body: body, title_line: 1})
+    {:ok, current} = Poems.set_title_role(location, piece, 2)
+    assert current.body == body
+    assert current.title == "Second title"
     {:ok, [revision]} = Poems.revisions(location, current.id)
     {:ok, view, _} = live(conn, ~p"/correspondence/writing/#{current.id}?compare=latest")
     assert has_element?(view, "#proof-status", "The words match. The title has changed.")
@@ -84,6 +87,8 @@ defmodule StillWeb.CorrespondenceProofsLiveTest do
     assert has_element?(view, "#proof-source option[selected][value='saved:#{revision.id}']")
     view |> element("#close-proof") |> render_click()
     refute has_element?(view, "#work-proof")
+    assert has_element?(view, ".corr-manuscript", "First title")
+    assert has_element?(view, ".corr-manuscript", "Second title")
     assert has_element?(view, ".corr-manuscript", "Same words.")
     assert Poems.get(location, current.id) == {:ok, current}
   end

@@ -2,7 +2,10 @@ defmodule StillWeb.Echoes do
   use StillWeb, :html
   alias Still.Writing.Attention
 
+  def immediate(field), do: Enum.map(field, &Map.merge(&1, %{departing: false, delay: 0}))
+
   attr :fragments, :list, required: true
+  attr :responsive, :boolean, default: false
 
   def field(assigns) do
     fragments =
@@ -26,7 +29,7 @@ defmodule StillWeb.Echoes do
     <aside
       :for={fragment <- @fragments}
       id={"drawn-before-#{fragment.entry.id}"}
-      class={"gravity-presence field-#{fragment.side} gravity-#{fragment.distance} motion-#{fragment.motion} #{if fragment.departing, do: "gravity-receding"}"}
+      class={"gravity-presence field-#{fragment.side} gravity-#{fragment.distance} motion-#{fragment.motion} #{if @responsive, do: "passage-echo"} #{if fragment.departing, do: "gravity-receding"}"}
       style={"--field-y: #{fragment.height}vh; --pull: #{fragment.strength}; --arrival-delay: #{fragment.delay}ms;"}
       aria-label={if fragment.entry.origin == "before", do: "From before", else: "Written here"}
       aria-hidden={if fragment.departing, do: "true", else: nil}
@@ -48,9 +51,10 @@ defmodule StillWeb.Echoes do
         <span :if={fragment.entry.title} class="gravity-title"><.list_title text={
           fragment.entry.title
         } /></span>
-        <span class="gravity-place">{fragment.place.label}<span :if={
+        <span class="gravity-place">{Still.Writing.Geography.reference_label(
+          fragment.place,
           Still.Writing.source_number(fragment.entry)
-        }> · source {Still.Writing.source_number(fragment.entry)}</span></span>
+        )}</span>
       </.link>
     </aside>
     """
@@ -61,6 +65,8 @@ defmodule StillWeb.Echoes do
   attr :id_prefix, :string, default: "passage"
   attr :target_line, :integer, default: nil
   attr :active_line, :integer, default: nil
+  attr :listening, :boolean, default: true
+  attr :document_id, :any, default: nil
 
   def reading(assigns) do
     passages = Attention.passages(assigns.body)
@@ -71,12 +77,21 @@ defmodule StillWeb.Echoes do
       |> assign(:last_passage, length(passages) - 1)
 
     ~H"""
-    <div class="echo-reading">
+    <div
+      class="echo-reading"
+      id={if @listening && @document_id, do: "echo-attention-#{@id_prefix}-#{@document_id}"}
+      phx-hook={if @listening && @document_id, do: "PassageAttention"}
+      data-echo-document={@document_id}
+    >
       <div
         :for={{passage, index} <- @passages}
+        data-echo-line={
+          if @listening && @document_id && passage.kind == :passage, do: passage.first_line
+        }
+        tabindex={if @listening && @document_id && passage.kind == :passage, do: "0"}
         class={
           if passage.kind == :passage,
-            do: "echo-passage #{if @active_line == passage.first_line, do: "passage-listening"}",
+            do: "echo-passage #{if @active_line == passage.first_line, do: "passage-focused"}",
             else: "echo-space"
         }
       >
@@ -88,26 +103,14 @@ defmodule StillWeb.Echoes do
           start_line={passage.first_line}
           trim_terminal_line={index < @last_passage}
         />
-        <button
-          :if={passage.kind == :passage}
-          id={"listen-passage-#{passage.first_line}"}
-          type="button"
-          phx-click="listen_passage"
-          phx-value-line={passage.first_line}
-          aria-label={"Listen beside the passage beginning on line #{passage.first_line}"}
-          aria-pressed={to_string(@active_line == passage.first_line)}
-          class="passage-listen"
-        ><span aria-hidden="true" class="passage-ear"></span><span
-          aria-hidden="true"
-          class="listen-label"
-        >Listen here</span></button>
       </div>
       <.shaped_words :if={@passages == []} body={@body} id_prefix={@id_prefix} />
-      <div :if={@active_line} class="passage-listening-note">
+      <div :if={@active_line} class="passage-focused-note">
         <span>Beside this passage</span><button
-          id="listen-whole"
+          id="whole-page-echoes"
+          data-clear-passage-focus
           type="button"
-          phx-click="listen_whole"
+          phx-click="clear_passage_focus"
           class="quiet-link"
         >Whole page</button>
       </div>

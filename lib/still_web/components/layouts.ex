@@ -15,7 +15,7 @@ defmodule StillWeb.Layouts do
   attr :place, :map,
     default: %{
       key: "now",
-      label: "Now",
+      label: "Write",
       region: "",
       x: 50,
       y: 50,
@@ -46,7 +46,13 @@ defmodule StillWeb.Layouts do
               aria-current={if @active == "write", do: "page"}
               navigate={return_path(@return_writing, @return_beside, @return_list)}
               class={if(@active == "write", do: "nav-active", else: nil)}
-            >Now</.link>
+            >Write</.link>
+            <.link
+              id="open-notebooks"
+              navigate={~p"/notebooks"}
+              aria-current={if @active == "notebooks", do: "page"}
+              class={if(@active == "notebooks", do: "nav-active", else: nil)}
+            >Notebooks</.link>
             <.link
               id="wander"
               aria-current={if @active == "before", do: "page"}
@@ -144,13 +150,16 @@ defmodule StillWeb.Layouts do
         phx-click="toggle_landscape"
         class="place-whisper room-control"
         title={region_label(@place.region)}
-        aria-label={"Reveal the room, #{@place.label}"}
+        aria-label={"Reveal the room, #{Still.Writing.Geography.reference_label(@place, Map.get(@place, :source_number))}"}
         aria-expanded={to_string(@landscape_open)}
         aria-controls="room-landscape"
         inert={@landscape_open}
         aria-hidden={if @landscape_open, do: "true"}
       >
-        <span class="place-name">{@place.label}<span :if={Map.get(@place, :source_number)}> · source {@place.source_number}</span></span>
+        <span class="place-name">{Still.Writing.Geography.reference_label(
+          @place,
+          Map.get(@place, :source_number)
+        )}</span>
         <span :if={region_label(@place.region) != ""} class="place-region">{region_label(
           @place.region
         )}</span>
@@ -176,7 +185,7 @@ defmodule StillWeb.Layouts do
           navigate={return_path(@return_writing, @return_beside, @return_list)}
           class={"landscape-place landscape-now #{if @place.key == "now", do: "place-current"}"}
           style="--x: 50%; --y: 72%;"
-        >Now</.link>
+        >Write</.link>
         <.link
           :for={place <- @places}
           id={place_id(place.key)}

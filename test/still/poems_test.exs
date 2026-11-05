@@ -1,21 +1,10 @@
 defmodule Still.PoemsTest do
-  use ExUnit.Case, async: false
+  use Still.DataCase, async: false
 
-  alias Still.{Poems, Storage}
-
-  test "untitled labels use the first written line without changing the writing" do
-    body = "\n  First line stays here  \r\n\tSecond line\n"
-    piece = %{title: nil, body: body}
-    assert Poems.display_title(piece) == "First line stays here"
-    assert piece.body == body
-    assert Poems.display_title(%{piece | title: "Chosen title"}) == "Chosen title"
-    assert Poems.display_title(%{piece | title: "  "}) == "First line stays here"
-    assert Poems.display_title(%{piece | body: "\n  \t"}) == "Untitled"
-    long = String.duplicate("é", 61)
-    label = Poems.display_title(%{title: nil, body: long <> "\nsecond"})
-    assert String.length(label) == 60
-    assert label == String.duplicate("é", 59) <> "…"
-  end
+  import Ecto.Query
+  alias Ecto.Changeset
+  alias Still.{Poems, Repo, Storage}
+  alias Still.Writing.{Entry, Version}
 
   setup do
     root = Path.join(System.tmp_dir!(), "still-poems-test-#{System.unique_integer([:positive])}")
@@ -34,531 +23,559 @@ defmodule Still.PoemsTest do
       File.rm_rf!(root)
     end)
 
-    %{folder: folder, root: root}
+    %{folder: folder, root: root, location: Storage.collection_location()}
   end
 
-  test "creates, lists, reopens and preserves exact text" do
-    poem = Poems.new(nil)
-    text = "  First line\r\n\tSecond line\n\n"
-    assert {:ok, saved} = Poems.save(nil, poem, %{title: nil, body: text})
-    assert saved.body == text
-    assert saved.title == "First line"
-    assert saved.title_source == "first_line"
-    assert saved.created_at
-    assert saved.updated_at
-    assert {:ok, [listed]} = Poems.list(nil)
-    assert listed.id == poem.id
-    assert {:ok, reopened} = Poems.get(nil, poem.id)
-    assert reopened.body == text
-    assert reopened.token == saved.token
-    assert File.regular?(saved.path)
-    assert Path.basename(Path.dirname(saved.path)) == "First line -- #{poem.id}"
+  test "new names use the title or opening without changing the words", %{location: location} do
+    body = "\n  rain / snow: café  \r\n\twords\n"
+    assert {:ok, first} = Poems.save(location, Poems.new(location), %{body: body})
+    assert first.relative_path == "rain_snow_café.txt"
+    assert File.read!(first.path) == body
+    assert {:ok, duplicate} = Poems.save(location, Poems.new(location), %{body: body})
+    assert duplicate.relative_path == "rain_snow_café_2.txt"
+    assert duplicate.id != first.id
+
+    assert {:ok, titled} =
+             Poems.save(location, Poems.new(location), %{
+               body: "Opening\nChosen title\n",
+               title_line: 2
+             })
+
+    assert titled.relative_path == "Chosen_title.txt"
+    assert {:ok, blank} = Poems.save(location, Poems.new(location), %{body: "\n"})
+    assert blank.relative_path == "Untitled.txt"
   end
 
-  test "empty poem can be saved and title changes keep its stable filename" do
-    poem = Poems.new(nil)
-    assert {:ok, saved} = Poems.save(nil, poem, %{title: "Untitled", body: ""})
-    assert saved.path =~ "/poem.txt"
-    assert {:ok, titled} = Poems.save(nil, saved, %{title: "A new title", body: ""})
-    assert titled.id == saved.id
-    assert Path.basename(titled.path) == "poem.txt"
-    refute File.exists?(saved.path)
-    assert Path.basename(Path.dirname(titled.path)) == "A new title -- #{saved.id}"
-    assert titled.title == "A new title"
-    assert {:ok, [revision]} = Poems.revisions(nil, poem.id)
-    assert revision.title == "Untitled"
-    assert revision.body == ""
+  test "generated names use underscores for words and every colon", %{location: location} do
+    for {opening, filename} <- [
+          {"this is the title", "this_is_the_title.txt"},
+          {"this:is:the:title:", "this_is_the_title_.txt"},
+          {"This: Is: Another: Title:", "This_Is_Another_Title_.txt"},
+          {"this::title:", "this__title_.txt"},
+          {"  words\twith  spaces  ", "words_with_spaces.txt"}
+        ] do
+      body = opening <> "\r\n\r\n  Exact words\n"
+      assert {:ok, saved} = Poems.save(location, Poems.new(location), %{body: body})
+      assert saved.relative_path == filename
+      assert File.read!(saved.path) == body
+      assert {:ok, edited} = Poems.save(location, saved, %{body: "A changed opening\n"})
+      assert edited.relative_path == filename
+    end
   end
 
-  test "external rename preserves identity and saving archives externally changed words" do
-    poem = Poems.new(nil)
-    assert {:ok, saved} = Poems.save(nil, poem, %{title: "First", body: "first words"})
-    renamed = Path.join(Path.dirname(saved.path), "writer-chosen-name.txt")
-    File.rename!(saved.path, renamed)
-    assert {:ok, externally_renamed} = Poems.get(nil, poem.id)
-    assert externally_renamed.path == renamed
-    File.write!(renamed, "outside words\n")
-
-    assert {:error, message} =
-             Poems.save(nil, externally_renamed, %{title: "First", body: "later"})
-
-    assert message =~ "changed on disk"
-    assert {:ok, fresh} = Poems.get(nil, poem.id)
-    assert fresh.body == "outside words\n"
-    assert {:ok, saved_again} = Poems.save(nil, fresh, %{title: "First", body: "later"})
-    assert {:ok, [revision]} = Poems.revisions(nil, poem.id)
-    assert revision.body == "outside words\n"
-    assert saved_again.body == "later"
-  end
-
-  test "invalid UTF-8 and null bytes are rejected" do
-    poem = Poems.new(nil)
-    assert {:error, _} = Poems.save(nil, poem, %{title: nil, body: <<255>>})
-    assert {:error, _} = Poems.save(nil, poem, %{title: nil, body: "bad" <> <<0>>})
-  end
-
-  test "an interrupted two-file save finishes from a verified journal", %{folder: folder} do
-    poem = Poems.new(nil)
-    assert {:ok, saved} = Poems.save(nil, poem, %{title: "Before", body: "old"})
-    dir = Path.dirname(saved.path)
-    meta_path = Path.join(dir, "metadata.json")
-    old_meta = File.read!(meta_path)
-
-    new_meta =
-      Jason.encode!(
-        %{
-          "id" => poem.id,
-          "title" => "After",
-          "created_at" => saved.created_at,
-          "updated_at" => "2026-10-23T12:00:00Z",
-          "filename" => "poem.txt"
-        },
-        pretty: true
-      ) <> "\n"
-
-    journal = %{
-      "filename" => "poem.txt",
-      "old_body" => Base.encode64("old"),
-      "old_metadata" => Base.encode64(old_meta),
-      "new_body" => Base.encode64("new"),
-      "new_metadata" => Base.encode64(new_meta)
-    }
-
-    File.write!(Path.join(dir, ".save-journal.json"), Jason.encode!(journal))
-    File.write!(saved.path, "new")
-
-    assert {:ok, reopened} = Poems.get(nil, poem.id)
-    assert reopened.body == "new"
-    assert reopened.title == "After"
-    refute File.exists?(Path.join(dir, ".save-journal.json"))
-    assert File.dir?(Path.join(folder, "poems"))
-  end
-
-  test "unknown poems folders and symlinks are rejected without adoption", %{folder: folder} do
-    poems = Path.join(folder, "poems")
-    File.mkdir!(poems)
-    File.write!(Path.join(poems, "unrelated.txt"), "keep")
-    assert {:error, message} = Poems.list(nil)
-    assert message =~ "format marker"
-    assert File.read!(Path.join(poems, "unrelated.txt")) == "keep"
-
-    File.rm_rf!(poems)
-    outside = Path.join(folder, "outside")
-    File.mkdir!(outside)
-    File.write!(Path.join(outside, "keep.txt"), "safe")
-    File.ln_s!(outside, poems)
-    assert {:error, _} = Poems.list(nil)
-    assert File.read!(Path.join(outside, "keep.txt")) == "safe"
-  end
-
-  test "symlinked metadata and malformed journals are rejected safely", %{folder: folder} do
-    poem = Poems.new(nil)
-    assert {:ok, saved} = Poems.save(nil, poem, %{title: "Words", body: "keep me"})
-    dir = Path.dirname(saved.path)
-    outside = Path.join(folder, "outside.json")
-    File.write!(outside, "{}")
-    metadata = Path.join(dir, "metadata.json")
-    original_metadata = File.read!(metadata)
-    File.rm!(metadata)
-    File.ln_s!(outside, metadata)
-    assert {:error, _} = Poems.get(nil, poem.id)
-    assert File.read!(outside) == "{}"
-
-    File.rm!(metadata)
-    File.write!(metadata, original_metadata)
-    File.write!(Path.join(dir, ".save-journal.json"), "{ malformed")
-    assert {:error, _} = Poems.get(nil, poem.id)
-    assert File.read!(saved.path) == "keep me"
-  end
-
-  test "an existing cross-process lock refuses operations and remains untouched", %{
+  test "interrupted renames recover before, between, and after filesystem steps", %{
+    location: location,
     folder: folder
   } do
-    poem = Poems.new(nil)
-    assert {:ok, saved} = Poems.save(nil, poem, %{title: nil, body: "keep"})
-    lock_dir = Path.join(folder, ".still-poems-lock")
-    File.mkdir!(lock_dir)
-    File.write!(Path.join(lock_dir, "owner"), "other-instance\n")
+    for stage <- [:prepared, :linked, :removed] do
+      assert {:ok, saved} =
+               Poems.save(location, Poems.new(location), %{body: "Recovery #{stage}"})
 
-    assert {:error, message} = Poems.get(nil, poem.id)
-    assert message =~ "Another Still instance"
-    assert File.read!(saved.path) == "keep"
-    assert File.read!(Path.join(lock_dir, "owner")) == "other-instance\n"
+      entry = Repo.get!(Entry, saved.entry_id)
+      {:ok, stat} = File.stat(saved.path)
+      identity = "#{stat.major_device}:#{stat.minor_device}:#{stat.inode}"
+      target = "Recovered #{stage}.txt"
+
+      entry
+      |> Changeset.change(
+        pending: %{"kind" => "rename", "target" => target, "identity" => identity}
+      )
+      |> Repo.update!()
+
+      if stage in [:linked, :removed], do: File.ln!(saved.path, Path.join(folder, target))
+      if stage == :removed, do: File.rm!(saved.path)
+      assert {:ok, _} = Still.Writing.Files.synchronize(location)
+      assert {:ok, recovered} = Poems.get(location, saved.id)
+      assert recovered.relative_path == target
+      assert File.read!(recovered.path) == saved.body
+      refute File.exists?(saved.path)
+      assert Repo.get!(Entry, saved.entry_id).pending == nil
+    end
   end
 
-  test "cross-process lock is released after successful and failed operations", %{folder: folder} do
-    poem = Poems.new(nil)
-    assert {:ok, saved} = Poems.save(nil, poem, %{title: nil, body: "keep"})
-    lock_dir = Path.join(folder, ".still-poems-lock")
-    refute File.exists?(lock_dir)
-
-    File.rm!(Path.join(Path.dirname(saved.path), "metadata.json"))
-    assert {:error, _} = Poems.list(nil)
-    refute File.exists?(lock_dir)
+  test "renaming retains identity, history and bytes and rejects collisions and stale edits", %{
+    location: location,
+    folder: folder
+  } do
+    assert {:ok, first} = Poems.save(location, Poems.new(location), %{body: "Earlier words"})
+    assert {:ok, saved} = Poems.save(location, first, %{body: "Current words"})
+    assert {:ok, renamed} = Poems.rename(location, saved, "Corrected name")
+    assert renamed.id == saved.id
+    assert renamed.entry_id == saved.entry_id
+    assert renamed.relative_path == "Corrected name"
+    refute File.exists?(saved.path)
+    assert File.read!(renamed.path) == "Current words"
+    assert {:ok, [%{body: "Earlier words"}]} = Poems.revisions(location, renamed.id)
+    assert {:error, _} = Poems.save(location, saved, %{body: "stale"})
+    File.write!(Path.join(folder, "occupied"), "Other writing")
+    assert {:error, _} = Poems.rename(location, renamed, "occupied")
+    assert File.read!(Path.join(folder, "occupied")) == "Other writing"
+    assert {:error, _} = Poems.rename(location, renamed, "../escape")
+    File.write!(renamed.path, "External edit")
+    assert {:error, _} = Poems.rename(location, renamed, "Another")
+    assert File.read!(renamed.path) == "External edit"
   end
 
-  test "an unconfigured collection cannot list or save poems" do
-    assert {:ok, _} = Storage.clear_folder()
-    assert {:error, _} = Poems.list(nil)
-    assert {:error, _} = Poems.save(nil, Poems.new(nil), %{title: nil, body: "words"})
+  test "indexes ordinary UTF-8 files with arbitrary names and retains their exact text", %{
+    folder: folder,
+    location: location
+  } do
+    first_bytes = <<239, 187, 191>> <> "  First line stays here  \r\n\tSecond line — café\n\n"
+    second_bytes = "Unrelated title-like filename\n\n  untouched\r"
+    backup_named_text = "This is a writer's ordinary text, not a database backup.\n"
+    File.write!(Path.join(folder, "écrit without extension"), first_bytes)
+    File.mkdir_p!(Path.join(folder, "Drafts"))
+    File.write!(Path.join([folder, "Drafts", "Winter (final?).md"]), second_bytes)
+    File.write!(Path.join(folder, "still-backup.sqlite3"), backup_named_text)
+
+    assert {:ok, pieces} = Poems.list(location)
+    assert length(pieces) == 3
+    first = Enum.find(pieces, &(&1.relative_path == "écrit without extension"))
+    second = Enum.find(pieces, &(&1.relative_path == Path.join("Drafts", "Winter (final?).md")))
+    assert first.body == String.replace_prefix(first_bytes, <<239, 187, 191>>, "")
+    assert first.title == nil
+    assert first.title_line == nil
+    assert first.title_source == "first_line"
+    assert Poems.display_title(first) == "écrit without extension"
+    assert second.title == nil
+    assert second.body == second_bytes
+    reserved_name = Enum.find(pieces, &(&1.relative_path == "still-backup.sqlite3"))
+    assert reserved_name.body == backup_named_text
+    assert File.read!(reserved_name.path) == backup_named_text
+    assert File.read!(first.path) == first_bytes
+    assert File.read!(second.path) == second_bytes
+
+    assert File.ls!(folder) |> Enum.sort() == [
+             "Drafts",
+             "still-backup.sqlite3",
+             "écrit without extension"
+           ]
+
+    assert File.ls!(Path.join(folder, "Drafts")) == ["Winter (final?).md"]
   end
 
-  test "a missing poem metadata file is reported instead of hiding the poem", %{folder: folder} do
-    poem = Poems.new(nil)
-    assert {:ok, saved} = Poems.save(nil, poem, %{title: nil, body: "words"})
-    File.rm!(Path.join(Path.dirname(saved.path), "metadata.json"))
-    assert {:error, message} = Poems.list(nil)
-    assert message =~ "incomplete"
-    assert File.read!(saved.path) == "words"
-    assert File.dir?(Path.join(folder, "poems"))
+  test "a selected title line is metadata about the full body, never duplicated or removed", %{
+    location: location
+  } do
+    body = "Opening\r\n  Explicit title  \r\n\tverse\n\nfinal line"
+    assert {:ok, saved} = Poems.save(location, Poems.new(location), %{body: body, title_line: 2})
+    assert saved.body == body
+    assert saved.title == "  Explicit title  "
+    assert saved.title_line == 2
+    assert saved.title_source == "explicit"
+    assert Poems.explicit_title(saved) == "  Explicit title  "
+    assert Poems.display_title(saved) == "Explicit title"
+    assert File.read!(saved.path) == body
+    assert {:ok, reopened} = Poems.get(location, saved.id)
+    assert reopened.body == body
+    assert reopened.title_line == 2
   end
 
-  test "concurrent saves from one snapshot accept one and reject the stale writer" do
-    poem = Poems.new(nil)
-    assert {:ok, saved} = Poems.save(nil, poem, %{title: "Start", body: "start"})
+  test "editing a separate title convenience keeps the supplied first body line", %{
+    location: location
+  } do
+    {:ok, original} =
+      Poems.save(location, Poems.new(location), %{
+        title: "Old title",
+        body: "First supplied line\nsecond line"
+      })
+
+    assert original.body == "Old title\n\nFirst supplied line\nsecond line"
+
+    {:ok, edited} =
+      Poems.save(location, original, %{
+        title: "New title",
+        body: "First supplied line\nsecond line"
+      })
+
+    assert edited.title == "New title"
+    assert edited.body == "New title\n\nFirst supplied line\nsecond line"
+    assert File.read!(edited.path) == edited.body
+  end
+
+  test "revisions live in SQLite and stale snapshots cannot overwrite newer words", %{
+    location: location
+  } do
+    body = "First\r\n\tsecond\n\n"
+    assert {:ok, first} = Poems.save(location, Poems.new(location), %{body: body})
+    assert {:ok, updated} = Poems.save(location, first, %{body: "Current words\n"})
+    assert File.read!(updated.path) == "Current words\n"
+    assert {:ok, [revision]} = Poems.revisions(location, first.id)
+    assert revision.body == body
+    assert revision.title_line == nil
+    assert Repo.aggregate(Version, :count) == 1
+    assert {:error, stale} = Poems.save(location, first, %{body: "stale proposal"})
+    assert stale =~ "changed"
+    assert File.read!(updated.path) == "Current words\n"
+  end
+
+  test "saving identical words and title role creates no redundant revision", %{
+    location: location
+  } do
+    {:ok, saved} =
+      Poems.save(location, Poems.new(location), %{body: "unchanged words\n", title_line: nil})
+
+    before_bytes = File.read!(saved.path)
+
+    assert {:ok, reopened} =
+             Poems.save(location, saved, %{body: saved.body, title_line: saved.title_line})
+
+    assert reopened.token == saved.token
+    assert File.read!(reopened.path) == before_bytes
+    assert {:ok, []} = Poems.revisions(location, saved.id)
+    assert Repo.aggregate(Version, :count) == 0
+  end
+
+  test "an occupied new relative filename is never overwritten", %{
+    folder: folder,
+    location: location
+  } do
+    occupied = Path.join(folder, "writer-picked-name")
+    original = "Keep the writer's existing words\r\n"
+    File.write!(occupied, original)
+
+    assert {:error, message} =
+             Poems.save(location, Poems.new(location), %{
+               relative_path: "writer-picked-name",
+               body: "replacement"
+             })
+
+    assert message =~ "occupied"
+    assert File.read!(occupied) == original
+    assert {:ok, [piece]} = Poems.list(location)
+    assert piece.relative_path == "writer-picked-name"
+    assert piece.body == original
+  end
+
+  test "external edits become database revisions and require review for a prior title role", %{
+    location: location
+  } do
+    original = "Opening\nChosen title\nOld verse\n"
+    {:ok, saved} = Poems.save(location, Poems.new(location), %{body: original, title_line: 2})
+    File.write!(saved.path, "New opening\nDifferent line\nNew verse\n")
+
+    assert {:ok, refreshed} = Poems.get(location, saved.id)
+    assert refreshed.body == "New opening\nDifferent line\nNew verse\n"
+    assert refreshed.title_needs_review
+    assert refreshed.title_line == 2
+    assert Poems.explicit_title(refreshed) == nil
+    assert {:ok, [revision]} = Poems.revisions(location, saved.id)
+    assert revision.body == original
+
+    assert {:error, _} = Poems.save(location, saved, %{body: "attempt from old view"})
+  end
+
+  test "a missing folder is unavailable, not evidence that its files were deleted", %{
+    folder: folder,
+    location: location
+  } do
+    {:ok, saved} = Poems.save(location, Poems.new(location), %{body: "words remain in SQLite"})
+    entry = Repo.get_by!(Entry, file_id: saved.id, collection_scope: location.scope)
+    moved = folder <> "-offline"
+    File.rename!(folder, moved)
+
+    assert {:error, message} = Poems.list(location)
+    assert message =~ "unavailable"
+    reopened = Repo.get!(Entry, entry.id)
+    assert reopened.file_missing == false
+    assert reopened.body == "words remain in SQLite"
+    assert File.read!(saved.path |> String.replace(folder, moved)) == "words remain in SQLite"
+  end
+
+  test "an inode-preserving rename retains the file identity and relationships", %{
+    folder: folder,
+    location: location
+  } do
+    {:ok, saved} = Poems.save(location, Poems.new(location), %{body: "same exact words"})
+    entry_id = saved.entry_id
+    target = Path.join(folder, "writer chose this filename")
+    File.rename!(saved.path, target)
+
+    assert {:ok, reopened} = Poems.get(location, saved.id)
+    assert reopened.id == saved.id
+    assert reopened.entry_id == entry_id
+    assert reopened.relative_path == "writer chose this filename"
+    assert reopened.body == "same exact words"
+    assert File.read!(target) == "same exact words"
+  end
+
+  test "equal text files remain separate writings", %{folder: folder, location: location} do
+    File.write!(Path.join(folder, "first"), "identical\nwords")
+    File.write!(Path.join(folder, "second.txt"), "identical\nwords")
+    assert {:ok, [first, second]} = Poems.list(location)
+    refute first.id == second.id
+    refute first.entry_id == second.entry_id
+    assert first.body == second.body
+    assert first.relative_path != second.relative_path
+  end
+
+  test "copy-delete ambiguity requires explicit relink or adoption", %{
+    folder: folder,
+    location: location
+  } do
+    original_path = Path.join(folder, "original")
+    copy_path = Path.join(folder, "copied")
+    File.write!(original_path, "same words\n")
+    {:ok, [original]} = Poems.list(location)
+    File.cp!(original_path, copy_path)
+    File.rm!(original_path)
+
+    assert {:ok, plan} = Poems.reconciliation(location)
+    assert [%{id: id, candidates: ["copied"]}] = plan.ambiguous
+    assert id == original.id
+    assert {:ok, relinked} = Poems.relink(location, original.id, "copied")
+    assert relinked.id == original.id
+    assert relinked.relative_path == "copied"
+
+    another = Path.join(folder, "another-original")
+    another_copy = Path.join(folder, "another-copy")
+    File.write!(another, "distinct choice text")
+    {:ok, indexed} = Poems.list(location)
+    distinct = Enum.find(indexed, &(&1.relative_path == "another-original"))
+    File.cp!(another, another_copy)
+    File.rm!(another)
+    assert {:ok, plan2} = Poems.reconciliation(location)
+    assert Enum.any?(plan2.ambiguous, &(&1.id == distinct.id and "another-copy" in &1.candidates))
+    assert {:ok, adopted} = Poems.adopt(location, "another-copy")
+    refute adopted.id == distinct.id
+    assert {:ok, still_missing} = Poems.reconciliation(location)
+    assert Enum.any?(still_missing.missing, &(&1.id == distinct.id))
+  end
+
+  test "trash keeps recoverable words in SQLite and restore refuses an occupied original path", %{
+    location: location
+  } do
+    body = "Full words\r\n  retained here\n"
+    {:ok, saved} = Poems.save(location, Poems.new(location), %{body: body})
+    relative = saved.relative_path
+    assert {:ok, _trashed} = Poems.trash(location, saved)
+    refute File.exists?(saved.path)
+    assert {:ok, [in_trash]} = Poems.list_trash(location)
+    assert in_trash.body == body
+    assert in_trash.id == saved.id
+    File.write!(Path.join(location.folder, relative), "a different writing")
+    assert {:error, message} = Poems.restore(location, saved.id)
+    assert message =~ "occupied"
+    assert File.read!(Path.join(location.folder, relative)) == "a different writing"
+    assert {:ok, [still_trashed]} = Poems.list_trash(location)
+    assert still_trashed.body == body
+    File.rm!(Path.join(location.folder, relative))
+    assert {:ok, restored} = Poems.restore(location, saved.id)
+    assert restored.id == saved.id
+    assert File.read!(restored.path) == body
+  end
+
+  test "confirmed permanent deletion recovers across an interrupted unlink", %{location: location} do
+    for stage <- [:before_unlink, :after_unlink] do
+      {:ok, saved} =
+        Poems.save(location, Poems.new(location), %{body: "Delete recovery #{stage}"})
+
+      entry = Repo.get!(Entry, saved.entry_id)
+
+      entry
+      |> Changeset.change(
+        pending: %{"kind" => "permanent_delete", "identity" => entry.source["file_identity"]}
+      )
+      |> Repo.update!()
+
+      if stage == :after_unlink, do: File.rm!(saved.path)
+      assert {:ok, _} = Still.Writing.Files.synchronize(location)
+      refute File.exists?(saved.path)
+      assert Repo.get(Entry, saved.entry_id) == nil
+    end
+  end
+
+  test "permanent deletion refuses an externally changed file", %{location: location} do
+    {:ok, saved} = Poems.save(location, Poems.new(location), %{body: "Original"})
+    File.write!(saved.path, "External words")
+    assert {:error, _} = Poems.permanently_delete(location, saved, true)
+    assert File.read!(saved.path) == "External words"
+    assert Repo.get!(Entry, saved.entry_id).pending == nil
+  end
+
+  test "permanent deletion requires a current snapshot and removes file and saved history", %{
+    location: location,
+    folder: folder
+  } do
+    assert {:ok, original} = Poems.save(location, Poems.new(location), %{body: "Earlier words"})
+    assert {:ok, saved} = Poems.save(location, original, %{body: "Current words"})
+    assert {:ok, [_]} = Poems.revisions(location, saved.id)
+
+    assert {:error, message} = Poems.permanently_delete(location, original, true)
+    assert message =~ "changed"
+    assert File.read!(saved.path) == "Current words"
+
+    assert {:ok, fresh} = Poems.get(location, saved.id)
+    assert {:error, _} = Poems.permanently_delete(location, fresh, false)
+    assert File.exists?(fresh.path)
+
+    assert :ok = Poems.permanently_delete(location, fresh, true)
+    refute File.exists?(fresh.path)
+    assert {:error, _} = Poems.get(location, saved.id)
+    assert Repo.get(Entry, saved.entry_id) == nil
+    assert Repo.all(from(v in Version, where: v.entry_id == ^saved.entry_id)) == []
+
+    assert File.ls!(folder) == []
+  end
+
+  test "pending save recovery completes old-file and already-published cases", %{
+    location: location
+  } do
+    {:ok, saved} = Poems.save(location, Poems.new(location), %{body: "old words"})
+    entry = Repo.get_by!(Entry, file_id: saved.id, collection_scope: location.scope)
+    set_pending_save(entry, "new words")
+    assert {:ok, [recovered]} = Poems.list(location)
+    assert recovered.body == "new words"
+    assert File.read!(recovered.path) == "new words"
+    assert {:ok, [revision]} = Poems.revisions(location, saved.id)
+    assert revision.body == "old words"
+
+    current = Repo.get_by!(Entry, file_id: saved.id, collection_scope: location.scope)
+    set_pending_save(current, "published already")
+    File.write!(saved.path, "published already")
+    assert {:ok, [finished]} = Poems.list(location)
+    assert finished.body == "published already"
+    assert File.read!(saved.path) == "published already"
+  end
+
+  test "recovery cleans a tracked partial stage before publishing its exact proposed text", %{
+    folder: folder,
+    location: location
+  } do
+    {:ok, saved} = Poems.save(location, Poems.new(location), %{body: "earlier"})
+    entry = Repo.get_by!(Entry, file_id: saved.id, collection_scope: location.scope)
+    stage = ".still-#{Ecto.UUID.generate()}.partial"
+    proposed = "complete proposal\r\nwith exact spacing"
+    set_pending_save(entry, proposed, stage)
+    File.write!(Path.join(folder, stage), binary_part(proposed, 0, 8))
+
+    assert {:ok, [recovered]} = Poems.list(location)
+    assert recovered.body == proposed
+    assert File.read!(recovered.path) == proposed
+    refute File.exists?(Path.join(folder, stage))
+  end
+
+  test "recovery refuses unfamiliar staging contents and leaves them untouched", %{
+    folder: folder,
+    location: location
+  } do
+    {:ok, saved} = Poems.save(location, Poems.new(location), %{body: "earlier"})
+    entry = Repo.get_by!(Entry, file_id: saved.id, collection_scope: location.scope)
+    stage = ".still-#{Ecto.UUID.generate()}.partial"
+    set_pending_save(entry, "proposed", stage)
+    File.write!(Path.join(folder, stage), "unrecognized staging data")
+
+    assert {:error, message} = Poems.list(location)
+    assert message =~ "unfamiliar contents"
+    assert File.read!(Path.join(folder, stage)) == "unrecognized staging data"
+    assert File.read!(saved.path) == "earlier"
+    pending = Repo.get_by!(Entry, file_id: saved.id, collection_scope: location.scope).pending
+    assert pending["body"] == "proposed"
+  end
+
+  test "invalid staging names cannot remove files outside the selected folder", %{
+    folder: _folder,
+    root: root,
+    location: location
+  } do
+    {:ok, saved} = Poems.save(location, Poems.new(location), %{body: "earlier"})
+    entry = Repo.get_by!(Entry, file_id: saved.id, collection_scope: location.scope)
+    set_pending_save(entry, "proposed", "../valuable.txt")
+    valuable = Path.join(root, "valuable.txt")
+    File.write!(valuable, "preserve this file")
+
+    assert {:error, _} = Poems.list(location)
+    assert File.read!(valuable) == "preserve this file"
+    assert File.read!(saved.path) == "earlier"
+  end
+
+  test "pending recovery preserves proposed and earlier words when a third-party edit conflicts",
+       %{location: location} do
+    {:ok, saved} = Poems.save(location, Poems.new(location), %{body: "earlier words"})
+    entry = Repo.get_by!(Entry, file_id: saved.id, collection_scope: location.scope)
+    set_pending_save(entry, "proposed words")
+    File.write!(saved.path, "third-party words")
+
+    assert {:error, message} = Poems.list(location)
+    assert message =~ "conflicts with an external change"
+    row = Repo.get_by!(Entry, file_id: saved.id, collection_scope: location.scope)
+    assert row.body == "earlier words"
+    assert row.pending["body"] == "proposed words"
+    assert Repo.get_by!(Version, entry_id: row.id).body == "earlier words"
+    assert File.read!(saved.path) == "third-party words"
+  end
+
+  test "invalid encodings and binary formats are reported without indexing", %{
+    folder: folder,
+    location: location
+  } do
+    File.write!(Path.join(folder, "bad-encoding"), <<255, 254, 253>>)
+    assert {:error, message} = Poems.list(location)
+    assert message =~ "ordinary UTF-8 text"
+    assert File.read!(Path.join(folder, "bad-encoding")) == <<255, 254, 253>>
+    File.rm!(Path.join(folder, "bad-encoding"))
+    File.write!(Path.join(folder, "archive.bin"), <<"PK", 3, 4, 0, 0>>)
+    assert {:error, _} = Poems.list(location)
+    assert File.read!(Path.join(folder, "archive.bin")) == <<"PK", 3, 4, 0, 0>>
+  end
+
+  test "concurrent saves from one snapshot accept one writer and reject the stale writer", %{
+    location: location
+  } do
+    {:ok, saved} = Poems.save(location, Poems.new(location), %{body: "start"})
 
     results =
       ["first", "second"]
-      |> Enum.map(fn body ->
-        Task.async(fn -> Poems.save(nil, saved, %{title: "Start", body: body}) end)
-      end)
+      |> Enum.map(fn body -> Task.async(fn -> Poems.save(location, saved, %{body: body}) end) end)
       |> Enum.map(&Task.await/1)
 
     assert Enum.count(results, &match?({:ok, _}, &1)) == 1
-    assert Enum.count(results, &match?({:error, message} when is_binary(message), &1)) == 1
-    assert {:ok, current} = Poems.get(nil, poem.id)
+    assert Enum.count(results, &match?({:error, _}, &1)) == 1
+    assert {:ok, current} = Poems.get(location, saved.id)
     assert current.body in ["first", "second"]
   end
 
-  test "a poem snapshot is rejected after the active collection changes", %{root: root} do
-    poem = Poems.new(nil)
-    assert {:ok, saved} = Poems.save(nil, poem, %{title: nil, body: "words"})
+  test "an unconfigured or switched collection refuses stale writes", %{
+    root: root,
+    location: location
+  } do
+    {:ok, saved} = Poems.save(location, Poems.new(location), %{body: "words"})
     other = Path.join(root, "other")
     File.mkdir!(other)
     assert {:ok, _} = Storage.set_folder(other)
-    assert {:error, message} = Poems.save(nil, saved, %{title: nil, body: "new words"})
+    assert {:error, message} = Poems.save(location, saved, %{body: "new words"})
     assert message =~ "collection changed"
-  end
-
-  test "unavailable or changed collection location refuses writes", %{folder: folder} do
-    poem = Poems.new(nil)
-    File.rename!(folder, folder <> "-moved")
-    assert {:error, _} = Poems.save(nil, poem, %{title: nil, body: "words"})
+    assert {:ok, _} = Storage.clear_folder()
     assert {:error, _} = Poems.list(nil)
-    assert {:error, _} = Poems.list_trash(nil)
   end
 
-  test "trash and restore preserve the complete writing directory and revisions", %{
-    folder: folder
-  } do
-    poem = Poems.new(nil)
-    assert {:ok, created} = Poems.save(nil, poem, %{title: "First", body: "original"})
-    assert {:ok, saved} = Poems.save(nil, created, %{title: "Second", body: "revised"})
-    original_dir = Path.dirname(saved.path)
-    before_files = files_under(original_dir)
-    assert {:ok, revisions_before} = Poems.revisions(nil, poem.id)
-    assert length(revisions_before) == 1
+  defp set_pending_save(entry, proposed, stage \\ nil) do
+    Repo.insert!(%Version{
+      entry_id: entry.id,
+      title: entry.title,
+      body: entry.body,
+      title_line: entry.title_line,
+      title_anchor: entry.title_anchor,
+      file_prefix: entry.file_prefix
+    })
 
-    assert {:ok, trashed} = Poems.trash(nil, saved)
-    trash_dir = Path.join([folder, "poems", ".trash", poem.id])
-    refute File.exists?(original_dir)
-    assert files_under(trash_dir) == before_files
-    assert trashed.path == Path.join(trash_dir, "poem.txt")
-    assert {:ok, [listed]} = Poems.list_trash(nil)
-    assert listed.id == poem.id
-    assert listed.token == saved.token
+    pending = %{
+      "kind" => "save",
+      "stage" => stage,
+      "old_token" => entry.file_token,
+      "body" => proposed,
+      "prefix" => Base.encode64(entry.file_prefix || ""),
+      "title_line" => entry.title_line,
+      "title_anchor" => entry.title_anchor,
+      "metadata" => %{
+        "notebook_id" => entry.notebook_id,
+        "notebook" => entry.notebook,
+        "source_order" => entry.source_order,
+        "list_label" => entry.list_label
+      }
+    }
 
-    assert {:ok, restored} = Poems.restore(nil, poem.id)
-    assert restored.body == "revised"
-    assert restored.path == Path.join(original_dir, "poem.txt")
-    assert files_under(original_dir) == before_files
-    assert {:ok, revisions_after} = Poems.revisions(nil, poem.id)
-    assert revisions_after == revisions_before
-    assert {:ok, []} = Poems.list_trash(nil)
-  end
-
-  test "restore preserves trash when the original identifier is occupied", %{folder: folder} do
-    poem = Poems.new(nil)
-    assert {:ok, saved} = Poems.save(nil, poem, %{title: nil, body: "safe words"})
-    assert {:ok, trashed} = Poems.trash(nil, saved)
-    poems = Path.join(folder, "poems")
-    collision = Path.join(poems, poem.id)
-    File.mkdir!(collision)
-    File.write!(Path.join(collision, "foreign.txt"), "keep")
-
-    assert {:error, message} = Poems.restore(nil, poem.id)
-    assert message =~ "already exists"
-    assert File.read!(Path.join([poems, ".trash", poem.id, "poem.txt"])) == "safe words"
-    assert File.read!(Path.join(collision, "foreign.txt")) == "keep"
-    refute is_nil(trashed.token)
-  end
-
-  test "trash rejects a stale open snapshot and leaves writing in place", %{folder: folder} do
-    poem = Poems.new(nil)
-    assert {:ok, saved} = Poems.save(nil, poem, %{title: nil, body: "before"})
-    File.write!(saved.path, "changed outside")
-
-    assert {:error, message} = Poems.trash(nil, saved)
-    assert message =~ "changed on disk"
-    assert File.read!(saved.path) == "changed outside"
-    refute File.dir?(Path.join([folder, "poems", ".trash"]))
-    assert {:ok, []} = Poems.list_trash(nil)
-  end
-
-  test "trash and purge tokens cover revision bytes", %{folder: folder} do
-    poem = Poems.new(nil)
-    assert {:ok, created} = Poems.save(nil, poem, %{title: "Before", body: "old words"})
-    assert {:ok, saved} = Poems.save(nil, created, %{title: "After", body: "current words"})
-    revisions_dir = Path.join(Path.dirname(saved.path), "revisions")
-    [revision_name] = File.ls!(revisions_dir)
-    revision_body = Path.join([revisions_dir, revision_name, "poem.txt"])
-
-    File.write!(revision_body, "external revision edit")
-    assert {:error, stale_trash_message} = Poems.trash(nil, saved)
-    assert stale_trash_message =~ "changed on disk"
-    assert File.read!(revision_body) == "external revision edit"
-    assert File.dir?(Path.dirname(saved.path))
-
-    assert {:ok, refreshed} = Poems.get(nil, poem.id)
-    assert {:ok, trashed} = Poems.trash(nil, refreshed)
-    assert {:ok, [listed]} = Poems.list_trash(nil)
-
-    trash_revision =
-      Path.join([folder, "poems", ".trash", poem.id, "revisions", revision_name, "poem.txt"])
-
-    assert listed.token == trashed.token
-
-    File.write!(trash_revision, "changed after trash listing")
-    assert {:error, stale_purge_message} = Poems.purge(nil, poem.id, listed.token, true)
-    assert stale_purge_message =~ "changed on disk"
-    assert File.read!(trash_revision) == "changed after trash listing"
-
-    assert {:ok, [latest]} = Poems.list_trash(nil)
-    refute latest.token == listed.token
-    assert :ok = Poems.purge(nil, poem.id, latest.token, true)
-  end
-
-  test "permanent deletion requires confirmation and the current trash token", %{folder: folder} do
-    poem = Poems.new(nil)
-    assert {:ok, created} = Poems.save(nil, poem, %{title: "Keep", body: "words"})
-    assert {:ok, saved} = Poems.save(nil, created, %{title: "Keep", body: "later words"})
-    assert {:ok, trashed} = Poems.trash(nil, saved)
-
-    assert {:error, message} = Poems.purge(nil, poem.id, trashed.token, false)
-    assert message =~ "explicit confirmation"
-    trash_path = Path.join([folder, "poems", ".trash", poem.id, "poem.txt"])
-    assert File.read!(trash_path) == "later words"
-
-    File.write!(trash_path, "external change")
-    assert {:error, stale_message} = Poems.purge(nil, poem.id, trashed.token, true)
-    assert stale_message =~ "changed on disk"
-    assert File.read!(trash_path) == "external change"
-
-    assert {:ok, [current]} = Poems.list_trash(nil)
-    assert :ok = Poems.purge(nil, poem.id, current.token, true)
-    refute File.exists?(Path.dirname(trash_path))
-    refute File.exists?(Path.join(Path.dirname(trash_path), "revisions"))
-    assert {:ok, []} = Poems.list_trash(nil)
-  end
-
-  test "missing trash is empty and restore does not create it", %{folder: folder} do
-    poem = Poems.new(nil)
-    assert {:ok, _saved} = Poems.save(nil, poem, %{title: nil, body: "words"})
-    trash = Path.join([folder, "poems", ".trash"])
-    File.rm_rf!(trash)
-
-    assert {:ok, []} = Poems.list_trash(nil)
-    assert {:error, _} = Poems.restore(nil, poem.id)
-    refute File.exists?(trash)
-    assert {:ok, [listed]} = Poems.list(nil)
-    assert listed.id == poem.id
-  end
-
-  test "trash APIs reject invalid identifiers and a symlinked trash directory", %{folder: folder} do
-    assert {:error, _} = Poems.restore(nil, "../outside")
-    assert {:error, _} = Poems.purge(nil, "../outside", "token", true)
-    assert {:error, _} = Poems.trash(nil, %{id: "../outside", token: "token"})
-    assert {:ok, _} = Poems.save(nil, Poems.new(nil), %{title: nil, body: "safe"})
-
-    poems = Path.join(folder, "poems")
-    outside = Path.join(folder, "outside-trash")
-    File.mkdir!(outside)
-    File.write!(Path.join(outside, "keep.txt"), "untouched")
-    File.ln_s!(outside, Path.join(poems, ".trash"))
-
-    assert {:error, _} = Poems.list_trash(nil)
-    assert File.read!(Path.join(outside, "keep.txt")) == "untouched"
-  end
-
-  test "automatic titles follow the first written line until explicitly named" do
-    body = "\r\n  First opening\r\n\tindented stanza\r\n"
-    assert {:ok, first} = Poems.save(nil, Poems.new(nil), %{title: nil, body: body})
-    assert first.title == "First opening"
-    assert first.title_source == "first_line"
-    assert Poems.explicit_title(first) == nil
-
-    assert Jason.decode!(File.read!(Path.join(Path.dirname(first.path), "metadata.json")))[
-             "title"
-           ] == "First opening"
-
-    assert File.read!(first.path) == body
-    assert {:ok, next} = Poems.save(nil, first, %{title: nil, body: "Second opening\nrest"})
-    assert next.id == first.id
-    assert next.title == "Second opening"
-    assert Path.basename(Path.dirname(next.path)) == "Second opening -- #{first.id}"
-    assert {:ok, [old]} = Poems.revisions(nil, next.id)
-    assert old.body == body and old.title == "First opening"
-    assert old.title_source == "first_line"
-    assert {:ok, named} = Poems.save(nil, next, %{title: "Chosen title", body: next.body})
-
-    assert {:ok, changed} =
-             Poems.save(nil, named, %{title: "Chosen title", body: "New first line"})
-
-    assert changed.title == "Chosen title" and changed.title_source == "explicit"
-    assert Poems.explicit_title(changed) == "Chosen title"
-    assert {:ok, automatic} = Poems.save(nil, changed, %{title: "  ", body: changed.body})
-    assert automatic.title == "New first line" and automatic.title_source == "first_line"
-  end
-
-  test "readable folders disambiguate equal titles and safely bound unusual names" do
-    title = "../A: title / with \\ forbidden? symbols*" <> String.duplicate("🪶", 80)
-    assert {:ok, first} = Poems.save(nil, Poems.new(nil), %{title: title, body: "one"})
-    assert {:ok, second} = Poems.save(nil, Poems.new(nil), %{title: title, body: "two"})
-    assert first.path != second.path
-    name = Path.basename(Path.dirname(first.path))
-    assert String.starts_with?(name, "A title with forbidden symbols")
-    assert byte_size(name) <= 200
-    refute String.contains?(name, ["/", "\\", ":", "?", "*", "\n"])
-    assert first.title == title
-    assert {:ok, poems} = Poems.list(nil)
-    assert Enum.sort(Enum.map(poems, & &1.body)) == ["one", "two"]
-  end
-
-  test "legacy UUID collections stay untouched on read and gain readable names only on Save", %{
-    folder: folder
-  } do
-    assert {:ok, saved} =
-             Poems.save(nil, Poems.new(nil), %{title: "Older page", body: "old words"})
-
-    poems = Path.join(folder, "poems")
-    legacy = Path.join(poems, saved.id)
-    File.rename!(Path.dirname(saved.path), legacy)
-    metadata = Path.join(legacy, "metadata.json")
-
-    File.write!(
-      metadata,
-      Jason.encode!(Map.delete(Jason.decode!(File.read!(metadata)), "title_source"))
-    )
-
-    File.write!(Path.join(poems, ".still-poems.json"), ~s({"format":"still-poems-v1"}))
-    bytes_before = files_under(poems)
-    assert {:ok, [listed]} = Poems.list(nil)
-    assert {:ok, current} = Poems.get(nil, listed.id)
-    assert files_under(poems) == bytes_before
-    assert current.path == Path.join(legacy, "poem.txt")
-    assert {:ok, renamed} = Poems.save(nil, current, %{title: "Older page", body: current.body})
-    assert renamed.id == saved.id
-    assert Path.basename(Path.dirname(renamed.path)) == "Older page -- #{saved.id}"
-    assert {:ok, []} = Poems.revisions(nil, saved.id)
-
-    assert Jason.decode!(File.read!(Path.join(poems, ".still-poems.json")))["format"] ==
-             "still-poems-v2"
-
-    assert File.read!(renamed.path) == "old words"
-  end
-
-  test "duplicate folder identities refuse ambiguous reads or writes without losing either copy",
-       %{folder: folder} do
-    assert {:ok, saved} = Poems.save(nil, Poems.new(nil), %{title: "Original", body: "keep"})
-    copy = Path.join([folder, "poems", "Conflict -- #{saved.id}"])
-    File.cp_r!(Path.dirname(saved.path), copy)
-    assert {:error, message} = Poems.list(nil)
-    assert message =~ "Multiple writing folders"
-    assert {:error, _} = Poems.get(nil, saved.id)
-    assert {:error, _} = Poems.save(nil, saved, %{title: "Change", body: "different"})
-    assert File.read!(saved.path) == "keep"
-    assert File.read!(Path.join(copy, "poem.txt")) == "keep"
-  end
-
-  test "directory labels may be changed externally while retaining the identifier" do
-    assert {:ok, saved} = Poems.save(nil, Poems.new(nil), %{title: "First", body: "unchanged"})
-    renamed = Path.join(Path.dirname(Path.dirname(saved.path)), "Finder label -- #{saved.id}")
-    File.rename!(Path.dirname(saved.path), renamed)
-    assert {:ok, current} = Poems.get(nil, saved.id)
-    assert current.id == saved.id and current.token == saved.token
-    assert {:ok, final} = Poems.save(nil, current, %{title: "Final title", body: current.body})
-    assert File.read!(final.path) == "unchanged"
-    assert Path.basename(Path.dirname(final.path)) == "Final title -- #{saved.id}"
-  end
-
-  test "case-only title changes rename a folder without losing words or identity" do
-    assert {:ok, first} =
-             Poems.save(nil, Poems.new(nil), %{title: "Paper", body: "keep exactly\n"})
-
-    assert {:ok, next} = Poems.save(nil, first, %{title: "paper", body: first.body})
-    assert next.id == first.id
-    assert Path.basename(Path.dirname(next.path)) == "paper -- #{first.id}"
-    assert File.read!(next.path) == "keep exactly\n"
-    assert {:ok, [revision]} = Poems.revisions(nil, next.id)
-    assert revision.title == "Paper" and revision.body == first.body
-  end
-
-  test "a legacy untitled file acquires an automatic title on Save without removing its opening",
-       %{folder: folder} do
-    body = "\n  Older untitled opening\n\tstanza\n"
-    assert {:ok, created} = Poems.save(nil, Poems.new(nil), %{title: nil, body: body})
-    legacy = Path.join([folder, "poems", created.id])
-    File.rename!(Path.dirname(created.path), legacy)
-    metadata = Path.join(legacy, "metadata.json")
-
-    File.write!(
-      metadata,
-      Jason.encode!(
-        File.read!(metadata)
-        |> Jason.decode!()
-        |> Map.put("title", nil)
-        |> Map.delete("title_source")
-      )
-    )
-
-    File.write!(
-      Path.join([folder, "poems", ".still-poems.json"]),
-      ~s({"format":"still-poems-v1"})
-    )
-
-    assert {:ok, old} = Poems.get(nil, created.id)
-    assert old.title == nil
-    assert Poems.display_title(old) == "Older untitled opening"
-    assert {:ok, saved} = Poems.save(nil, old, %{title: nil, body: body})
-    assert saved.title == "Older untitled opening"
-    assert saved.title_source == "first_line"
-    assert File.read!(saved.path) == body
-    assert {:ok, [earlier]} = Poems.revisions(nil, saved.id)
-    assert earlier.title == nil and earlier.body == body
-  end
-
-  defp files_under(root) do
-    root
-    |> File.ls!()
-    |> Enum.sort()
-    |> Enum.reduce(%{}, fn name, acc ->
-      path = Path.join(root, name)
-
-      case File.lstat!(path).type do
-        :directory ->
-          nested =
-            files_under(path)
-            |> Enum.map(fn {relative, contents} -> {Path.join(name, relative), contents} end)
-            |> Map.new()
-
-          Map.merge(acc, nested)
-
-        :regular ->
-          Map.put(acc, name, File.read!(path))
-
-        type ->
-          raise "unexpected file type in test fixture: #{inspect(type)}"
-      end
-    end)
+    Repo.update!(Changeset.change(entry, pending: pending, lock_version: entry.lock_version + 1))
+    :ok
   end
 end

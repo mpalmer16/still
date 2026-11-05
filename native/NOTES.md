@@ -1,6 +1,6 @@
 # A native body for Still
 
-`native/build.sh` assembles `dist/Still.app`. An optional installed copy lives at `/Applications/Still.app` and can be opened from the Dock, Applications, or Spotlight. After rebuilding, quit Still and use `ditto dist/Still.app /Applications/Still.app` to update that copy. Installation does not move the writing folder. The normal bundle retains `local.still.room`, port 4040, and its existing WebKit recovery storage.
+`native/build.sh` assembles `dist/Still.app`. An optional installed copy lives at `/Applications/Still.app` and can be opened from the Dock, Applications, or Spotlight. After rebuilding, quit Still and use `rsync -a --delete dist/Still.app/ /Applications/Still.app/` to update that copy, then run `codesign --verify --deep --strict /Applications/Still.app`. Synchronizing the complete bundle removes obsolete generated assets that an overlay copy would leave behind. Installation does not move the writing folder. The normal bundle retains `local.still.room`, port 4040, and its existing WebKit recovery storage.
 The local build needs Elixir/Erlang, the Xcode command-line tools, and Python 3. Launching the built app needs none of those tools and does not use Docker.
 `native/build.sh --shell-only` rebuilds just the native window around an already assembled backend during shell development. Use the full build to include Phoenix changes.
 
@@ -14,7 +14,6 @@ STILL_BUNDLE_IDENTIFIER=local.still.preview \
 STILL_BUNDLE_DISPLAY_NAME="Still Preview" \
 STILL_BUNDLE_EXECUTABLE=StillPreview \
 STILL_NATIVE_PORT=4044 \
-STILL_DATA_DIRECTORY="$PWD/tmp/preview-writing" \
 ./native/build.sh
 open --env STILL_DATA_DIRECTORY="$PWD/tmp/preview-writing" \
   --env STILL_LOCAL_STATE_DIRECTORY="$PWD/tmp/preview-local-state" \
@@ -35,9 +34,9 @@ identity, executable and port remain unchanged.
 
 The bundle contains the existing Phoenix/LiveView release, ERTS, the SQLite NIF, and any Homebrew-linked runtime libraries. The bundle size depends on the build environment. The build targets the host architecture and OS; it is not a universal, notarized installer. It is signed locally with an ad-hoc signature.
 
-Writing stays in a remembered local folder. File → Choose Writing Folder selects the directory containing `still.db`, or explicitly opens an empty collection in another directory. File → Show Writing Folder reveals it. Switching waits for saving and refuses to leave local recovery copies unresolved; no database is copied, moved, or replaced by this action.
+New writing is stored as ordinary text files in a chosen local writing folder. File → Choose Writing Folder selects an existing readable/writable folder; it does not need a Still database or marker file. File → Show Writing Folder reveals the selected root. The live SQLite database stays in machine-local Application Support, outside the writing root. Switching roots waits for saving and refuses to leave local recovery copies unresolved; no database is copied, moved, or replaced by this action.
 
-The chosen directory is stored as a filesystem bookmark in the app's preferences, separately from its bundle. Renaming it keeps the current WebKit profile UUID. Moving the app needs no rebuild. Missing or invalid bookmarks offer folder selection rather than silently falling back to an empty collection. A new build carries only a first-launch legacy hint when the build's data folder contains `still.db`; an existing remembered choice wins. Fresh installations otherwise use `~/Library/Application Support/Still/Writing`. `STILL_DATA_DIRECTORY` remains an explicit scratch override and does not replace the remembered choice. No writing is copied into the app bundle.
+The writing root is stored in machine-local Still settings scoped to the local database path. Each selected root gets a separate persistent WebKit recovery profile. A missing root remains unavailable until reconnected or another usable location is explicitly chosen; Still does not silently switch to an empty folder. Fresh installs keep local data under `~/Library/Application Support/Still/Writing`. `STILL_DATA_DIRECTORY` is an explicit scratch override for the local database and backend files; launch with it to isolate a preview. Old remembered database-folder bookmarks do not redirect the live database. No writing is copied into the app bundle.
 
 AppKit provides a normal Dock application, persistent window placement, native fullscreen, and standard editing menus. Cmd+N opens fresh writing, Cmd+O opens Saved writing, Cmd+S saves immediately, Cmd+K opens Find, and Ctrl+Cmd+F enters fullscreen. Save and Open Writing are also in the File menu; autosave remains active. WKWebView shows the existing application without tabs or an address bar. On load, the window gives keyboard focus to the writer without moving an already focused selection. It accepts navigation only to its own local origin.
 
@@ -46,9 +45,9 @@ The native titlebar sits above the WebView. Its double-click follows the Mac's D
 Fullscreen entry and exit update `html[data-native-fullscreen]` for the room's layout without creating another writing mode. The signal is refreshed after every complete document load. WebKit swipe-history gestures, pinch magnification, and link previews are disabled so they do not compete with Still's movement and type-size control. The shell supplies no custom pointer image and changes no system accessibility preferences.
 
 The shell starts its own bundled backend at `127.0.0.1:4040`. This stable origin keeps WebKit's local recovery storage available across launches. The native WebKit profile is separate from a browser profile; unsent browser copies therefore remain in that browser. `STILL_NATIVE_PORT` can override the port for scratch tests. An occupied port is rejected rather than treated as Still. The availability check uses the backend’s address-reuse behavior, so a recently closed connection cannot be mistaken for a listening application during immediate reopening.
-Each chosen collection has a distinct persistent WebKit profile, so a scratch collection cannot share draft recovery copies with the real collection. Quit Still before switching launch environments. For example: `open --env STILL_DATA_DIRECTORY=/private/tmp/still-native-room --env STILL_NATIVE_PORT=4041 dist/Still.app`.
+Each chosen writing root has a distinct persistent WebKit profile, so one root cannot share draft recovery copies with another. Quit Still before switching launch environments. For example: `open --env STILL_DATA_DIRECTORY=/private/tmp/still-native-room --env STILL_NATIVE_PORT=4041 dist/Still.app`.
 
-Native launches opt into `STILL_NATIVE=true`; Docker's existing runtime behavior is unchanged. Erlang distribution is disabled. The shell locks `data/native/backend.lock` to avoid two native owners, rotates a local startup log, and creates or reuses `data/.secret_key_base`. Quit and New/Open/Find dispatch the editor-recovery flush event before leaving. File → Save dispatches a save event through that same recovery hook without leaving the editor. Quitting gives the save pause time to finish, then stops only the backend the shell started. Now reopens through the shared machine-local Desk cursor; unsent words and editor position stay in the profile’s file recovery store. Legacy experimental SQLite drafts are not reopened automatically. A separate small guard also stops that BEAM if the window process crashes.
+Native launches opt into `STILL_NATIVE=true`; Docker's existing runtime behavior is unchanged. Erlang distribution is disabled. The shell locks `data/native/backend.lock` to avoid two native owners, rotates a local startup log, and creates or reuses `data/.secret_key_base`. Quit and New/Open/Find dispatch the editor-recovery flush event before leaving. File → Save dispatches a save event through that same recovery hook without leaving the editor. Quitting gives the save pause time to finish, then stops only the backend the shell started. Write reopens through the shared machine-local Desk cursor; unsent words and editor position stay in the profile’s file recovery store. Legacy experimental SQLite drafts are not reopened automatically. A separate small guard also stops that BEAM if the window process crashes.
 
 `python3 native/smoke.py` checks the packaged backend through the native controller using a disposable empty collection and an established collection populated with fabricated records, with Homebrew removed from PATH. Use `python3 native/smoke.py --bundle "dist/Still Preview.app"` to check the separate preview; the check reads its executable name from Info.plist. It also verifies immediate repeated launches after a server-closed connection, refusal of an occupied port, and that an abrupt parent exit closes the backend listener. It never reads a personal collection and does not open a window.
 
@@ -66,26 +65,36 @@ Native zoom uses [the standard frame delegate](https://developer.apple.com/docum
 
 ## Backup destination and closing
 
-File → Choose Backup Folder… selects a separate local destination through the
-native folder picker. File → Clear Backup Folder forgets it; File → Show Backup
-Folder reveals it or explains why it is unavailable. Storage & Backups… opens the
-same server-backed settings/status page available in a browser. These actions do
-not change the active writing folder. Settings are machine-local, scoped to the
-active database path, and stored outside the writing database and destination.
+File → Choose Writing Folder… selects any existing local text-file root through
+the native folder picker. The picker waits for the editor to save or recover
+pending words. File → Clear Writing Folder forgets the root; File → Show Writing
+Folder reveals it or explains why it is unavailable. Storage & Backups… shows
+backup status in the native window. Root changes from that page are disabled so
+all native changes pass through the recovery-aware menu. Settings are machine-
+local, scoped to the active database path, and stored outside the writing root.
 
 Back Up Now freezes the editor, dispatches the existing recovery/save flush, and
 waits for acknowledgment. It requests a verified SQLite snapshot through a narrow
 localhost control route authenticated with an ephemeral per-launch token. The
 token is never stored in writing or exported records.
 
-Window close and Cmd+Q share deferred termination. The window remains present
-until the choice succeeds. After saving settles, a changed/unverified database
-asks Back Up & Close / Close Without Backing Up / Cancel. The first choice needs
-an available destination, successful backup, and no newer database change. On
-failure it keeps the app open; Cancel restores interaction and focus. No folder
-is forced on the user: close without a backup or cancel and choose a folder later.
-Unsettled words are never treated as included in a database snapshot. Manual
-backup and close operations do not overlap.
+Window close and Cmd+Q still freeze and flush the editor, and refuse to leave
+changed words without a safe recovery copy. Backup reminders on close are off
+by default. Closing does not check backup freshness or take a backup in that
+mode. **Back Up Now** remains available for an explicit manual backup.
+
+The Mac app checks for a needed database backup one minute after opening and
+every five minutes thereafter. It uses the same verified replacement as
+**Back Up Now** and defers while a file save needs recovery. The last successful
+backup appears in **Storage & Backups**.
+
+**File → Remind Me to Back Up on Close** turns the reminder on or off. This is a
+machine-local preference, separate from the writing folder and backup proof.
+When enabled, changed/unverified database state offers **Back Up & Close**,
+**Close Without Backing Up**, or **Cancel**. A backup choice needs a successful
+verified snapshot and no newer database change. Turning the reminder off does
+not mark anything as backed up, delete backups, or weaken editor recovery.
+Manual backup and close operations do not overlap.
 
 The policy helper has Foundation-only tests (use a disposable output path):
 
@@ -97,30 +106,46 @@ swiftc -swift-version 5 -warnings-as-errors native/BackupClose.swift native/test
 These assertions cover clean/changed/unsettled state, all three choices, missing
 folder, failed backup, and a concurrent change. They supplement headless backend
 checks; physical AppKit dialogs and window cancellation should also be checked
-with a separately identified disposable build. No browser close handler or
-background backup task is added.
+with a separately identified disposable build.
 
 
 
-## Unified Now writing
+## Writing
 
-Now uses the shared Phoenix file editor for any new writing. File → Open Writing
+Write uses the shared Phoenix file editor for any new writing. File → Open Writing
 opens `/writing`; New Writing opens `/?new=1`. There is no separate Poems menu.
-The historical reading screens keep their SQLite behavior. The same peripheral
-echo markup and gravity context draw only historical candidates around Now.
+The historical reading screens keep their SQLite behavior. Shared echo markup
+and gravity context preserve historical company around Write and saved ordinary-
+text pieces without changing the current file as the source of its words.
 
 The native shell flushes local file recovery before navigation, backup readiness,
-folder switching and close; it never turns a file draft into a SQLite entry.
+folder switching and close; it never saves a file draft without an explicit save.
 `FileLeavePolicy` allows a saved, blank, or safely recovered editor to leave.
 Changed words without verified recovery block leaving. The database close-time
-reminder explicitly distinguishes the historical SQLite snapshot from new files.
-The shared Desk cursor now resumes the current document through `/` on launch;
+reminder explains that current text files must sync separately while the database
+backup retains their indexes, earlier words and collection records.
+The shared Desk cursor resumes the current document through `/` on launch;
 the shell no longer maintains separate new-List and poem editor URL cursors.
 
-The synchronized root selected through Choose Backup Folder also contains the
-existing `poems/` file format. That on-disk name is retained to avoid migration;
-the interface has no writing types. Choosing a root from the menu while drafting
-a new page requires Refresh folder choice in the editor’s Save location details.
+The selected local writing root contains ordinary text files and one latest
+verified `still-backup.sqlite3` file. The live SQLite database remains in local
+Application Support or the explicitly selected scratch database directory.
+Database backups include notebook and List metadata, earlier words, Places,
+icons, and correspondence; sync or copy the text root separately for current
+words. Existing unrelated files at the backup name are preserved. Restoring is
+an explicit operation into a new local database file, followed by reconnecting
+the intended text root; it never replaces the active database.
+
+With Still stopped, restore a verified backup and reconcile an existing writing
+root with:
+
+```sh
+mix still.restore /path/to/still-backup.sqlite3 /local/state/still.db /path/to/writing-folder
+```
+
+Use `--collection UUID` if the database contains more than one root identity.
+The task does not start the endpoint or change any text files. It refuses an
+existing database destination and leaves the live database untouched.
 
 Use only disposable data for checks. The README describes deliberate historical
 cleanup, Trash, permanent deletion, profile-local recovery, and file-lock limits.

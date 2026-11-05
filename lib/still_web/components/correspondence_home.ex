@@ -75,7 +75,8 @@ defmodule StillWeb.CorrespondenceHome do
               </li>
             </ul>
             <p :if={@overview.pieces == []} class="editorial-home-empty-note">
-              No saved work yet. <.link patch={~p"/correspondence/writing"}>Browse Works</.link>
+              No works marked for Correspondence yet.
+              <.link patch={~p"/correspondence/writing"}>Browse Works</.link>
             </p>
             <.link
               :if={@overview.pieces != []}
@@ -182,7 +183,10 @@ defmodule StillWeb.CorrespondenceHome do
               >{packet.title} · Open packet</.link>
               <p class="editorial-home-piece-links">
                 <span :for={
-                  {piece, index} <- Enum.with_index(packet_pieces(packet, @overview.pieces))
+                  {piece, index} <-
+                    Enum.with_index(
+                      packet_pieces(packet, Map.get(@overview, :packet_pieces, @overview.pieces))
+                    )
                 }>
                   <span :if={index > 0} aria-hidden="true"> · </span>
                   <.link patch={~p"/correspondence/writing/#{piece.id}"}>{title(piece)}</.link>

@@ -1,7 +1,7 @@
 defmodule Still.CorrespondenceTest do
-  use ExUnit.Case, async: false
+  use Still.DataCase, async: false
 
-  alias Still.{Correspondence, Poems, Storage}
+  alias Still.{Correspondence, LocalRecord, Poems, Repo, Storage}
 
   setup do
     root =
@@ -58,16 +58,18 @@ defmodule Still.CorrespondenceTest do
     assert Enum.map(sent.snapshot.pieces, & &1.id) == [first.id, second.id]
     assert Enum.map(sent.snapshot.pieces, & &1.body) == [changed.body, second.body]
 
-    first_snapshot_path =
-      Path.join([
-        Storage.collection_location().folder,
-        "correspondence",
-        "snapshots",
-        sent.snapshot_ref,
-        first.id <> ".txt"
-      ])
+    snapshot_row =
+      Repo.get_by!(LocalRecord,
+        scope: location.scope,
+        kind: "snapshot",
+        record_key: sent.snapshot_ref
+      )
 
-    assert File.read!(first_snapshot_path) == changed.body
+    assert snapshot_row.bytes
+           |> Jason.decode!()
+           |> Map.fetch!("pieces")
+           |> hd()
+           |> Map.fetch!("body") == changed.body
 
     {:ok, current} = Poems.get(location, first.id)
 
@@ -137,16 +139,14 @@ defmodule Still.CorrespondenceTest do
     assert message =~ "changed on disk"
     assert updated.notes == "new note"
 
-    history_path =
-      Path.join([
-        Storage.collection_location().folder,
-        "correspondence",
-        "revisions",
-        journal.id,
-        journal.token <> ".json"
-      ])
+    revision =
+      Repo.get_by!(LocalRecord,
+        scope: location.scope,
+        kind: "revision",
+        record_key: "journal:#{journal.id}:1"
+      )
 
-    assert Jason.decode!(File.read!(history_path))["notes"] == journal.notes
+    assert revision.data["notes"] == journal.notes
 
     {:ok, piece} = save_piece("Untitled", "Words")
     {:ok, packet} = Correspondence.save_packet(location, packet_attrs(journal.id, [piece.id]))
@@ -160,55 +160,84 @@ defmodule Still.CorrespondenceTest do
              )
   end
 
-  test "corrupt records and symlinked correspondence folders fail visibly without changing outside files",
-       %{collection: collection} do
-    {:ok, journal} = Correspondence.save_journal(Storage.collection_location(), journal_attrs())
-    journal_path = Path.join([collection, "correspondence", "journals", journal.id <> ".json"])
-    File.write!(journal_path, "{ broken")
-    assert {:error, message} = Correspondence.overview(Storage.collection_location())
-    assert message =~ "malformed"
+  test "submitted snapshots preserve title meaning separately from identical display text", %{
+    location: location
+  } do
+    {:ok, automatic} =
+      Poems.save(location, Poems.new(location), %{body: "Same words\nfirst-line prose"})
 
-    File.rm_rf!(Path.join(collection, "correspondence"))
-    outside = Path.join(collection, "outside-correspondence")
-    File.mkdir!(outside)
-    keep = Path.join(outside, "keep.txt")
-    File.write!(keep, "leave this")
-    File.ln_s!(outside, Path.join(collection, "correspondence"))
-    assert {:error, message} = Correspondence.overview(Storage.collection_location())
-    assert message =~ "symlink"
-    assert File.read!(keep) == "leave this"
+    {:ok, explicit} =
+      Poems.save(location, Poems.new(location), %{
+        body: "Preface\nSame words\nexplicit prose",
+        title_line: 2
+      })
+
+    {:ok, journal} = Correspondence.save_journal(location, journal_attrs())
+
+    {:ok, packet} =
+      Correspondence.save_packet(location, packet_attrs(journal.id, [automatic.id, explicit.id]))
+
+    {:ok, sent} = Correspondence.submit(location, packet.id, packet.token, "2026-10-23")
+    [first, second] = sent.snapshot.pieces
+
+    assert first.title == second.title
+    assert first.title_in_body and second.title_in_body
+    assert first.title_line == nil
+    assert first.title_source == "first_line"
+    assert second.title_line == 2
+    assert second.title_source == "explicit"
+    assert first.body == "Same words\nfirst-line prose"
+    assert second.body == "Preface\nSame words\nexplicit prose"
   end
 
-  test "tampered frozen snapshot is reported rather than exported", %{
-    location: location,
+  test "corrupt database records fail visibly while collection files remain untouched", %{
     collection: collection
   } do
+    location = Storage.collection_location()
+    {:ok, journal} = Correspondence.save_journal(location, journal_attrs())
+
+    row =
+      Repo.get_by!(LocalRecord, scope: location.scope, kind: "journal", record_key: journal.id)
+
+    row
+    |> LocalRecord.changeset(%{data: %{"id" => journal.id, "name" => "corrupt"}})
+    |> Repo.update!()
+
+    assert {:error, message} = Correspondence.overview(location)
+    assert message =~ "malformed"
+    refute File.exists?(Path.join(collection, "correspondence"))
+  end
+
+  test "tampered frozen snapshot bytes are reported rather than exported", %{location: location} do
     {:ok, piece} = save_piece("Snapshot", "original")
     {:ok, journal} = Correspondence.save_journal(location, journal_attrs())
     {:ok, packet} = Correspondence.save_packet(location, packet_attrs(journal.id, [piece.id]))
     {:ok, sent} = Correspondence.submit(location, packet.id, packet.token, "2026-10-23")
-    ref = sent.snapshot_ref
-    path = Path.join([collection, "correspondence", "snapshots", ref, piece.id <> ".txt"])
-    File.write!(path, File.read!(path) <> " tampered")
+
+    row =
+      Repo.get_by!(LocalRecord,
+        scope: location.scope,
+        kind: "snapshot",
+        record_key: sent.snapshot_ref
+      )
+
+    row |> LocalRecord.changeset(%{bytes: row.bytes <> " tampered"}) |> Repo.update!()
     assert {:error, message} = Correspondence.export_packet(location, packet.id)
     assert message =~ "snapshot"
   end
 
-  test "recorded event chronology cannot be reordered", %{
-    location: location,
-    collection: collection
-  } do
+  test "recorded event chronology cannot be reordered", %{location: location} do
     {:ok, piece} = save_piece("Chronology", "body")
     {:ok, journal} = Correspondence.save_journal(location, journal_attrs())
     {:ok, packet} = Correspondence.save_packet(location, packet_attrs(journal.id, [piece.id]))
     {:ok, sent} = Correspondence.submit(location, packet.id, packet.token, "2026-10-23")
 
     {:ok, awaiting} = Correspondence.set_status(location, sent.id, sent.token, "awaiting")
-    path = Path.join([collection, "correspondence", "packets", packet.id <> ".json"])
-    raw = path |> File.read!() |> Jason.decode!()
+    row = Repo.get_by!(LocalRecord, scope: location.scope, kind: "packet", record_key: packet.id)
+    data = row.data
     earlier = DateTime.from_naive!(~N[2000-01-01 00:00:00], "Etc/UTC") |> DateTime.to_iso8601()
-    events = List.update_at(raw["events"], 1, &Map.put(&1, "at", earlier))
-    File.write!(path, Jason.encode!(Map.put(raw, "events", events), pretty: true) <> "\n")
+    events = List.update_at(data["events"], 1, &Map.put(&1, "at", earlier))
+    row |> LocalRecord.changeset(%{data: Map.put(data, "events", events)}) |> Repo.update!()
 
     assert {:error, _} = Correspondence.packet(location, awaiting.id)
   end
@@ -217,8 +246,8 @@ defmodule Still.CorrespondenceTest do
     collection: collection,
     location: location
   } do
-    refute File.exists?(Path.join(collection, "correspondence"))
     assert {:ok, %{journals: [], packets: [], pieces: []}} = Correspondence.overview(location)
+    assert Repo.all(Ecto.Query.from(r in LocalRecord, where: r.scope == ^location.scope)) == []
     refute File.exists?(Path.join(collection, "correspondence"))
   end
 
@@ -243,51 +272,53 @@ defmodule Still.CorrespondenceTest do
     assert Enum.count(results, &match?({:error, _}, &1)) == 1
   end
 
-  test "a partial correspondence store is reported and its missing folders are not recreated", %{
+  test "correspondence records stay in SQLite and never create collection metadata files", %{
     location: location,
     collection: collection
   } do
     {:ok, _journal} = Correspondence.save_journal(location, journal_attrs())
-    packets = Path.join([collection, "correspondence", "packets"])
-    File.rm_rf!(packets)
-    assert {:error, message} = Correspondence.overview(location)
-    assert message =~ "incomplete"
-    refute File.exists?(packets)
+
+    assert not is_nil(
+             Repo.one(
+               Ecto.Query.from(r in LocalRecord,
+                 where: r.scope == ^location.scope and r.kind == "journal"
+               )
+             )
+           )
+
+    refute File.exists?(Path.join(collection, "correspondence"))
   end
 
-  test "a failed update preserves the previous valid journal record", %{
-    location: location,
-    collection: collection
-  } do
+  test "a failed stale update preserves the previous valid journal record", %{location: location} do
     {:ok, journal} = Correspondence.save_journal(location, journal_attrs())
-    corr = Path.join(collection, "correspondence")
-    outside = Path.join(collection, "outside-revisions")
-    File.mkdir!(outside)
-    File.ln_s!(outside, Path.join(corr, "revisions"))
+
+    {:ok, current} =
+      Correspondence.save_journal(
+        location,
+        Map.put(journal_attrs(), :notes, "new"),
+        journal.id,
+        journal.token
+      )
 
     assert {:error, _} =
              Correspondence.save_journal(
                location,
-               Map.put(journal_attrs(), :notes, "new"),
+               Map.put(journal_attrs(), :notes, "stale"),
                journal.id,
                journal.token
              )
 
-    assert {:ok, current} = Correspondence.journal(location, journal.id)
-    assert current.notes == journal.notes
-    assert current.token == journal.token
-    assert File.ls!(outside) == []
+    assert {:ok, reopened} = Correspondence.journal(location, journal.id)
+    assert reopened.notes == "new"
+    assert reopened.token == current.token
   end
 
   test "invalid journal URLs and stale preparation exports fail before producing a manuscript", %{
-    location: location,
-    collection: collection
+    location: location
   } do
     bad = Map.put(journal_attrs(), :website, "javascript:alert(1)")
     assert {:error, message} = Correspondence.save_journal(location, bad)
     assert message =~ "HTTP or HTTPS"
-    refute File.exists?(Path.join(collection, "correspondence"))
-
     {:ok, journal} = Correspondence.save_journal(location, journal_attrs())
     {:ok, piece} = save_piece("Reviewed", "before")
     {:ok, packet} = Correspondence.save_packet(location, packet_attrs(journal.id, [piece.id]))

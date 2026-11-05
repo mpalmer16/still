@@ -16,20 +16,21 @@ defmodule StillWeb.SavedWritingTest do
     %{folder: folder}
   end
 
-  test "explicit Save writes exact title and body, then reopen, rename and revise preserve history",
+  test "a title role marks a full-text line and later edits preserve its history",
        %{
          conn: conn,
-         folder: folder
+         folder: _folder
        } do
     {:ok, view, _} = live(conn, ~p"/writing/new")
-    body = "\n  exact <words> & spaces\n\tsecond line\n\n"
+    body = "\n  Notes:\n\tsecond line <words> & spaces\n\n"
 
     render_submit(element(view, "#file-writing-form"), %{
-      "writing" => %{"title" => "Notes:", "body" => body}
+      "writing" => %{"title_line" => "2", "body" => body}
     })
 
     assert {:ok, [saved]} = Poems.list(Storage.collection_location())
-    assert saved.title == "Notes:"
+    assert saved.title_line == 2
+    assert Poems.display_title(saved) == "Notes:"
     assert saved.body == body
     assert File.read!(saved.path) == body
     assert_patch(view, ~p"/writing/#{saved.id}/edit")
@@ -42,31 +43,35 @@ defmodule StillWeb.SavedWritingTest do
              |> LazyHTML.query("#file-writing-body")
              |> LazyHTML.attribute("data-persisted")
 
-    assert Jason.decode!(persisted) == %{"title" => "Notes:", "body" => body}
+    assert %{"title" => "", "title_line" => "2", "body" => ^body} = Jason.decode!(persisted)
 
     renamed_body = body <> "last line\n"
 
     render_submit(element(reopened, "#file-writing-form"), %{
-      "writing" => %{"title" => "Renamed notes", "body" => renamed_body}
+      "writing" => %{"title_line" => "2", "body" => renamed_body}
     })
 
     assert {:ok, renamed} = Poems.get(Storage.collection_location(), saved.id)
-    assert renamed.title == "Renamed notes"
+    assert renamed.title_line == 2
+    assert Poems.display_title(renamed) == "Notes:"
     assert renamed.body == renamed_body
 
-    assert renamed.path ==
-             Path.join([folder, "poems", "Renamed notes -- #{saved.id}", "poem.txt"])
+    assert renamed.path == saved.path
 
     assert {:ok, [revision]} = Poems.revisions(Storage.collection_location(), saved.id)
-    assert revision.title == "Notes:" and revision.body == body
-    assert Writing.list_entries() == []
+    assert revision.title_line == 2 and revision.body == body
+
+    assert Enum.any?(
+             Writing.list_entries(),
+             &(&1.file_id == saved.id and &1.body == renamed_body)
+           )
   end
 
   test "a stale snapshot preserves both disk contents and the submitted local form", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/writing/new")
 
     render_submit(element(view, "#file-writing-form"), %{
-      "writing" => %{"title" => "Before", "body" => "Original on disk"}
+      "writing" => %{"title_line" => "1", "body" => "Before\nOriginal on disk"}
     })
 
     assert {:ok, [saved]} = Poems.list(Storage.collection_location())
@@ -74,7 +79,7 @@ defmodule StillWeb.SavedWritingTest do
     File.write!(saved.path, "Changed outside Still")
 
     render_submit(element(stale, "#file-writing-form"), %{
-      "writing" => %{"title" => "My local title", "body" => "My unsaved form"}
+      "writing" => %{"title_line" => "1", "body" => "My local title\nMy unsaved form"}
     })
 
     assert has_element?(stale, "#file-problem", "changed on disk")
@@ -91,7 +96,7 @@ defmodule StillWeb.SavedWritingTest do
     {:ok, view, _} = live(conn, ~p"/writing/new")
 
     render_submit(element(view, "#file-writing-form"), %{
-      "writing" => %{"title" => "Saved file", "body" => "Words kept as a file"}
+      "writing" => %{"title_line" => "1", "body" => "Saved file\nWords kept as a file"}
     })
 
     assert {:ok, [saved]} = Poems.list(Storage.collection_location())
@@ -114,7 +119,7 @@ defmodule StillWeb.SavedWritingTest do
     element(trash, "button", "Restore") |> render_click()
     assert has_element?(trash, "#writing-empty", "Nothing in Trash")
     {:ok, restored} = Poems.get(Storage.collection_location(), saved.id)
-    assert restored.body == "Words kept as a file"
+    assert restored.body == "Saved file\nWords kept as a file"
 
     {:ok, shelf, _} = live(conn, ~p"/writing")
     assert has_element?(shelf, "#saved-#{saved.id}", "Saved file")
@@ -140,7 +145,7 @@ defmodule StillWeb.SavedWritingTest do
     {:ok, first, _} = live(conn, ~p"/writing/new")
 
     render_submit(element(first, "#file-writing-form"), %{
-      "writing" => %{"title" => "The desk's page", "body" => "Saved current words"}
+      "writing" => %{"title_line" => "1", "body" => "The desk's page\nSaved current words"}
     })
 
     assert {:ok, [saved]} = Poems.list(Storage.collection_location())
@@ -149,26 +154,28 @@ defmodule StillWeb.SavedWritingTest do
     assert editor_body(blank) == ""
 
     render_change(element(blank, "#file-writing-form"), %{
-      "writing" => %{"title" => "", "body" => "Separate blank draft"}
+      "writing" => %{"title_line" => "", "body" => "Separate blank draft"}
     })
 
     render_submit(element(blank, "#file-writing-form"), %{
-      "writing" => %{"title" => "A separate page", "body" => "Separate blank draft"}
+      "writing" => %{"title_line" => "1", "body" => "A separate page\nSeparate blank draft"}
     })
 
     assert {:ok, pieces} = Poems.list(Storage.collection_location())
     assert length(pieces) == 2
     new_saved = Enum.find(pieces, &(&1.id != saved.id))
     earlier_saved = Enum.find(pieces, &(&1.id == saved.id))
-    assert new_saved.title == "A separate page"
+    assert new_saved.title_line == 1
+    assert Poems.display_title(new_saved) == "A separate page"
     assert earlier_saved.id == saved.id
-    assert earlier_saved.title == "The desk's page"
-    assert earlier_saved.body == "Saved current words"
+    assert earlier_saved.title_line == 1
+    assert Poems.display_title(earlier_saved) == "The desk's page"
+    assert earlier_saved.body == "The desk's page\nSaved current words"
 
     {:ok, now, _} = live(conn, ~p"/")
-    assert has_element?(now, "#file-writing-title[value='A separate page']")
-    assert editor_body(now) == "Separate blank draft"
-    assert Writing.list_entries() == []
+    assert has_element?(now, "#file-writing-title[value='']")
+    assert editor_body(now) == "A separate page\nSeparate blank draft"
+    assert Enum.any?(Writing.list_entries(), &(&1.file_id == new_saved.id))
   end
 
   defp editor_body(view) do

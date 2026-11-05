@@ -2,48 +2,85 @@ defmodule Still.Writing.Geography do
   @moduledoc "Stable places made from source provenance, without assigning time to Before."
   import Ecto.Query
   alias Still.Repo
-  alias Still.Writing.Entry
+  alias Still.Writing.{Entry, Notebook}
+
+  def reference_label(place, number \\ nil) do
+    notebook = Regex.replace(~r/^Lists\s+(\d.*)$/u, place.label, "Notebook \\1")
+
+    label =
+      case Map.get(place, :region) do
+        :early -> "Early/" <> notebook
+        :current -> "Current/" <> notebook
+        _ -> notebook
+      end
+
+    if number in [nil, ""], do: label, else: label <> ", No. " <> to_string(number)
+  end
 
   def for_entry(nil), do: now()
-  def for_entry(%{origin: "now"}), do: now()
 
   def for_entry(entry) do
-    notebook = Map.get(entry, :notebook) || "Before"
-    key = physical_notebook(notebook)
-    region = region(key)
-    seed = :erlang.phash2(key, 10_000)
-    {anchor_x, anchor_y} = anchor(key, region, seed)
-    source = Map.get(entry, :source_group) || key
-    source_seed = :erlang.phash2(source, 10_000)
-    angle = source_seed / 10_000 * :math.pi() * 2
-    radius = 1.2 + rem(source_seed, 17) / 10
+    notebook = notebook_key(entry)
 
-    %{
-      key: key,
-      group: key,
-      label: label(key),
-      region: region,
-      x: Float.round(anchor_x + :math.cos(angle) * radius, 2),
-      y: Float.round(anchor_y + :math.sin(angle) * radius, 2),
-      anchor_x: anchor_x,
-      anchor_y: anchor_y,
-      tone: rem(seed, 17) - 8,
-      corner: if(notebook != key, do: notebook |> String.split("/") |> List.last())
-    }
+    if Map.get(entry, :origin) == "now" and is_nil(notebook) do
+      now()
+    else
+      notebook = notebook || "Before"
+      key = Map.get(entry, :physical_notebook) || physical_notebook_for(entry, notebook)
+      region = region(key)
+      seed = :erlang.phash2(key, 10_000)
+      {anchor_x, anchor_y} = anchor(key, region, seed)
+      source = Map.get(entry, :source_group) || key
+      source_seed = :erlang.phash2(source, 10_000)
+      angle = source_seed / 10_000 * :math.pi() * 2
+      radius = 1.2 + rem(source_seed, 17) / 10
+
+      %{
+        key: key,
+        group: key,
+        label: label(key),
+        region: region,
+        x: Float.round(anchor_x + :math.cos(angle) * radius, 2),
+        y: Float.round(anchor_y + :math.sin(angle) * radius, 2),
+        anchor_x: anchor_x,
+        anchor_y: anchor_y,
+        tone: rem(seed, 17) - 8,
+        corner: if(notebook != key, do: notebook |> String.split("/") |> List.last())
+      }
+    end
   end
 
   def places do
-    Repo.all(
-      from e in Entry,
-        where: e.origin == "before" and not is_nil(e.notebook),
+    active_scope = Still.Writing.Files.discovery_scope()
+
+    query =
+      from(e in Entry,
+        left_join: n in Notebook,
+        on: n.id == e.notebook_id,
+        where: e.origin == "before" or not is_nil(e.file_id),
         select: %{
           id: e.id,
           origin: e.origin,
-          notebook: e.notebook,
+          notebook: fragment("COALESCE(?, ?)", n.key, e.notebook),
           source_group: e.source_group,
           source_order: e.source_order
         }
-    )
+      )
+
+    query =
+      if active_scope do
+        where(
+          query,
+          [e, _n],
+          is_nil(e.file_id) or
+            (e.collection_scope == ^active_scope and not e.file_missing and not e.trashed)
+        )
+      else
+        where(query, [e, _n], is_nil(e.file_id))
+      end
+
+    Repo.all(query)
+    |> Enum.reject(&is_nil(&1.notebook))
     |> Enum.group_by(&physical_notebook(&1.notebook))
     |> Enum.map(fn {_key, entries} ->
       representative = Enum.min_by(entries, &{&1.source_order || 0, &1.id})
@@ -52,6 +89,32 @@ defmodule Still.Writing.Geography do
     end)
     |> Enum.sort_by(&{&1.region, &1.label})
   end
+
+  defp notebook_key(entry) do
+    cond do
+      is_binary(Map.get(entry, :notebook)) and Map.get(entry, :notebook) != "" ->
+        Map.get(entry, :notebook)
+
+      is_integer(Map.get(entry, :notebook_id)) ->
+        case Repo.get(Notebook, entry.notebook_id) do
+          nil -> nil
+          notebook -> notebook.key
+        end
+
+      true ->
+        nil
+    end
+  end
+
+  defp physical_notebook_for(%{notebook_id: id, file_id: file_id}, notebook)
+       when is_integer(id) and is_binary(file_id) do
+    case Repo.get(Notebook, id) do
+      %Notebook{key: key} -> key
+      _ -> physical_notebook(notebook)
+    end
+  end
+
+  defp physical_notebook_for(_entry, notebook), do: physical_notebook(notebook)
 
   def distance(left, right) do
     cond do
@@ -79,13 +142,13 @@ defmodule Still.Writing.Geography do
   end
 
   defp now?(nil), do: true
-  defp now?(entry), do: Map.get(entry, :origin) == "now"
+  defp now?(entry), do: Map.get(entry, :origin) == "now" and is_nil(notebook_key(entry))
 
   defp now do
     %{
       key: "now",
       group: "now",
-      label: "Now",
+      label: "Write",
       region: :now,
       x: 50.0,
       y: 72.0,

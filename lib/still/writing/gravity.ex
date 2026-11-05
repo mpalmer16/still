@@ -59,7 +59,7 @@ defmodule Still.Writing.Gravity do
       reading: true,
       entry_id: entry.id,
       list: Writing.list_entry?(entry),
-      title: entry.title
+      title: if(is_nil(entry.file_id), do: entry.title)
     ]
 
     avoided = MapSet.new(Keyword.get(opts, :avoid_ids, []))
@@ -84,8 +84,13 @@ defmodule Still.Writing.Gravity do
     field(passage || piece.body,
       reading: true,
       historical_only: true,
-      title: if(is_nil(passage), do: Still.Poems.display_title(piece)),
-      exclude_ids: historical_source_ids(piece) ++ Keyword.get(opts, :exclude_ids, []),
+      title:
+        if(is_nil(passage) and Map.get(piece, :title_in_body) != true,
+          do: Still.Poems.display_title(piece)
+        ),
+      exclude_ids:
+        historical_source_ids(piece) ++
+          List.wrap(Map.get(piece, :entry_id)) ++ Keyword.get(opts, :exclude_ids, []),
       previous: Keyword.get(opts, :previous, [])
     )
   end
@@ -420,61 +425,72 @@ defmodule Still.Writing.Gravity do
     |> Enum.sum()
   end
 
-  # Each caller keeps one local index. Header changes retokenize only changed
-  # writings, so including the living Now does not rebuild the whole archive.
+  # Share derived tokens between readers. Exact row changes retokenize only
+  # changed writings; every operation still verifies the current source files.
   defp index(opts) do
     historical? = opts[:historical_only] == true
-    query = if historical?, do: from(e in Entry, where: e.origin == "before"), else: Entry
+    scope = Still.Writing.Files.discovery_scope()
 
-    headers =
-      Repo.all(
-        from e in query,
-          select: {e.id, e.lock_version, e.updated_at},
-          order_by: e.id
-      )
+    query =
+      if historical?,
+        do:
+          from(e in Entry,
+            where: (e.origin == "before" and is_nil(e.file_id)) or not is_nil(e.file_id)
+          ),
+        else: Entry
 
-    cache_key = {__MODULE__, :index, historical?}
-    database = Repo.config()[:database]
+    query = available_entries(query, scope)
 
-    case Process.get(cache_key) do
-      {^database, ^headers, index} ->
+    entries = Repo.all(from(e in query, order_by: e.id))
+    stamp = entries
+    cache_key = {__MODULE__, Repo.config()[:database], :index, scope, historical?}
+
+    case Still.Writing.IndexCache.get(cache_key) do
+      {^stamp, index} ->
         index
 
-      {^database, previous_headers, previous_index} ->
-        index = refresh_index(previous_index, previous_headers, headers)
-        Process.put(cache_key, {database, headers, index})
+      {previous_stamp, previous_index} ->
+        index = refresh_index(previous_index, previous_stamp, entries)
+        Still.Writing.IndexCache.put(cache_key, stamp, index)
         index
 
       _ ->
-        index = Repo.all(query) |> Enum.reduce(empty_index(), &add_entry/2)
-        Process.put(cache_key, {database, headers, index})
+        index = Enum.reduce(entries, empty_index(), &add_entry/2)
+        Still.Writing.IndexCache.put(cache_key, stamp, index)
         index
     end
+  end
+
+  defp available_entries(query, nil),
+    do: where(query, [e], is_nil(e.file_id))
+
+  defp available_entries(query, scope) do
+    where(
+      query,
+      [e],
+      is_nil(e.file_id) or
+        (e.collection_scope == ^scope and not e.file_missing and not e.trashed)
+    )
   end
 
   defp empty_index do
     %{count: 0, entries: %{}, tokens: %{}, words: %{}, frequencies: %{}, inverted: %{}}
   end
 
-  defp refresh_index(index, previous_headers, headers) do
-    previous =
-      Map.new(previous_headers, fn {id, version, updated} -> {id, {version, updated}} end)
-
-    current = Map.new(headers, fn {id, version, updated} -> {id, {version, updated}} end)
-    changed = for {id, version} <- current, Map.get(previous, id) != version, do: id
+  defp refresh_index(index, previous_entries, entries) do
+    previous = Map.new(previous_entries, &{&1.id, &1})
+    current = Map.new(entries, &{&1.id, &1})
+    changed = Enum.filter(entries, &(Map.get(previous, &1.id) != &1))
     removed = Map.keys(previous) -- Map.keys(current)
-    index = Enum.reduce(Enum.uniq(changed ++ removed), index, &remove_entry/2)
-
-    if changed == [] do
-      index
-    else
-      Repo.all(from e in Entry, where: e.id in ^changed) |> Enum.reduce(index, &add_entry/2)
-    end
+    index = Enum.reduce(Enum.uniq(Enum.map(changed, & &1.id) ++ removed), index, &remove_entry/2)
+    Enum.reduce(changed, index, &add_entry/2)
   end
 
   defp add_entry(entry, index) do
     body_tokens = tokens(entry.body)
-    words = (body_tokens ++ tokens(entry.title || "")) |> Enum.map(&elem(&1, 0)) |> MapSet.new()
+
+    title_tokens = if is_nil(entry.file_id), do: tokens(entry.title || ""), else: []
+    words = (body_tokens ++ title_tokens) |> Enum.map(&elem(&1, 0)) |> MapSet.new()
 
     {frequencies, inverted} =
       Enum.reduce(words, {index.frequencies, index.inverted}, fn word, {frequencies, inverted} ->

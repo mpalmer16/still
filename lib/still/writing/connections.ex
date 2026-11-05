@@ -7,39 +7,53 @@ defmodule Still.Writing.Connections do
   def source_siblings(%Entry{source_group: nil}), do: []
 
   def source_siblings(%Entry{id: id, source_group: group}) do
-    Repo.all(
-      from e in Entry,
+    query =
+      from(e in Entry,
         where: e.source_group == ^group and e.id != ^id,
         order_by: [asc: e.source_order, asc: e.id]
-    )
+      )
+
+    Repo.all(available_entries(query))
   end
 
   def nearby(entry, opts \\ [])
 
-  def nearby(%Entry{notebook: nil}, _opts), do: nil
+  def nearby(%Entry{notebook: nil, notebook_id: nil}, _opts), do: nil
 
-  def nearby(%Entry{id: id, notebook: notebook, source_order: source_order} = entry, opts) do
+  def nearby(
+        %Entry{id: id, notebook: notebook, notebook_id: notebook_id, source_order: source_order} =
+          entry,
+        opts
+      ) do
     siblings = source_siblings(entry) |> Enum.map(& &1.id)
     excluded = Keyword.get(opts, :exclude_ids, [])
 
     key = Geography.for_entry(entry).key
 
     query =
-      from e in Entry,
+      from(e in Entry,
         where: e.id != ^id and e.id not in ^siblings and e.id not in ^excluded
+      )
+
+    query = available_entries(query)
 
     query =
-      if key == "Current Notebooks/2026/Notebook 1" do
-        prefix = key <> "/"
+      cond do
+        is_integer(notebook_id) ->
+          where(query, [e], e.notebook_id == ^notebook_id)
 
-        where(
-          query,
-          [e],
-          e.notebook == ^key or
-            fragment("substr(?, 1, ?) = ?", e.notebook, ^String.length(prefix), ^prefix)
-        )
-      else
-        where(query, [e], e.notebook == ^notebook)
+        key == "Current Notebooks/2026/Notebook 1" ->
+          prefix = key <> "/"
+
+          where(
+            query,
+            [e],
+            e.notebook == ^key or
+              fragment("substr(?, 1, ?) = ?", e.notebook, ^String.length(prefix), ^prefix)
+          )
+
+        true ->
+          where(query, [e], e.notebook == ^notebook)
       end
 
     query =
@@ -52,7 +66,7 @@ defmodule Still.Writing.Connections do
         order_by(query, [e], asc: e.id)
       end
 
-    Repo.one(from e in query, limit: 1)
+    Repo.one(from(e in query, limit: 1))
   end
 
   def for_entry(%Entry{} = entry) do
@@ -91,7 +105,8 @@ defmodule Still.Writing.Connections do
         Writing.recent_entries(limit: 16) |> Enum.map(& &1.id)
       end)
 
-    query = from e in Entry, where: e.id not in ^excluded
+    query = from(e in Entry, where: e.id not in ^excluded)
+    query = available_entries(query)
 
     query =
       case Keyword.get(opts, :exclude_notebook) do
@@ -117,8 +132,23 @@ defmodule Still.Writing.Connections do
       end
 
     Repo.one(
-      from e in query, where: e.id not in ^recent, order_by: fragment("RANDOM()"), limit: 1
+      from(e in query, where: e.id not in ^recent, order_by: fragment("RANDOM()"), limit: 1)
     ) ||
-      Repo.one(from e in query, order_by: fragment("RANDOM()"), limit: 1)
+      Repo.one(from(e in query, order_by: fragment("RANDOM()"), limit: 1))
+  end
+
+  defp available_entries(query) do
+    active_scope = Still.Writing.Files.discovery_scope()
+
+    if active_scope do
+      where(
+        query,
+        [e],
+        is_nil(e.file_id) or
+          (e.collection_scope == ^active_scope and not e.file_missing and not e.trashed)
+      )
+    else
+      where(query, [e], is_nil(e.file_id))
+    end
   end
 end

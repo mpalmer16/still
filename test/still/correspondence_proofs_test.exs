@@ -106,6 +106,27 @@ defmodule Still.Correspondence.ProofsTest do
     assert source.date == "2026-01-01T00:00:00Z"
   end
 
+  test "database revision ids and owning entry ids are accepted for file-backed writing" do
+    [source] =
+      Proofs.sources(
+        %{id: "piece-1", entry_id: 27, title: "Current", body: "now"},
+        [
+          %{
+            id: 41,
+            entry_id: 27,
+            title: "Earlier",
+            body: "earlier full text",
+            created_at: "2026-01-01T00:00:00Z"
+          }
+        ],
+        []
+      )
+
+    assert source.key == "saved:41"
+    assert source.body == "earlier full text"
+    assert source.title == "Earlier"
+  end
+
   test "line diff preserves exact authored bytes on both sides" do
     original = "Alpha\r\n  tab\t  \r\n\r\ncafé <script>literal</script>\r"
     current = "Alpha\r\n  tab\tchanged\r\ninserted\n\r\ncafé <script>literal</script>\r"

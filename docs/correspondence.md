@@ -17,10 +17,20 @@ in **Works**, or the home page's saved-work chooser. Change it there or **Clear 
 clearing removes only the placement, never the writing. The selection survives a restart
 and follows the collection. A recent edit does not imply readiness for publication.
 
-**Works** is the searchable saved collection (its existing URLs remain unchanged).
+**Works** holds the pieces you mark for Correspondence. Open a saved piece in
+Write or in its notebook and choose **Mark for Correspondence**. This adds the
+piece to Works in its existing location. Pieces already in packets start
+marked. You can remove the mark while keeping the packet history.
+
+**Edit in Write** opens the same piece from Correspondence. After a submission,
+the editor notes that the piece has been sent. Saving an edit creates a new
+version, and the packet keeps the exact submitted words.
+
+Works shows 40 pieces initially. **More works** reveals the next group and
+search covers all marked pieces.
 Opening a work places its current text beside earlier versions and correspondence,
 including the exact versions sent. Use **Edit in Now** to compose or revise.
-Correspondence does not have a second editor; global **Now** remains the way back.
+Correspondence does not have a second editor; global **Write** remains the way back.
 
 Home shows up to three outstanding submissions, including unresolved pieces in a
 partly accepted packet, and two recent replies. **All packets** leads to the complete
@@ -69,61 +79,21 @@ Prepare a new packet for a subsequent submission so the earlier history remains 
 
 ## Storage and recovery
 
-Records live beneath `correspondence/` in the selected collection, beside `poems/`.
-The collection's machine-specific absolute path lives only in local Still settings.
-Relationships use stable UUIDs, not writing folder labels or absolute paths.
+Correspondence records live in the local SQLite database beside the selected writing folder. The folder itself contains the current ordinary text files and, after a backup, one latest verified `still-backup.sqlite3` copy. The database stores scoped place and packet records, desk placement, earlier record revisions, discovery details, icon bytes, and immutable submitted manuscripts. No Correspondence folders, JSON sidecars, icon files, or per-piece revision directories are created beside the writing.
 
-The format marker is `.still-correspondence.json` (`still-correspondence-v1`). Journal
-records live in `journals/<id>.json`; packet records in `packets/<id>.json`. Snapshot
-records live in `snapshots/<snapshot-id>.json`; exact UTF-8 manuscript copies and a
-manifest live in `snapshots/<snapshot-id>/<piece-id>.txt` and `snapshot.json`. Earlier
-journal and packet JSON lives in `revisions/<record-id>/<content-hash>.json`. JSON is UTF-8 and
-can be inspected with ordinary tools. Record tokens detect external edits, and sent
-snapshots carry content hashes. Keep the whole directory together when copying it.
+Each selected folder has a stable collection identity in the local database. Still stores file locations relative to that folder and keeps the active words in those files. Opening or searching synchronizes readable UTF-8 files into SQLite indexes; the index is not a second editable copy. A file without an extension is valid. Binary or unsupported text is reported and left untouched. If the selected folder becomes unavailable, Still reports that instead of treating the writing as deleted or switching to another collection.
 
-Places have optional `description` and `icon_url` fields. Older records open with
-both absent; no conversion is required. Icons are fetched automatically from the
-specified link, falling back to the website’s `/favicon.ico`. Only public HTTP(S)
-addresses and bounded raster images are fetched. Each redirect is checked and its
-resolved address pinned. Unavailable images leave an initial; a failed attempt
-waits one day before another visit can retry.
+A packet records the selected piece identities and their current file tokens. **Mark sent** saves the exact full text of every piece into an immutable SQLite snapshot, including the explicit title line when one is part of the file. The snapshot also keeps title-role metadata and the destination name as it was when sent. Later edits, file moves, place renames, or Trash do not change that submitted version. Manuscript exports use this same full text and do not prepend a second title. DOCX and UTF-8 plain-text downloads contain the ordered writing; the cover letter remains separate.
 
-Verified local image copies (base64 image bytes, MIME type, and SHA-256) live in
-`icons/<source-hash>.json` beneath `correspondence/`. The source hash includes the
-place ID, website, and icon URL; changing either URL selects a new cache entry.
-Prior image files remain available in the collection. Downloads do not change a
-journal’s edit token, notes, history, or submitted snapshots. A late download cannot
-publish into a different collection or for changed source URLs. Copy this folder
-with the rest of the collection for offline use; SQLite-only backups and manuscript
-exports do not include correspondence records or icon files.
+Place details, shortlist choices, packet events, and desk placement are stored as scoped SQLite records. Stale form tokens prevent an older window from replacing a newer record. Each successful edit preserves the prior record revision in SQLite. A saved desk placement has the same stale-edit protection; clearing it removes only the placement, while its prior state remains in revision history.
 
-The optional `correspondence/desk.json` stores `format: still-correspondence-desk`,
-`version: 1`, a work UUID (or explicit null when cleared), and an update timestamp.
-It contains no manuscript text or machine paths. An older collection without this file
-has an empty desk and requires no migration. Desk changes use the same collection
-lock, safe atomic publication, and stale-token checks as other records; earlier JSON
-is preserved in `revisions/desk/<content-hash>.json`. If another session changes it,
-reopen the desk before choosing again. Unavailable chosen works are identified rather
-than silently replaced.
+Icons are optional. Still fetches only public HTTP(S) sources, checks redirects, and accepts bounded raster images. The image bytes, MIME type, source hash, and retry time are stored in SQLite. Changing the place's icon or website uses a different cache entry. A collection folder copy by itself does not carry this cache; a verified database backup does.
 
-Still writes through temporary files, syncs them, and publishes completed records
-atomically. Earlier JSON is retained before updates. A collection lock prevents two
-Still instances from updating correspondence records together. External editors and
-folder synchronization services do not honor Still's lock: avoid editing records in
-another program while saving them in Still. A detected mismatch is an error, never
-permission to overwrite. Reopen and reconcile outside changes first.
+The exact submitted words and other correspondence history are included in the latest SQLite backup made with **Back Up Now**. The backup sits beside the writing and is safely replaced after verification; it is not a dated snapshot series. Current writing remains in the ordinary text files, so keep the selected folder available to Still and allow any folder synchronization service to finish. A successful local save does not prove that an external service has synchronized it.
 
-A missing, malformed, or partially synchronized record produces an explicit error.
-Reconnect the selected folder or let synchronization finish, then reopen the room.
-Still does not silently reconstruct missing established directories or replace a
-broken record with an empty one. A lock left after a crash is not silently removed;
-close every Still instance and preserve a copy of the collection before inspecting
-and removing a stale `correspondence/.still-correspondence-lock` directory.
+When a save is interrupted, Still uses the pending record in SQLite to compare the file with the earlier and proposed words. A verified partial staging file can be cleaned up and the save completed. If the file contains a third version or an unfamiliar staging file is present, Still leaves that content and the pending record in place and reports the conflict. Reopen **Saved writing** to review the current file and proposed text, then choose which words to keep. Do not remove unfamiliar files in the writing folder while resolving a save.
 
-**Back Up Now snapshots SQLite only.** It does not back up writing files,
-correspondence, or browser drafts. Preserve the entire collection folder separately,
-including snapshots and earlier records. A successful local save does not prove that
-Google Drive or any other external service has synchronized it.
+Moving a file within the selected folder can retain its identity when the file match is reliable. If a copy-and-delete leaves more than one possible match, Still shows the ambiguity and lets you explicitly reconnect the existing writing or adopt a separate file. Equal text alone never merges two writings. Files in Trash retain their earlier words and relationships in SQLite; restoring to an occupied path is refused until you resolve that path yourself.
 
 ## Synthetic preview
 
@@ -145,8 +115,8 @@ STILL_PREVIEW_PORT=4097 STILL_PREVIEW_SCENARIO=established ./scripts/preview_cor
 
 The script prints its exact temporary directory. It refuses to seed a pre-existing
 collection and does not use the installed application's database or profile. Stop
-with Control-C. Each launch creates a fresh preview; retain its printed directory if
-you want to inspect the portable files afterward. These examples are invented and
+with Control-C. Each launch creates a fresh preview; its printed directory contains the synthetic text files,
+local database, and settings for inspection until you remove it. These examples are invented and
 are not evidence of any real journal's policy or availability.
 
 ## Deliberate boundaries
@@ -154,8 +124,8 @@ are not evidence of any real journal's policy or availability.
 There is no external directory, policy verification service, sending integration,
 scheduler, hosted database, new writing classification, or cloud sync engine.
 DOCX is a readable manuscript, not a claim to meet every journal's requirements.
-Its line breaks represent original line endings; the frozen UTF-8 text remains the
-source of exact byte fidelity. PDF can be produced by opening a DOCX and exporting
+Its layout is a readable manuscript rendering; the frozen UTF-8 text remains the
+source of exact wording and line-ending fidelity. PDF can be produced by opening a DOCX and exporting
 or printing it in a word processor; Still does not require a PDF conversion service.
 
 ## Importing and deactivating places
@@ -205,12 +175,11 @@ folder/title changes and a restored SQLite database. A saved version in Trash mu
 be restored instead of duplicated. Files created separately by hand are not matched
 by their title or text; Still does not guess that two different pieces are the same.
 
-`metadata.json` retains the original title, notebook, source number when known, and
-source key under optional `historical_source`. Absolute import paths are excluded.
-The source reference is also visible under **Text file** when reading saved writing.
-The UTF-8 text file remains ordinary text; only this saved edition's title and text
-change as you revise it. No two-way synchronization with the historical original
-is implied. Older writing files without this field remain unchanged and readable.
+The local database retains the historical title, notebook, source number when known,
+and source key under `historical_source`; absolute import paths are excluded. The source
+reference is also visible under **Text file** when reading saved writing. The current
+words remain in the ordinary UTF-8 text file, and the provenance stays in SQLite as you
+revise it. No two-way synchronization with the historical original is implied.
 
 ## Then & now
 
@@ -220,11 +189,13 @@ page appear together. **Look back to** moves between the exact versions sent to
 places and the work’s earlier saved versions. Destination names and sent dates come
 from the frozen packet, even if a place is renamed later.
 
-**What changed** shades changed passages and marks changed titles. **Just read**
-removes the shading so both complete pages can be read quietly. Line breaks,
-indentation, blank stanzas, tabs, and trailing spaces remain in their own versions.
-Spacing-only and line-ending-only changes are identified explicitly. Very long
-versions appear as complete pages without detailed passage markings.
+**What changed** shades changed passages and identifies a changed title role. A title
+selected from a line is metadata pointing into the complete text; it does not replace
+or duplicate that line. **Just read** removes the shading so both complete pages can
+be read quietly. Earlier saves and sent copies come from SQLite revision and snapshot
+records. Line breaks, indentation, blank stanzas, tabs, and trailing spaces remain in
+their own versions. Spacing-only and line-ending-only changes are identified explicitly.
+Very long versions appear as complete pages without detailed passage markings.
 
 The comparison does not merge, restore, save, export, or send a manuscript. Continue
 editing through **Continue in Now**, or open the recorded correspondence from a sent

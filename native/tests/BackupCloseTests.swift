@@ -3,6 +3,9 @@ import Foundation
 @main
 struct BackupCloseTests {
     static func main() {
+        precondition(ClosePolicy.resolve(changed: true, remindersEnabled: false) == .close)
+        precondition(ClosePolicy.resolve(changed: true, hasBackupFolder: false, remindersEnabled: false) == .close)
+        precondition(ClosePolicy.resolve(changed: true, editorReady: false, remindersEnabled: false) == .close)
         precondition(ClosePolicy.resolve(changed: false) == .close)
         precondition(ClosePolicy.resolve(changed: false, editorReady: false) == .askForChoice)
         precondition(ClosePolicy.resolve(changed: true) == .askForChoice)

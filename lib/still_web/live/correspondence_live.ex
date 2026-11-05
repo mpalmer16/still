@@ -22,6 +22,8 @@ defmodule StillWeb.CorrespondenceLive do
        notice: nil,
        problem: nil,
        search: "",
+       works_limit: 40,
+       submission_focus: false,
        place_icons: %{},
        form: %{},
        revisions: [],
@@ -103,15 +105,20 @@ defmodule StillWeb.CorrespondenceLive do
 
     location = socket.assigns.location
 
+    cached = Icons.cached_many(location, journals)
+
     icons =
       Map.new(journals, fn journal ->
-        uri =
-          case Icons.cached(location, journal) do
-            {:ok, uri} -> uri
-            _ -> nil
-          end
+        {journal.id,
+         case cached[journal.id] do
+           {:ok, uri} -> uri
+           _ -> nil
+         end}
+      end)
 
-        {journal.id, uri}
+    missing_icons =
+      Enum.filter(journals, fn journal ->
+        cached[journal.id] == :missing and Icons.candidates(journal) != []
       end)
 
     socket = assign(socket, place_icons: icons)
@@ -119,7 +126,7 @@ defmodule StillWeb.CorrespondenceLive do
     if connected?(socket) do
       socket = cancel_async(socket, :place_icons)
 
-      if Application.get_env(:still, :fetch_place_icons, true) && journals != [] do
+      if Application.get_env(:still, :fetch_place_icons, true) && missing_icons != [] do
         parent = self()
 
         fetcher =
@@ -130,10 +137,10 @@ defmodule StillWeb.CorrespondenceLive do
           )
 
         start_async(socket, :place_icons, fn ->
-          journals
+          missing_icons
           |> Task.async_stream(
             fn journal ->
-              uri = Icons.ensure(location, journal, fetcher)
+              uri = Icons.ensure_missing(location, journal, fetcher)
 
               send(
                 parent,
@@ -170,10 +177,8 @@ defmodule StillWeb.CorrespondenceLive do
   end
 
   defp load_overview(socket, location, action) do
-    case Correspondence.overview(location) do
+    case Correspondence.focused_overview(location) do
       {:ok, overview} ->
-        overview = %{overview | pieces: with_revision_counts(location, overview.pieces)}
-
         {:noreply,
          assign(socket,
            location: location,
@@ -229,6 +234,8 @@ defmodule StillWeb.CorrespondenceLive do
          location: location,
          overview: %{journals: journals, pieces: [], packets: []},
          piece: piece,
+         submission_focus:
+           Map.get(Correspondence.writing_status(location).focused, piece.id, false),
          history: history,
          revisions: revisions,
          proof_sources: sources,
@@ -262,8 +269,9 @@ defmodule StillWeb.CorrespondenceLive do
   end
 
   defp load_journal(socket, location, id) do
-    with {:ok, overview} <- Correspondence.overview(location),
-         {:ok, journal} <- Correspondence.journal(location, id) do
+    with {:ok, journal} <- Correspondence.journal(location, id),
+         {:ok, overview} <-
+           Correspondence.focused_overview(location, journal.possible_piece_ids || []) do
       journal_packets = Enum.filter(overview.packets, &(&1.journal_id == journal.id))
 
       {:noreply,
@@ -291,9 +299,12 @@ defmodule StillWeb.CorrespondenceLive do
   end
 
   defp load_packet(socket, location, nil, params) do
-    with {:ok, overview} <- Correspondence.overview(location) do
+    previous = previous_packet(location, params["from"])
+    keep_ids = if previous, do: previous.piece_ids, else: []
+
+    with {:ok, overview} <- Correspondence.focused_overview(location, keep_ids) do
       defaults =
-        packet_defaults_from(overview, params, location) |> packet_destination(overview, params)
+        packet_defaults_from(overview, params, previous) |> packet_destination(overview, params)
 
       {:noreply,
        assign(socket,
@@ -319,8 +330,8 @@ defmodule StillWeb.CorrespondenceLive do
   end
 
   defp load_packet(socket, location, id, _params) do
-    with {:ok, overview} <- Correspondence.overview(location),
-         {:ok, packet} <- Correspondence.packet(location, id) do
+    with {:ok, packet} <- Correspondence.packet(location, id),
+         {:ok, overview} <- Correspondence.focused_overview(location, packet.piece_ids) do
       overlap = packet_overlaps(location, packet)
 
       {:noreply,
@@ -375,6 +386,20 @@ defmodule StillWeb.CorrespondenceLive do
   end
 
   def handle_event("compare_work", _, socket), do: {:noreply, socket}
+
+  def handle_event(
+        "toggle_submission_focus",
+        _,
+        %{assigns: %{live_action: :piece, piece: piece}} = socket
+      )
+      when not is_nil(piece) do
+    marked? = !socket.assigns.submission_focus
+
+    case Correspondence.set_focus(socket.assigns.location, piece.id, marked?) do
+      :ok -> {:noreply, assign(socket, submission_focus: marked?)}
+      {:error, message} -> {:noreply, assign(socket, problem: message)}
+    end
+  end
 
   def handle_event("place_on_desk", %{"id" => id}, socket) do
     result =
@@ -527,10 +552,19 @@ defmodule StillWeb.CorrespondenceLive do
   end
 
   def handle_event("search", %{"search" => value}, socket),
-    do: {:noreply, assign(socket, search: value)}
+    do: {:noreply, assign(socket, search: value, works_limit: 40)}
 
   def handle_event("packet_search", %{"search" => value}, socket),
     do: {:noreply, assign(socket, packet_search: value)}
+
+  def handle_event("more_works", _, socket) do
+    {:noreply,
+     assign(
+       socket,
+       :works_limit,
+       min(socket.assigns.works_limit + 40, length(socket.assigns.overview.pieces))
+     )}
+  end
 
   def handle_event("toggle_palette", _, socket),
     do: {:noreply, update(socket, :correspondence_light?, &(!&1))}
@@ -837,28 +871,29 @@ defmodule StillWeb.CorrespondenceLive do
       status: "preparing"
     }
 
-  defp packet_defaults_from(overview, params, location) do
-    case params["from"] do
-      from_id when is_binary(from_id) ->
-        case Correspondence.packet(location, from_id) do
-          {:ok, %{status: status} = previous} when status in ["declined", "withdrawn"] ->
-            %{
-              packet_defaults()
-              | title: (previous.title || "Untitled packet") <> " — revised",
-                journal_id: previous.journal_id,
-                piece_ids: previous.piece_ids,
-                cover_letter: previous.cover_letter
-            }
+  defp previous_packet(_location, nil), do: nil
 
-          _ ->
-            packet_defaults()
-        end
+  defp previous_packet(location, id) do
+    case Correspondence.packet(location, id) do
+      {:ok, %{status: status} = previous} when status in ["declined", "withdrawn"] -> previous
+      _ -> nil
+    end
+  end
 
-      _ ->
-        case Enum.find(overview.pieces, &(&1.id == params["piece"])) do
-          nil -> packet_defaults()
-          piece -> %{packet_defaults() | piece_ids: [piece.id], title: Poems.display_title(piece)}
-        end
+  defp packet_defaults_from(_overview, _params, previous) when is_map(previous) do
+    %{
+      packet_defaults()
+      | title: (previous.title || "Untitled packet") <> " — revised",
+        journal_id: previous.journal_id,
+        piece_ids: previous.piece_ids,
+        cover_letter: previous.cover_letter
+    }
+  end
+
+  defp packet_defaults_from(overview, params, nil) do
+    case Enum.find(overview.pieces, &(&1.id == params["piece"])) do
+      nil -> packet_defaults()
+      piece -> %{packet_defaults() | piece_ids: [piece.id], title: Poems.display_title(piece)}
     end
   end
 
@@ -898,6 +933,16 @@ defmodule StillWeb.CorrespondenceLive do
 
   @impl true
   def render(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :matching_works,
+        if(assigns.live_action == :collection,
+          do: filtered_pieces(assigns.overview.pieces, assigns.search),
+          else: []
+        )
+      )
+
     ~H"""
     <Layouts.app flash={@flash} active="correspondence">
       <div class={"correspondence-room corr-workspace #{if @correspondence_light?, do: "is-light", else: ""}"}>
@@ -974,9 +1019,14 @@ defmodule StillWeb.CorrespondenceLive do
               aria-label="Search works"
             /><span>⌕</span>
           </form>
+          <p :if={@overview.pieces == []} class="corr-empty">
+            Mark a saved piece for Correspondence from its writing page to bring it here.
+            <.link navigate={~p"/writing"} class="corr-text-link">Browse saved writing</.link>
+          </p>
           <div class="corr-library editorial-writing-grid">
             <article
-              :for={piece <- filtered_pieces(@overview.pieces, @search)}
+              :for={piece <- Enum.take(@matching_works, @works_limit)}
+              id={"correspondence-work-#{piece.id}"}
               class="corr-library-piece"
             >
               <div>
@@ -1001,15 +1051,23 @@ defmodule StillWeb.CorrespondenceLive do
                   aria-pressed={to_string(@desk.piece_id == piece.id)}
                 >{if @desk.piece_id == piece.id, do: "On the desk", else: "Place on desk"}</button>
               </aside>
-            </article><p :if={filtered_pieces(@overview.pieces, @search) == []} class="corr-empty">
+            </article><p :if={@matching_works == [] && @overview.pieces != []} class="corr-empty">
               No works match that search.
             </p>
           </div>
+          <button
+            :if={length(@matching_works) > @works_limit}
+            type="button"
+            id="more-works"
+            phx-click="more_works"
+            class="corr-button"
+          >More works</button>
         </section>
 
         <CorrespondenceWork.detail
           :if={@live_action == :piece && @piece}
           piece={@piece}
+          submission_focus={@submission_focus}
           places={Correspondence.places_to_consider(@overview.journals, @piece)}
           revisions={@revisions}
           history={@history}
@@ -1065,7 +1123,7 @@ defmodule StillWeb.CorrespondenceLive do
                 <.link patch={~p"/correspondence/packets/#{packet.id}"} class="corr-work-title">{packet.title}</.link><p>
                   {journal_name(@overview.journals, packet.journal_id) || "No destination chosen"} · {packet_piece_names(
                     packet,
-                    @overview.pieces
+                    Map.get(@overview, :packet_pieces, @overview.pieces)
                   )}
                 </p><div class="corr-meta">
                   {packet_status_label(packet)} · {packet_display_date(packet)}
@@ -1139,7 +1197,7 @@ defmodule StillWeb.CorrespondenceLive do
                 </article>
               </div>
               <p :if={filtered_pieces(@overview.pieces, @packet_search) == []} class="corr-empty-side">
-                No saved writing matches. Save a piece in Now, or try another search.
+                No marked works match. Mark a piece in Write or try another search.
               </p>
             </section>
             <section class="editorial-packet-manuscript" aria-label="Packet manuscript">
@@ -1446,18 +1504,6 @@ defmodule StillWeb.CorrespondenceLive do
   defp packet_unsaved?(form, packet) do
     Enum.any?([:title, :journal_id, :piece_ids, :preparation_notes, :cover_letter], fn key ->
       Map.get(form, key) != Map.get(packet, key)
-    end)
-  end
-
-  defp with_revision_counts(location, pieces) do
-    Enum.map(pieces, fn piece ->
-      count =
-        case Poems.revisions(location, piece.id) do
-          {:ok, revisions} -> length(revisions)
-          _ -> 0
-        end
-
-      Map.put(piece, :revision_count, count)
     end)
   end
 

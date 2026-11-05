@@ -1,5 +1,5 @@
 defmodule Still.Correspondence.Icons do
-  @moduledoc "Collection-local icon copies. Journal words and their edit tokens never change."
+  @moduledoc "Database-local icon copies. Journal words and their edit tokens never change."
   alias Still.Correspondence
   alias Still.Correspondence.IconFetcher
 
@@ -29,54 +29,68 @@ defmodule Still.Correspondence.Icons do
     end
   end
 
-  def ensure(location, journal, fetcher \\ &IconFetcher.fetch/1) do
-    if candidates(journal) == [], do: nil, else: ensure_cache(location, journal, fetcher)
+  @doc "Returns each journal's validated cached icon status using a batched database read."
+  def cached_many(location, journals) when is_list(journals) do
+    location
+    |> then(&Correspondence.read_icon_caches(&1, journals))
+    |> Map.new(fn
+      {id, {:ok, cache}} -> {id, decode(cache)}
+      {id, status} when status in [:missing, :unavailable] -> {id, status}
+    end)
   end
 
-  defp ensure_cache(location, journal, fetcher) do
-    case cached(location, journal) do
-      {:ok, uri} ->
-        uri
+  def ensure(location, journal, fetcher \\ &IconFetcher.fetch/1) do
+    if candidates(journal) == [] do
+      nil
+    else
+      case cached(location, journal) do
+        {:ok, uri} -> uri
+        :unavailable -> nil
+        :missing -> ensure_missing(location, journal, fetcher)
+      end
+    end
+  end
 
-      :unavailable ->
-        nil
+  @doc "Fetches and stores an icon after a batched read already classified it as missing."
+  def ensure_missing(location, journal, fetcher \\ &IconFetcher.fetch/1) do
+    if candidates(journal) == [], do: nil, else: fetch_missing(location, journal, fetcher)
+  end
 
-      :missing ->
-        result =
-          Enum.find_value(candidates(journal), fn url ->
-            case fetcher.(url) do
-              {:ok, %{bytes: bytes}} ->
-                case IconFetcher.raster(bytes) do
-                  {:ok, image} -> image
-                  _ -> nil
-                end
-
-              _ ->
-                nil
-            end
-          end)
-
-        cache =
-          if result do
-            %{
-              "mime" => result.mime,
-              "data" => Base.encode64(result.bytes),
-              "sha256" => digest(result.bytes)
-            }
-          else
-            %{"retry_after" => System.system_time(:second) + 86_400}
-          end
-
-        case Correspondence.write_icon_cache(location, journal, cache) do
-          :ok ->
-            case decode(cache) do
-              {:ok, uri} -> uri
+  defp fetch_missing(location, journal, fetcher) do
+    result =
+      Enum.find_value(candidates(journal), fn url ->
+        case fetcher.(url) do
+          {:ok, %{bytes: bytes}} ->
+            case IconFetcher.raster(bytes) do
+              {:ok, image} -> image
               _ -> nil
             end
 
           _ ->
             nil
         end
+      end)
+
+    cache =
+      if result do
+        %{
+          "mime" => result.mime,
+          "data" => Base.encode64(result.bytes),
+          "sha256" => digest(result.bytes)
+        }
+      else
+        %{"retry_after" => System.system_time(:second) + 86_400}
+      end
+
+    case Correspondence.write_icon_cache(location, journal, cache) do
+      :ok ->
+        case decode(cache) do
+          {:ok, uri} -> uri
+          _ -> nil
+        end
+
+      _ ->
+        nil
     end
   rescue
     _ -> nil

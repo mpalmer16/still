@@ -5,6 +5,54 @@ defmodule StillWeb.NotebookLiveTest do
   alias Still.{Repo, Writing}
   alias Still.Writing.Entry
 
+  @tag :tmp_dir
+  test "a collection can be created without automatic numbering", %{conn: conn, tmp_dir: root} do
+    File.mkdir_p!(Path.join(root, "writing"))
+    assert {:ok, _} = Still.Storage.set_folder(Path.join(root, "writing"))
+    {:ok, view, _} = live(conn, ~p"/notebooks")
+    view |> form("#new-notebook", notebook: %{label: "Poems", numbered: false}) |> render_submit()
+    assert Writing.notebook("Poems").numbered == false
+    assert has_element?(view, ".notebook-order", "without notebook numbers")
+    assert Writing.current_notebook() == nil
+  end
+
+  test "the notebook room can add an empty notebook and choose it as current", %{conn: conn} do
+    folder =
+      Path.join(System.tmp_dir!(), "still-notebook-room-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(folder)
+    on_exit(fn -> File.rm_rf!(folder) end)
+    assert {:ok, _} = Still.Storage.set_folder(folder)
+    {:ok, view, _html} = live(conn, ~p"/notebooks")
+
+    view
+    |> form("#new-notebook",
+      notebook: %{
+        label: "Field book 07c",
+        key: "Field books/07c",
+        relative_path: "Field books/07c",
+        series: "Field books",
+        number_label: "07c",
+        description: "Pocket notebook",
+        pen: "Blue pencil"
+      }
+    )
+    |> render_submit()
+
+    notebook = Writing.notebook("Field books/07c")
+    assert File.dir?(Path.join(folder, "Field books/07c"))
+    assert notebook.entries == []
+    assert Writing.notebooks() |> Enum.any?(&(&1.key == notebook.key))
+
+    view |> element(".notebook-back") |> render_click()
+
+    view
+    |> element("form[phx-submit=choose_current]")
+    |> render_submit(%{"id" => to_string(notebook.id)})
+
+    assert Writing.current_notebook().id == notebook.id
+  end
+
   test "the catalog leads to every List in its original order without taking Now", %{conn: conn} do
     second = before("second", "Early Notebooks/Lists 1", "Second:List:", 2)
     first = before("first", "Early Notebooks/Lists 1", "First:List:", 1)
@@ -28,7 +76,12 @@ defmodule StillWeb.NotebookLiveTest do
            |> LazyHTML.attribute("id") ==
              ["list-#{first.id}", "list-#{second.id}"]
 
-    assert has_element?(catalog, "#list-#{first.id} a[href='/w/#{first.id}?read=1']", "Changed:")
+    assert has_element?(
+             catalog,
+             "#list-#{first.id} a[href^='/notebooks/read/#{first.id}?'][href*='from=notebook']",
+             "Changed:"
+           )
+
     assert has_element?(catalog, "a[href='#section-0-end']", "End")
     assert has_element?(catalog, "#section-0-end", "End")
     assert Writing.current_writing().id == now.id

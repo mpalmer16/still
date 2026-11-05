@@ -23,7 +23,8 @@ enum BackupCloseResult: Equatable {
 
 enum ClosePolicy {
     static func resolve(changed: Bool, editorReady: Bool = true, choice: CloseChoice? = nil,
-                        hasBackupFolder: Bool = true) -> CloseDecision {
+                        hasBackupFolder: Bool = true, remindersEnabled: Bool = true) -> CloseDecision {
+        guard remindersEnabled else { return .close }
         guard changed || !editorReady else { return .close }
         guard let choice else { return .askForChoice }
         switch choice {

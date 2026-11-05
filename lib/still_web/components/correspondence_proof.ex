@@ -102,7 +102,7 @@ defmodule StillWeb.CorrespondenceProof do
         >
           <header>
             <div class="proof-page-top">
-              <span class="proof-eyebrow">Now</span><span>Current saved page</span>
+              <span class="proof-eyebrow">Current</span><span>Current saved page</span>
             </div>
             <p class="proof-destination">Here, in your collection</p>
             <h3 class={if !@plain && !@comparison.title_same?, do: "proof-title-changed"}>
@@ -116,7 +116,7 @@ defmodule StillWeb.CorrespondenceProof do
             id="proof-edit-current"
             navigate={~p"/writing/#{@piece.id}/edit"}
             class="proof-page-link"
-          >Continue in Now <span aria-hidden="true">↗</span></.link>
+          >Continue in Write <span aria-hidden="true">↗</span></.link>
         </article>
       </div>
       <footer class="proof-footnote">

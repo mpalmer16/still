@@ -1,20 +1,104 @@
 defmodule StillWeb.NotebookLive do
   use StillWeb, :live_view
 
-  alias Still.Writing
+  alias Still.{Poems, Storage, Writing}
+  alias Still.Writing.Notebook
+  alias Still.Writing.ReadingPlace
+  alias StillWeb.ReadingLinks
 
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
      socket
-     |> assign(:notebooks, Writing.notebooks())
+     |> assign(:notebooks, [])
+     |> assign(:reading_bookmark, nil)
      |> assign(:notebook, nil)
      |> assign(:missing, false)
-     |> assign(:selected_id, nil)}
+     |> assign(:problem, nil)
+     |> assign(:selected_id, nil)
+     |> assign(:delete_list, nil)
+     |> assign(:notebook_form, to_form(Notebook.changeset(%Notebook{}, %{})))}
+  end
+
+  @impl true
+  def handle_event("create_notebook", %{"notebook" => attrs}, socket) do
+    case Writing.create_folder_notebook(attrs) do
+      {:ok, notebook} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Notebook added.")
+         |> assign(:notebooks, Writing.notebooks())
+         |> push_patch(to: ~p"/notebooks?notebook=#{notebook.key}")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :notebook_form, to_form(changeset))}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
+    end
+  end
+
+  def handle_event("choose_current", %{"id" => id}, socket) do
+    result =
+      if id == "",
+        do: Writing.choose_current_notebook(nil),
+        else: Writing.choose_current_notebook(String.to_integer(id))
+
+    case result do
+      {:ok, _} -> {:noreply, assign(socket, :notebooks, Writing.notebooks())}
+      _ -> {:noreply, put_flash(socket, :error, "That notebook could not be selected.")}
+    end
+  end
+
+  def handle_event("request_delete_list", %{"id" => id}, socket) do
+    if notebook_contains?(socket.assigns.notebook, id) do
+      case Poems.get(Storage.collection_location(), id) do
+        {:ok, piece} -> {:noreply, assign(socket, :delete_list, piece)}
+        {:error, message} -> {:noreply, put_flash(socket, :error, message)}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "That List is no longer in this notebook.")}
+    end
+  end
+
+  def handle_event("cancel_delete_list", _, socket),
+    do: {:noreply, assign(socket, :delete_list, nil)}
+
+  def handle_event(
+        "confirm_delete_list",
+        _,
+        %{assigns: %{delete_list: piece, notebook: notebook}} = socket
+      )
+      when not is_nil(piece) and not is_nil(notebook) do
+    if notebook_contains?(notebook, piece.id) do
+      permanently_delete_list(socket, piece, notebook)
+    else
+      {:noreply, assign(socket, :delete_list, nil)}
+    end
+  end
+
+  def handle_event("confirm_delete_list", _, socket), do: {:noreply, socket}
+
+  defp permanently_delete_list(socket, piece, notebook) do
+    case Poems.permanently_delete(Storage.collection_location(), piece, true) do
+      :ok ->
+        {:noreply,
+         socket
+         |> assign(:delete_list, nil)
+         |> put_flash(:info, "List permanently deleted.")
+         |> push_patch(to: ~p"/notebooks?notebook=#{notebook.key}")}
+
+      {:error, message} ->
+        {:noreply, socket |> assign(:delete_list, nil) |> put_flash(:error, message)}
+    end
   end
 
   @impl true
   def handle_params(params, _uri, socket) do
+    Writing.with_collection_snapshot(fn -> load_notebook(params, socket) end)
+  end
+
+  defp load_notebook(params, socket) do
     key = Map.get(params, "notebook")
     notebook = if key, do: Writing.notebook(key)
 
@@ -28,11 +112,17 @@ defmodule StillWeb.NotebookLive do
         _ -> nil
       end
 
+    bookmark = if notebook, do: ReadingPlace.for_notebook(notebook.key)
+
     {:noreply,
      socket
+     |> assign(:notebooks, Writing.notebooks())
+     |> assign(:problem, Still.Writing.Discovery.problem())
      |> assign(:notebook, notebook)
      |> assign(:missing, not is_nil(key) && is_nil(notebook))
      |> assign(:selected_id, selected_id)
+     |> assign(:delete_list, nil)
+     |> assign(:reading_bookmark, bookmark)
      |> assign(:page_title, if(notebook, do: notebook.label, else: "Notebooks"))
      |> assign(:place, if(notebook, do: notebook.place, else: Writing.geography(nil)))}
   end
@@ -42,7 +132,7 @@ defmodule StillWeb.NotebookLive do
     ~H"""
     <Layouts.app
       flash={@flash}
-      active="pages"
+      active="notebooks"
       room_light={@room_light}
       light_open={@light_open}
       room_letters={@room_letters}
@@ -55,6 +145,7 @@ defmodule StillWeb.NotebookLive do
       return_list={@return_list}
     >
       <div class="notebook-room">
+        <p :if={@problem} class="recovery-note" role="alert">{@problem}</p>
         <div :if={is_nil(@notebook)} class="notebook-heading">
           <span class="section-whisper">A place for each List</span>
           <h1>Notebooks.</h1>
@@ -89,17 +180,97 @@ defmodule StillWeb.NotebookLive do
               </li>
             </ul>
           </section>
+          <section class="notebook-region" aria-label="Add a notebook">
+            <h2 class="section-whisper">Add a notebook</h2>
+            <.form
+              for={@notebook_form}
+              id="new-notebook"
+              phx-submit="create_notebook"
+              class="still-form-panel"
+            >
+              <label>Notebook name
+              <input name="notebook[label]" required maxlength="200" placeholder="Notebook 2" /></label>
+              <details class="still-form-options">
+                <summary>Folder and notebook details</summary>
+                <div class="still-form-grid">
+                  <label class="still-field-wide">
+                    Folder inside your writing folder
+                    <input
+                      name="notebook[relative_path]"
+                      maxlength="1024"
+                      placeholder="Uses the notebook name by default"
+                    />
+                  </label>
+                  <label class="still-field-wide">Original notebook label
+                  <input name="notebook[key]" maxlength="1024" /></label>
+                  <label class="still-field-wide">
+                    <input type="hidden" name="notebook[numbered]" value="false" />
+                    <input type="checkbox" name="notebook[numbered]" value="true" checked />
+                    Number new Lists automatically
+                    <span>Turn off for a collection of poems or other writing without notebook numbers.</span>
+                  </label>
+                  <label>Series <input name="notebook[series]" maxlength="200" /></label>
+                  <label>Year <input name="notebook[year]" type="number" min="1" max="9999" /></label>
+                  <label>Number as written <input name="notebook[number_label]" maxlength="100" /></label>
+                  <label>Pen <input name="notebook[pen]" maxlength="500" /></label>
+                  <label class="still-field-wide">Description <textarea
+                    name="notebook[description]"
+                    rows="2"
+                  ></textarea></label>
+                </div>
+              </details>
+              <button class="still-form-action" type="submit">Add notebook</button>
+              <p :if={@notebook_form.source.action} role="alert">
+                That notebook could not be added. Check the details and use a distinct name or original label.
+              </p>
+            </.form>
+            <form phx-submit="choose_current" class="still-form-panel still-form-inline">
+              <label>
+                Current notebook
+                <select name="id">
+                  <option value="">None selected</option>
+                  <option
+                    :for={item <- Enum.filter(@notebooks, &Map.get(&1, :managed, false))}
+                    value={item.id}
+                    selected={item.current}
+                  >
+                    {item.label}
+                  </option>
+                </select>
+              </label>
+              <button class="still-form-action" type="submit">Choose</button>
+            </form>
+          </section>
         </div>
 
         <div :if={@notebook} id="notebook-index">
           <.link patch={~p"/notebooks"} class="quiet-link notebook-back">All notebooks</.link>
+          <.link
+            :if={@reading_bookmark}
+            navigate={
+              ReadingLinks.reader(@reading_bookmark.entry, %{
+                "from" => "notebook",
+                "notebook" => @notebook.key,
+                "version" => @reading_bookmark.context["version"]
+              })
+            }
+            id="continue-reading"
+            class="quiet-link"
+          >Continue reading</.link>
           <header class="notebook-heading">
             <span class="section-whisper">{region_label(@notebook.region)}</span>
             <h1>{@notebook.label}</h1>
             <p class="notebook-order">
-              {if length(@notebook.sections) == 1,
-                do: "In source order, from beginning to end.",
-                else: "Each source section keeps its own order."}
+              {cond do
+                Map.get(@notebook, :numbered, true) == false ->
+                  "By filename within each section, without notebook numbers."
+
+                length(@notebook.sections) == 1 ->
+                  "In source order, from beginning to end."
+
+                true ->
+                  "Each source section keeps its own order."
+              end}
             </p>
           </header>
 
@@ -126,11 +297,50 @@ defmodule StillWeb.NotebookLive do
                 id={"list-#{entry.id}"}
                 class={if(@selected_id == entry.id, do: "notebook-current")}
               >
+                <span :if={entry.list_label not in [nil, ""]} class="notebook-list-number">
+                  {entry.list_label}
+                </span>
                 <.link
-                  navigate={~p"/w/#{entry.id}?read=1"}
+                  navigate={
+                    ReadingLinks.reader(entry, %{"from" => "notebook", "notebook" => @notebook.key})
+                  }
                   class="notebook-list-link"
                   aria-current={if(@selected_id == entry.id, do: "location")}
+                  phx-mounted={if @selected_id == entry.id, do: JS.focus(to: "#list-#{entry.id} a")}
                 ><.list_title text={Writing.opening(entry)} /></.link>
+                <nav
+                  class="notebook-list-actions"
+                  aria-label={"Actions for #{Writing.opening(entry)}"}
+                >
+                  <.link
+                    navigate={
+                      ReadingLinks.reader(entry, %{"from" => "notebook", "notebook" => @notebook.key})
+                    }
+                    class="quiet-link"
+                  >Read</.link>
+                  <.link navigate={ReadingLinks.wander(entry)} class="quiet-link">Wander</.link>
+                  <button
+                    :if={entry.file_id && !@delete_list}
+                    type="button"
+                    phx-click="request_delete_list"
+                    phx-value-id={entry.file_id}
+                    class="quiet-link"
+                    aria-label={"Delete #{Writing.opening(entry)}"}
+                  >Delete</button>
+                </nav>
+                <div
+                  :if={@delete_list && @delete_list.id == entry.file_id}
+                  id="delete-list-confirmation"
+                  role="alert"
+                >
+                  <p>
+                    Permanently remove <strong>{Poems.display_title(@delete_list)}</strong>
+                    and its file and earlier words?
+                    Submitted correspondence keeps its exact submitted text.
+                  </p>
+                  <button type="button" phx-click="confirm_delete_list" class="quiet-link">Permanently delete</button>
+                  <button type="button" phx-click="cancel_delete_list" class="quiet-link">Cancel</button>
+                </div>
               </li>
             </ol>
             <div id={"section-#{index}-end"} class="notebook-boundary notebook-end">
@@ -148,4 +358,9 @@ defmodule StillWeb.NotebookLive do
     do: [early: "Early notebooks", current: "Current notebooks", elsewhere: "Other notebooks"]
 
   defp region_label(region), do: Keyword.fetch!(regions(), region)
+
+  defp notebook_contains?(%{entries: entries}, id),
+    do: Enum.any?(entries, &(&1.file_id == id))
+
+  defp notebook_contains?(_, _), do: false
 end

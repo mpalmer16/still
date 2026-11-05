@@ -1,19 +1,17 @@
 defmodule Still.Correspondence do
   @moduledoc """
-  Portable JSON persistence for Still correspondence. Data lives only in the configured
-  collection folder. Sent manuscripts are separate immutable snapshots; historical SQLite
-  Lists are never candidates or modified.
+  Scope-keyed local SQLite persistence for Still correspondence. Sent manuscripts are
+  immutable database snapshots; historical SQLite Lists are never candidates or modified.
   """
-  alias Still.{Poems, Storage}
+  alias Still.{LocalRecord, Poems, Repo, Storage}
+  alias Still.Writing.{Entry, Version}
+  import Ecto.Query
 
-  @root "correspondence"
-  @marker ".still-correspondence.json"
-  @format %{"format" => "still-correspondence-v1"}
-  @desk_format "still-correspondence-desk"
-  @desk_version 1
   @journal_fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted verified inactive keywords reach reach_note possible_piece_ids icon_url description)
   @packet_fields ~w(title journal_id piece_ids preparation_notes cover_letter)
   @statuses ~w(preparing submitted awaiting declined accepted withdrawn)
+  @desk_format "still-correspondence-desk"
+  @desk_version 1
 
   @doc "Searches titles and exact saved text without classifying or altering the writing."
   def search_pieces(pieces, query) do
@@ -90,76 +88,227 @@ defmodule Still.Correspondence do
     end
   end
 
-  def overview(location) do
+  def overview(location), do: load_overview(location, :all)
+
+  def focused_overview(location, keep_ids \\ []), do: load_overview(location, keep_ids)
+
+  defp load_overview(location, selection) do
     with {:ok, dirs} <- store(location),
-         {:ok, journals} <- records(dirs.journals, :journal),
-         {:ok, packets} <- records(dirs.packets, :packet),
+         {:ok, journals} <- records(dirs, :journal),
+         {:ok, packets} <- records(dirs, :packet),
+         {:ok, packets} <- attach_snapshots(packets, dirs),
          {:ok, pieces} <- Poems.list(location) do
-      packets = Enum.map(packets, &attach_snapshot(&1, dirs))
+      packet_ids = MapSet.new(Enum.flat_map(packets, & &1.piece_ids))
+      packet_pieces = Enum.filter(pieces, &MapSet.member?(packet_ids, &1.id))
 
-      case Enum.find(packets, &match?({:error, _}, &1)) do
-        nil ->
-          {:ok,
-           %{
-             journals: Enum.sort_by(journals, &String.downcase(&1.name)),
-             packets:
-               Enum.map(packets, fn {:ok, p} -> p end) |> Enum.sort_by(& &1.updated_at, :desc),
-             pieces: pieces
-           }}
+      pieces =
+        case selection do
+          :all ->
+            pieces
 
-        {:error, reason} ->
-          {:error, reason}
+          keep_ids ->
+            focus = focus_flags(dirs.scope)
+            keep = MapSet.new(keep_ids)
+
+            Enum.filter(pieces, fn piece ->
+              Map.get(focus, piece.id, MapSet.member?(packet_ids, piece.id)) or
+                MapSet.member?(keep, piece.id)
+            end)
+        end
+
+      pieces = attach_revision_counts(dirs.scope, pieces)
+
+      {:ok,
+       %{
+         journals: Enum.sort_by(journals, &String.downcase(&1.name)),
+         packets: Enum.sort_by(packets, & &1.updated_at, :desc),
+         pieces: pieces,
+         packet_pieces: packet_pieces
+       }}
+    end
+  end
+
+  @doc "The correspondence status of pieces in the selected collection."
+  def writing_status(%{available: true, scope: scope}) do
+    packets =
+      Repo.all(
+        from r in LocalRecord,
+          where: r.scope == ^scope and r.kind == "packet",
+          select: r.data
+      )
+
+    focused =
+      packets
+      |> Enum.flat_map(&packet_piece_ids/1)
+      |> Map.new(&{&1, true})
+      |> Map.merge(focus_flags(scope))
+
+    submitted =
+      packets
+      |> Enum.filter(&match?(%{"snapshot_ref" => ref} when is_binary(ref), &1))
+      |> Enum.flat_map(&packet_piece_ids/1)
+      |> MapSet.new()
+
+    %{focused: focused, submitted: submitted}
+  end
+
+  def writing_status(_), do: %{focused: %{}, submitted: MapSet.new()}
+
+  def set_focus(location, piece_id, marked?) when is_boolean(marked?) do
+    with {:ok, %{scope: scope}} <- store(location),
+         {:ok, _} <- Poems.get(location, piece_id) do
+      case Repo.transaction(fn ->
+             ensure_current_scope!(scope)
+
+             %LocalRecord{}
+             |> LocalRecord.changeset(%{
+               scope: scope,
+               kind: "submission_focus",
+               record_key: piece_id,
+               data: %{"marked" => marked?}
+             })
+             |> Repo.insert!(
+               on_conflict: {:replace, [:data, :updated_at]},
+               conflict_target: [:scope, :kind, :record_key]
+             )
+           end) do
+        {:ok, _} -> :ok
+        {:error, {:error, message}} -> {:error, message}
       end
     end
   end
 
+  defp packet_piece_ids(%{"piece_ids" => ids}) when is_list(ids), do: ids
+  defp packet_piece_ids(_), do: []
+
+  defp focus_flags(scope) do
+    Repo.all(
+      from r in LocalRecord,
+        where: r.scope == ^scope and r.kind == "submission_focus",
+        select: {r.record_key, r.data}
+    )
+    |> Map.new(fn {id, data} -> {id, match?(%{"marked" => true}, data)} end)
+  end
+
   def journal(location, id),
-    do: with({:ok, d} <- store(location), do: read_record(d.journals, id, :journal))
+    do: with({:ok, d} <- store(location), do: read_record(d, id, :journal))
 
   @doc "Reads places without loading manuscripts or submission snapshots."
   def journals(location),
-    do: with({:ok, d} <- store(location), do: records(d.journals, :journal))
+    do: with({:ok, d} <- store(location), do: records(d, :journal))
 
   @doc "Reads a bounded, optional icon cache without initializing or changing a collection."
   def read_icon_cache(location, journal) do
-    with {:ok, dirs} <- store(location),
-         dir = Path.join(Path.dirname(dirs.journals), "icons"),
-         :ok <- safe_dir(dir),
-         path = Path.join(dir, icon_cache_name(journal)),
-         {:ok, %{type: :regular, size: size}} when size <= 360_000 <- File.lstat(path),
-         {:ok, bytes} <- File.read(path),
-         {:ok, cache} when is_map(cache) <- Jason.decode(bytes) do
-      {:ok, cache}
+    with {:ok, active} <- active_location(location),
+         %LocalRecord{data: data, bytes: bytes} <-
+           Repo.get_by(LocalRecord,
+             scope: active.scope,
+             kind: "icon",
+             record_key: journal.id <> ":" <> Still.Correspondence.Icons.source_key(journal)
+           ),
+         true <- is_map(data) do
+      cond do
+        is_binary(bytes) and byte_size(bytes) <= 262_144 ->
+          {:ok, Map.put(data, "data", Base.encode64(bytes))}
+
+        is_binary(bytes) ->
+          {:ok, %{"invalid" => true}}
+
+        true ->
+          {:ok, data}
+      end
     else
       _ -> {:error, :unavailable}
     end
   end
 
-  @doc "Caches an icon only while its collection and source are still current."
-  def write_icon_cache(location, journal, cache) do
-    with {:ok, dirs} <- write_store(location) do
-      base = Path.dirname(dirs.journals)
-
-      :global.trans({{__MODULE__, base}, self()}, fn ->
-        with_fs_lock(base, location.scope, fn ->
-          with {:ok, current} <- read_record(dirs.journals, journal.id, :journal),
-               true <- icon_cache_name(current) == icon_cache_name(journal),
-               {:ok, dir} <- child(base, "icons"),
-               path = Path.join(dir, icon_cache_name(journal)),
-               :ok <- replaceable(path),
-               :ok <- current_scope(base, location.scope) do
-            atomic(path, Jason.encode!(cache) <> "\n")
-          else
-            _ -> {:error, :changed}
-          end
-        end)
+  @doc "Reads a set of bounded icon caches with one scope validation and one database query."
+  def read_icon_caches(location, journals) when is_list(journals) do
+    keys =
+      Map.new(journals, fn journal ->
+        {journal.id <> ":" <> Still.Correspondence.Icons.source_key(journal), journal.id}
       end)
+
+    if map_size(keys) == 0 do
+      %{}
+    else
+      record_keys = Map.keys(keys)
+
+      case active_location(location) do
+        {:ok, active} ->
+          rows =
+            Repo.all(
+              from(r in LocalRecord,
+                where:
+                  r.scope == ^active.scope and r.kind == "icon" and
+                    r.record_key in ^record_keys
+              )
+            )
+            |> Map.new(&{&1.record_key, &1})
+
+          Map.new(keys, fn {key, id} ->
+            result =
+              case Map.get(rows, key) do
+                %LocalRecord{data: data, bytes: bytes} when is_map(data) ->
+                  cond do
+                    is_binary(bytes) and byte_size(bytes) <= 262_144 ->
+                      {:ok, Map.put(data, "data", Base.encode64(bytes))}
+
+                    is_binary(bytes) ->
+                      {:ok, %{"invalid" => true}}
+
+                    true ->
+                      {:ok, data}
+                  end
+
+                _ ->
+                  :missing
+              end
+
+            {id, result}
+          end)
+
+        _ ->
+          Map.new(journals, &{&1.id, :unavailable})
+      end
     end
   end
 
-  defp icon_cache_name(journal) do
-    digest(journal.id <> Still.Correspondence.Icons.source_key(journal)) <> ".json"
+  def read_icon_caches(_, _), do: %{}
+
+  def write_icon_cache(location, journal, cache) do
+    with {:ok, active} <- active_location(location),
+         {:ok, current} <- read_record(%{scope: active.scope}, journal.id, :journal),
+         true <- icon_cache_name(current) == icon_cache_name(journal) do
+      key = journal.id <> ":" <> Still.Correspondence.Icons.source_key(journal)
+
+      {:ok, bytes} =
+        if is_binary(cache["data"]), do: Base.decode64(cache["data"]), else: {:ok, nil}
+
+      attrs = %{
+        scope: active.scope,
+        kind: "icon",
+        record_key: key,
+        data: stringify(Map.delete(cache, "data")),
+        bytes: bytes
+      }
+
+      case %LocalRecord{}
+           |> LocalRecord.changeset(attrs)
+           |> Repo.insert(
+             on_conflict: {:replace, [:data, :bytes, :updated_at]},
+             conflict_target: [:scope, :kind, :record_key]
+           ) do
+        {:ok, _} -> :ok
+        {:error, _} -> {:error, :changed}
+      end
+    else
+      _ -> {:error, :changed}
+    end
   end
+
+  defp icon_cache_name(journal),
+    do: digest(journal.id <> Still.Correspondence.Icons.source_key(journal))
 
   @doc "Validates place details without writing to the collection."
   def validate_journal(attrs), do: normalize_journal(attrs)
@@ -177,17 +326,13 @@ defmodule Still.Correspondence do
 
   def packet(location, id) do
     with {:ok, d} <- store(location),
-         {:ok, p} <- read_record(d.packets, id, :packet),
+         {:ok, p} <- read_record(d, id, :packet),
          do: attach_snapshot(p, d)
   end
 
   @doc "Reads the optional manuscript pinned to this collection's Correspondence desk."
   def desk(location) do
-    with {:ok, active} <- active_location(location),
-         {:ok, dirs} <- read_store(active.folder),
-         {:ok, current, _bytes} <- read_desk_file(desk_path(dirs)) do
-      {:ok, current || empty_desk()}
-    end
+    with {:ok, active} <- active_location(location), do: desk_for_scope(%{scope: active.scope})
   end
 
   @doc "Pins a saved piece using the current Correspondence desk record token."
@@ -218,8 +363,8 @@ defmodule Still.Correspondence do
     with {:ok, vals} <- normalize_journal(attrs),
          {:ok, record_id} <- choose_id(id),
          {:ok, d} <- write_store(location),
-         {:ok, old} <- existing(d.journals, id, token, :journal),
-         :ok <- unique_name(d.journals, vals.name, record_id),
+         {:ok, old} <- existing(d, id, token, :journal),
+         :ok <- unique_name(d, vals.name, record_id),
          vals <- preserve_optional_place_details(vals, attrs, old),
          now <- now(),
          rec <-
@@ -228,7 +373,7 @@ defmodule Still.Correspondence do
              created_at: (old && old.created_at) || now,
              updated_at: now
            }),
-         {:ok, saved} <- write_record(d.journals, rec, :journal, token),
+         {:ok, saved} <- write_record(d, rec, :journal, token),
          do: {:ok, saved}
   end
 
@@ -240,9 +385,9 @@ defmodule Still.Correspondence do
     with {:ok, vals} <- normalize_packet(attrs),
          {:ok, record_id} <- choose_id(id),
          {:ok, d} <- store(location),
-         {:ok, old} <- existing(d.packets, id, token, :packet),
+         {:ok, old} <- existing(d, id, token, :packet),
          :ok <- editable(old),
-         {:ok, j} <- read_record(d.journals, vals.journal_id, :journal),
+         {:ok, j} <- read_record(d, vals.journal_id, :journal),
          :ok <- active_destination(j),
          {:ok, pieces} <- current_pieces(location, vals.piece_ids),
          now <- now(),
@@ -258,7 +403,7 @@ defmodule Still.Correspondence do
              journal_name: j.name,
              piece_tokens: Map.new(pieces, &{&1.id, &1.token})
            }),
-         {:ok, saved} <- write_record(d.packets, rec, :packet, token),
+         {:ok, saved} <- write_record(d, rec, :packet, token),
          do: {:ok, saved}
   end
 
@@ -266,13 +411,13 @@ defmodule Still.Correspondence do
 
   def submit(location, id, token, date) do
     with {:ok, d} <- store(location),
-         {:ok, p} <- read_record(d.packets, id, :packet),
+         {:ok, p} <- read_record(d, id, :packet),
          :ok <- fresh(p, token),
          :ok <- preparing(p),
          {:ok, pieces} <- current_pieces(location, p.piece_ids),
          :ok <- reviewed_tokens(p, pieces),
          {:ok, date} <- date(date),
-         {:ok, j} <- read_record(d.journals, p.journal_id, :journal),
+         {:ok, j} <- read_record(d, p.journal_id, :journal),
          :ok <- active_destination(j),
          sid <- Ecto.UUID.generate(),
          snap <- %{
@@ -291,12 +436,15 @@ defmodule Still.Correspondence do
                  id: &1.id,
                  title: Poems.display_title(&1),
                  body: &1.body,
+                 title_in_body: Map.get(&1, :title_in_body, true),
+                 title_line: Map.get(&1, :title_line),
+                 title_source: Map.get(&1, :title_source, "first_line"),
                  source_token: &1.token,
                  source_updated_at: &1.updated_at
                }
              )
          },
-         {:ok, snapshot_digest} <- snapshot_write(d.snapshots, snap),
+         {:ok, snapshot_digest} <- snapshot_write(d, snap),
          event <- %{at: event_at(p), date: date, kind: "submitted", note: nil},
          next <-
            p
@@ -306,7 +454,7 @@ defmodule Still.Correspondence do
            |> Map.put(:journal_name, j.name)
            |> Map.update!(:events, &(&1 ++ [event]))
            |> Map.put(:updated_at, now()),
-         {:ok, saved} <- write_record(d.packets, next, :packet, p.token),
+         {:ok, saved} <- write_record(d, next, :packet, p.token),
          do: attach_snapshot(saved, d)
   end
 
@@ -321,7 +469,7 @@ defmodule Still.Correspondence do
   def respond(location, id, token, status, notes, date, accepted_ids)
       when status in ["declined", "accepted", "withdrawn"] do
     with {:ok, d} <- store(location),
-         {:ok, p} <- read_record(d.packets, id, :packet),
+         {:ok, p} <- read_record(d, id, :packet),
          :ok <- fresh(p, token),
          :ok <- response_open(p),
          {:ok, date} <- date(date),
@@ -343,7 +491,7 @@ defmodule Still.Correspondence do
            |> Map.put(:accepted_piece_ids, accepted)
            |> Map.update!(:events, &(&1 ++ [event]))
            |> Map.put(:updated_at, now()),
-         {:ok, saved} <- write_record(d.packets, next, :packet, p.token),
+         {:ok, saved} <- write_record(d, next, :packet, p.token),
          do: attach_snapshot(saved, d)
   end
 
@@ -352,7 +500,7 @@ defmodule Still.Correspondence do
   def set_status(location, id, token, status)
       when status in ["submitted", "awaiting", "withdrawn"] do
     with {:ok, d} <- store(location),
-         {:ok, p} <- read_record(d.packets, id, :packet),
+         {:ok, p} <- read_record(d, id, :packet),
          :ok <- fresh(p, token),
          :ok <- transition(p, status),
          date <- Date.to_iso8601(Date.utc_today()),
@@ -362,44 +510,63 @@ defmodule Still.Correspondence do
            |> Map.put(:status, status)
            |> Map.update!(:events, &(&1 ++ [event]))
            |> Map.put(:updated_at, now()),
-         {:ok, saved} <- write_record(d.packets, next, :packet, p.token),
+         {:ok, saved} <- write_record(d, next, :packet, p.token),
          do: attach_snapshot(saved, d)
   end
 
   def set_status(_, _, _, _), do: {:error, "That packet status cannot be set directly."}
 
   def history(location, piece_id) do
-    with {:ok, v} <- overview(location) do
-      rows =
-        for(
-          p <- v.packets,
-          piece_id in p.piece_ids,
-          do: %{
-            packet: p,
-            journal: Enum.find(v.journals, &(&1.id == p.journal_id)),
-            snapshot: Enum.find((p[:snapshot] && p.snapshot.pieces) || [], &(&1.id == piece_id))
-          }
-        )
+    with {:ok, d} <- store(location),
+         {:ok, packets} <- records(d, :packet) do
+      packets =
+        packets
+        |> Enum.filter(&(piece_id in &1.piece_ids))
+        |> Enum.sort_by(& &1.updated_at, :desc)
 
-      {:ok, rows}
+      with {:ok, packets} <- attach_snapshots(packets, d),
+           {:ok, journals} <- journals_for_packets(packets, d) do
+        rows =
+          for p <- packets do
+            %{
+              packet: p,
+              journal: Enum.find(journals, &(&1.id == p.journal_id)),
+              snapshot: Enum.find((p[:snapshot] && p.snapshot.pieces) || [], &(&1.id == piece_id))
+            }
+          end
+
+        {:ok, rows}
+      end
     end
   end
 
   def overlap(location, piece_ids, except_id \\ nil)
 
   def overlap(location, piece_ids, except_id) when is_list(piece_ids) do
-    with {:ok, v} <- overview(location) do
-      rows =
-        for(
-          p <- v.packets,
-          p.id != except_id,
-          p.status in ["submitted", "awaiting", "accepted"],
-          id <- p.piece_ids -- (p.accepted_piece_ids || []),
-          id in piece_ids,
-          do: %{piece_id: id, packet: p, journal: Enum.find(v.journals, &(&1.id == p.journal_id))}
-        )
+    with {:ok, d} <- store(location),
+         {:ok, packets} <- records(d, :packet) do
+      packets =
+        Enum.filter(packets, fn p ->
+          p.id != except_id and p.status in ["submitted", "awaiting", "accepted"] and
+            Enum.any?(p.piece_ids -- (p.accepted_piece_ids || []), &(&1 in piece_ids))
+        end)
+        |> Enum.sort_by(& &1.updated_at, :desc)
 
-      {:ok, rows}
+      with {:ok, packets} <- attach_snapshots(packets, d) do
+        rows =
+          for p <- packets,
+              id <- p.piece_ids -- (p.accepted_piece_ids || []),
+              id in piece_ids,
+              do: %{piece_id: id, packet: p, journal_id: p.journal_id}
+
+        with {:ok, journals} <- journals_for_packets(Enum.map(rows, & &1.packet), d) do
+          {:ok,
+           Enum.map(rows, fn row ->
+             Map.put(row, :journal, Enum.find(journals, &(&1.id == row.journal_id)))
+             |> Map.delete(:journal_id)
+           end)}
+        end
+      end
     end
   end
 
@@ -407,7 +574,7 @@ defmodule Still.Correspondence do
 
   def export_packet(location, id) do
     with {:ok, d} <- store(location),
-         {:ok, p} <- read_record(d.packets, id, :packet),
+         {:ok, p} <- read_record(d, id, :packet),
          {:ok, p} <- attach_snapshot(p, d),
          {:ok, j} <- journal_for_export(p, d),
          {:ok, pieces, frozen?} <- export_pieces(location, p, d) do
@@ -424,14 +591,22 @@ defmodule Still.Correspondence do
            {:ok,
             Enum.map(
               pieces,
-              &%{id: &1.id, title: Poems.display_title(&1), body: &1.body, token: &1.token}
+              &%{
+                id: &1.id,
+                title: Poems.display_title(&1),
+                body: &1.body,
+                title_in_body: Map.get(&1, :title_in_body, true),
+                title_line: Map.get(&1, :title_line),
+                title_source: Map.get(&1, :title_source, "first_line"),
+                token: &1.token
+              }
             ), false}
   end
 
   defp journal_for_export(%{snapshot: s}, _d) when is_map(s),
     do: {:ok, %{id: s.journal_id, name: s.journal_name}}
 
-  defp journal_for_export(p, d), do: read_record(d.journals, p.journal_id, :journal)
+  defp journal_for_export(p, d), do: read_record(d, p.journal_id, :journal)
 
   defp normalize_journal(a) do
     with {:ok, v} <- fields(a, @journal_fields),
@@ -631,7 +806,12 @@ defmodule Still.Correspondence do
       Enum.map(pieces, & &1["id"]) == packet.piece_ids and
       Enum.all?(pieces, fn piece ->
         is_map(piece) and uuid_value?(piece["id"]) and is_binary(piece["title"]) and
-          String.valid?(piece["title"]) and is_binary(piece["body_sha256"]) and
+          String.valid?(piece["title"]) and is_boolean(piece["title_in_body"]) and
+          (is_nil(piece["title_line"]) or
+             (is_integer(piece["title_line"]) and piece["title_line"] > 0)) and
+          piece["title_source"] in ["first_line", "explicit"] and
+          (piece["title_source"] != "explicit" or is_integer(piece["title_line"])) and
+          is_binary(piece["body_sha256"]) and
           byte_size(piece["body_sha256"]) == 64 and is_binary(piece["source_token"]) and
           valid_time?(piece["source_updated_at"])
       end)
@@ -639,80 +819,51 @@ defmodule Still.Correspondence do
     _ -> false
   end
 
-  defp snapshot_write(snapshots_dir, snapshot) do
-    final_dir = Path.join(snapshots_dir, snapshot.id)
-    stage_dir = Path.join(snapshots_dir, ".#{snapshot.id}.partial")
-    pointer_path = Path.join(snapshots_dir, snapshot.id <> ".json")
-
-    pieces =
-      Enum.map(snapshot.pieces, fn piece ->
-        Map.drop(piece, [:body]) |> Map.put(:body_sha256, digest(piece.body))
+  defp snapshot_write(%{scope: scope}, snapshot) do
+    stored =
+      Map.update!(snapshot, :pieces, fn pieces ->
+        Enum.map(pieces, fn piece -> Map.put(piece, :body_sha256, digest(piece.body)) end)
       end)
 
-    manifest = %{snapshot | pieces: pieces}
-    manifest_bytes = Jason.encode!(stringify(manifest), pretty: true) <> "\n"
+    bytes = Jason.encode!(stringify(stored))
 
-    with :ok <- safe_dir(snapshots_dir),
-         :ok <- absent(final_dir),
-         :ok <- absent(pointer_path),
-         :ok <- absent(stage_dir) do
-      case File.mkdir(stage_dir) do
-        :ok ->
-          result =
-            with :ok <- File.chmod(stage_dir, 0o700),
-                 :ok <- write_piece_texts(stage_dir, snapshot.pieces),
-                 :ok <- atomic(Path.join(stage_dir, "snapshot.json"), manifest_bytes),
-                 :ok <- sync(stage_dir),
-                 :ok <- File.rename(stage_dir, final_dir),
-                 :ok <- sync(snapshots_dir),
-                 :ok <- atomic(pointer_path, manifest_bytes) do
-              {:ok, digest(manifest_bytes)}
-            end
+    attrs = %{
+      scope: scope,
+      kind: "snapshot",
+      record_key: snapshot.id,
+      data: %{"packet_id" => snapshot.packet_id},
+      bytes: bytes
+    }
 
-          case result do
-            {:ok, _} = ok ->
-              ok
-
-            {:error, reason} ->
-              File.rm_rf(stage_dir)
-              {:error, explain(reason)}
-          end
-
-        {:error, reason} ->
-          {:error, explain(reason)}
-      end
-    else
-      {:error, reason} -> {:error, explain(reason)}
+    case %LocalRecord{} |> LocalRecord.changeset(attrs) |> Repo.insert() do
+      {:ok, _} -> {:ok, digest(bytes)}
+      {:error, _} -> {:error, "Could not preserve the exact submitted manuscript words."}
     end
-  end
-
-  defp write_piece_texts(stage_dir, pieces) do
-    Enum.reduce_while(pieces, :ok, fn piece, :ok ->
-      path = Path.join(stage_dir, piece.id <> ".txt")
-
-      case atomic(path, piece.body) do
-        :ok -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
   end
 
   defp attach_snapshot(%{snapshot_ref: nil} = p, _d), do: {:ok, p}
 
-  defp attach_snapshot(p, d) do
-    path = Path.join(d.snapshots, p.snapshot_ref <> ".json")
-    piece_dir = Path.join(d.snapshots, p.snapshot_ref)
+  defp attach_snapshot(p, %{scope: scope}) do
+    row =
+      if uuid_value?(p.snapshot_ref),
+        do:
+          Repo.get_by(LocalRecord,
+            scope: scope,
+            kind: "snapshot",
+            record_key: p.snapshot_ref
+          )
 
+    attach_snapshot_row(p, %{scope: scope}, row)
+  end
+
+  defp attach_snapshot_row(%{snapshot_ref: nil} = p, _d, _row), do: {:ok, p}
+
+  defp attach_snapshot_row(p, _d, %LocalRecord{bytes: bytes}) when is_binary(bytes) do
     with true <- uuid_value?(p.snapshot_ref),
-         :ok <- safe_file(path),
-         :ok <- safe_dir(piece_dir),
-         {:ok, bytes} <- File.read(path),
          true <- digest(bytes) == p.snapshot_digest,
-         true <- internal_manifest_matches?(piece_dir, bytes),
          {:ok, raw} when is_map(raw) <- Jason.decode(bytes),
          true <- valid_snapshot?(raw, p),
-         true <- valid_lifecycle_snapshot?(p, raw),
-         {:ok, pieces} <- read_snapshot_pieces(raw["pieces"], piece_dir) do
+         true <- valid_lifecycle_snapshot?(p, raw) do
       snap =
         atomize(raw, [
           :id,
@@ -725,79 +876,136 @@ defmodule Still.Correspondence do
           :preparation_notes
         ])
 
+      pieces =
+        Enum.map(raw["pieces"], fn piece ->
+          body = piece["body"]
+
+          if is_binary(body) and digest(body) == piece["body_sha256"],
+            do:
+              atomize(piece, [
+                :id,
+                :title,
+                :body,
+                :title_in_body,
+                :title_line,
+                :title_source,
+                :source_token,
+                :source_updated_at
+              ]),
+            else: raise("snapshot body digest mismatch")
+        end)
+
       {:ok, Map.put(p, :snapshot, Map.put(snap, :pieces, pieces))}
     else
       _ -> {:error, "The immutable sent-text snapshot is missing, invalid, or mismatched."}
     end
+  rescue
+    _ -> {:error, "The immutable sent-text snapshot is missing, invalid, or mismatched."}
   end
 
-  defp internal_manifest_matches?(piece_dir, pointer_bytes) do
-    path = Path.join(piece_dir, "snapshot.json")
-    with :ok <- safe_file(path), {:ok, bytes} <- File.read(path), do: bytes == pointer_bytes
-  end
+  defp attach_snapshot_row(_, _, _),
+    do: {:error, "The immutable sent-text snapshot is missing, invalid, or mismatched."}
 
-  defp read_snapshot_pieces(raw_pieces, piece_dir) do
-    Enum.reduce_while(raw_pieces, {:ok, []}, fn raw, {:ok, acc} ->
-      path = Path.join(piece_dir, raw["id"] <> ".txt")
+  defp attach_snapshots(packets, %{scope: scope} = d) do
+    refs = packets |> Enum.map(& &1.snapshot_ref) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
-      with :ok <- safe_file(path),
-           {:ok, body} <- File.read(path),
-           true <- String.valid?(body) and digest(body) == raw["body_sha256"] do
-        piece =
-          atomize(raw, [:id, :title, :source_token, :source_updated_at]) |> Map.put(:body, body)
+    rows =
+      if refs == [],
+        do: [],
+        else:
+          Repo.all(
+            from(r in LocalRecord,
+              where: r.scope == ^scope and r.kind == "snapshot" and r.record_key in ^refs
+            )
+          )
 
-        {:cont, {:ok, [piece | acc]}}
-      else
-        _ ->
-          {:halt,
-           {:error, "A frozen manuscript text file is missing or does not match its manifest."}}
+    by_ref = Map.new(rows, &{&1.record_key, &1})
+
+    Enum.reduce_while(packets, {:ok, []}, fn p, {:ok, acc} ->
+      case attach_snapshot_row(p, d, Map.get(by_ref, p.snapshot_ref)) do
+        {:ok, attached} -> {:cont, {:ok, [attached | acc]}}
+        {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
     |> case do
-      {:ok, pieces} -> {:ok, Enum.reverse(pieces)}
+      {:ok, attached} -> {:ok, Enum.reverse(attached)}
       error -> error
     end
-  rescue
-    _ -> {:error, "A frozen manuscript text file is invalid."}
   end
 
-  defp records(dir, kind) do
-    with :ok <- safe_dir(dir), {:ok, names} <- File.ls(dir) do
-      names
-      |> Enum.filter(&String.ends_with?(&1, ".json"))
-      |> Enum.sort()
-      |> Enum.reduce_while({:ok, []}, fn n, {:ok, acc} ->
-        case read_record(dir, Path.rootname(n), kind) do
-          {:ok, r} -> {:cont, {:ok, [r | acc]}}
-          e -> {:halt, e}
-        end
-      end)
-      |> case do
-        {:ok, rs} -> {:ok, Enum.reverse(rs)}
-        e -> e
+  defp attach_revision_counts(scope, pieces) do
+    ids = Enum.map(pieces, & &1.id)
+
+    counts =
+      if ids == [] do
+        %{}
+      else
+        Repo.all(
+          from(e in Entry,
+            left_join: v in Version,
+            on: v.entry_id == e.id,
+            where: e.collection_scope == ^scope and e.file_id in ^ids,
+            group_by: e.file_id,
+            select: {e.file_id, count(v.id)}
+          )
+        )
+        |> Map.new()
       end
-    else
-      {:error, :enoent} -> {:ok, []}
-      {:error, e} -> {:error, explain(e)}
+
+    Enum.map(pieces, &Map.put(&1, :revision_count, Map.get(counts, &1.id, 0)))
+  end
+
+  defp journals_for_packets(packets, d) do
+    ids = packets |> Enum.map(& &1.journal_id) |> Enum.uniq()
+
+    with {:ok, journals} <- records(d, :journal),
+         do: {:ok, Enum.filter(journals, &(&1.id in ids))}
+  end
+
+  defp records(%{scope: scope}, kind) do
+    rows =
+      Repo.all(
+        from(r in LocalRecord,
+          where: r.scope == ^scope and r.kind == ^Atom.to_string(kind),
+          order_by: r.record_key
+        )
+      )
+
+    Enum.reduce_while(rows, {:ok, []}, fn row, {:ok, acc} ->
+      case decode_record(row, kind) do
+        {:ok, rec} ->
+          {:cont, {:ok, [rec | acc]}}
+
+        _ ->
+          {:halt,
+           {:error, "A correspondence record is malformed or does not match its database key."}}
+      end
+    end)
+    |> case do
+      {:ok, rows} -> {:ok, Enum.reverse(rows)}
+      error -> error
     end
   end
 
-  defp read_record(dir, id, kind) do
+  defp read_record(%{scope: scope}, id, kind) do
     if uuid_value?(id) do
-      path = Path.join(dir, id <> ".json")
-
-      with :ok <- safe_file(path),
-           {:ok, bytes} <- File.read(path),
-           {:ok, raw} when is_map(raw) <- Jason.decode(bytes),
-           true <- raw["id"] == id,
-           {:ok, rec} <- decode(raw, kind) do
-        {:ok, Map.put(rec, :token, digest(bytes))}
-      else
-        {:error, :enoent} -> {:error, "No #{kind} with that identifier exists."}
-        _ -> {:error, "A correspondence record is malformed or does not match its filename."}
+      case Repo.get_by(LocalRecord, scope: scope, kind: Atom.to_string(kind), record_key: id) do
+        nil -> {:error, "No #{kind} with that identifier exists."}
+        row -> decode_record(row, kind)
       end
     else
       {:error, "The #{kind} identifier is invalid."}
+    end
+  end
+
+  defp decode_record(row, kind) do
+    raw = if is_map(row.data), do: stringify(row.data), else: %{}
+
+    if is_map(row.data) and raw["id"] == row.record_key do
+      with {:ok, rec} <- decode(raw, kind),
+           do: {:ok, Map.put(rec, :token, digest(Jason.encode!(raw)))}
+    else
+      {:error, :invalid}
     end
   end
 
@@ -1073,97 +1281,209 @@ defmodule Still.Correspondence do
   defp stringify(l) when is_list(l), do: Enum.map(l, &stringify/1)
   defp stringify(v), do: v
 
-  defp write_record(dir, rec, kind, expected_token) do
-    base = Path.dirname(dir)
-    active = Storage.collection_location()
+  defp write_record(%{scope: scope}, rec, kind, expected_token) do
+    key = Atom.to_string(kind)
 
-    if not active.available or Path.expand(active.folder) != Path.dirname(base) do
-      {:error, "The active collection changed. Reopen Correspondence before continuing."}
-    else
-      expected_scope = active.scope
+    result =
+      try do
+        Repo.transaction(fn ->
+          ensure_current_scope!(scope)
 
-      :global.trans({{__MODULE__, base}, self()}, fn ->
-        with_fs_lock(base, expected_scope, fn ->
-          path = Path.join(dir, rec.id <> ".json")
+          current =
+            Repo.one(
+              from(r in LocalRecord,
+                where: r.scope == ^scope and r.kind == ^key and r.record_key == ^rec.id
+              )
+            )
 
-          checked =
-            case expected_token do
-              nil ->
-                with :ok <- absent(path), do: {:ok, nil}
+          cond do
+            is_nil(current) and not is_nil(expected_token) ->
+              Repo.rollback({:error, "Reopen this record before saving your changes."})
 
-              token ->
-                with :ok <- safe_file(path),
-                     {:ok, bytes} <- File.read(path),
-                     {:ok, current} <- read_record(dir, rec.id, kind),
-                     :ok <- fresh(current, token),
-                     do: {:ok, bytes}
-            end
+            not is_nil(current) and
+                (is_nil(expected_token) or
+                   decode_record(current, kind) |> token_matches?(expected_token) == false) ->
+              Repo.rollback({:error, "This record changed on disk. Reopen it before continuing."})
 
-          with :ok <- current_scope(base, expected_scope),
-               {:ok, previous_bytes} <- checked,
-               :ok <- if(kind == :journal, do: unique_name(dir, rec.name, rec.id), else: :ok),
-               :ok <- writable_destination(base, rec, kind),
-               :ok <- preserve_revision(base, rec.id, expected_token, previous_bytes),
-               :ok <- safe_dir(dir),
-               :ok <- current_scope(base, expected_scope),
-               :ok <- replaceable(path),
-               :ok <- atomic(path, Jason.encode!(stringify(rec), pretty: true) <> "\n"),
-               {:ok, saved} <- read_record(dir, rec.id, kind) do
-            {:ok, saved}
-          else
-            {:error, e} -> {:error, explain(e)}
+            true ->
+              :ok
+          end
+
+          case unique_name(%{scope: scope}, Map.get(rec, :name), rec.id) do
+            :ok -> :ok
+            {:error, message} -> Repo.rollback({:error, message})
+          end
+
+          case writable_destination(%{scope: scope}, rec, kind) do
+            :ok -> :ok
+            {:error, message} -> Repo.rollback({:error, message})
+          end
+
+          if current do
+            rev_attrs = %{
+              scope: scope,
+              kind: "revision",
+              record_key: "#{key}:#{rec.id}:#{current.lock_version}",
+              data: stringify(current.data),
+              bytes: current.bytes
+            }
+
+            Repo.insert!(LocalRecord.changeset(%LocalRecord{}, rev_attrs))
+          end
+
+          attrs = %{
+            scope: scope,
+            kind: key,
+            record_key: rec.id,
+            data: stringify(rec),
+            lock_version: (current && current.lock_version + 1) || 1
+          }
+
+          saved =
+            if current,
+              do: current |> LocalRecord.changeset(attrs) |> Repo.update!(),
+              else: %LocalRecord{} |> LocalRecord.changeset(attrs) |> Repo.insert!()
+
+          case decode_record(saved, kind) do
+            {:ok, result} -> result
+            _ -> Repo.rollback({:error, "Could not verify the saved Correspondence record."})
           end
         end)
-      end)
+      rescue
+        _ -> {:error, :concurrent_write}
+      end
+
+    case result do
+      {:ok, saved} ->
+        {:ok, saved}
+
+      {:error, {:error, message}} ->
+        {:error, message}
+
+      {:error, :concurrent_write} ->
+        {:error, "This record changed on disk. Reopen it before continuing."}
+
+      {:error, reason} ->
+        {:error, explain(reason)}
     end
   end
 
-  defp writable_destination(base, %{status: status, journal_id: id}, :packet)
+  defp token_matches?({:ok, %{token: token}}, expected), do: token == expected
+  defp token_matches?(_, _), do: false
+
+  defp writable_destination(%{scope: scope}, %{status: status, journal_id: id}, :packet)
        when status in ["preparing", "submitted"] do
-    with {:ok, journal} <- read_record(Path.join(base, "journals"), id, :journal),
+    with {:ok, journal} <- read_record(%{scope: scope}, id, :journal),
          do: active_destination(journal)
   end
 
   defp writable_destination(_, _, _), do: :ok
 
   defp write_desk(location, piece_id, expected_token) do
-    with {:ok, dirs} <- write_store(location) do
-      base = Path.dirname(dirs.journals)
-      active = Storage.collection_location()
+    with {:ok, d} <- write_store(location),
+         {:ok, current} <- desk_for_scope(d),
+         :ok <- desk_fresh(current, expected_token),
+         :ok <- validate_desk_piece(location, piece_id) do
+      record = %{
+        "format" => @desk_format,
+        "version" => @desk_version,
+        "piece_id" => piece_id,
+        "updated_at" => now()
+      }
 
-      if not active.available or Path.expand(active.folder) != Path.dirname(base) do
-        {:error, "The active collection changed. Reopen Correspondence before continuing."}
-      else
-        expected_scope = active.scope
+      result =
+        try do
+          Repo.transaction(fn ->
+            ensure_current_scope!(d.scope)
+            existing = Repo.get_by(LocalRecord, scope: d.scope, kind: "desk", record_key: "desk")
 
-        :global.trans({{__MODULE__, base}, self()}, fn ->
-          with_fs_lock(base, expected_scope, fn ->
-            path = desk_path(dirs)
+            actual_token =
+              if existing, do: digest(Jason.encode!(stringify(existing.data || %{}))), else: nil
 
-            with :ok <- current_scope(base, expected_scope),
-                 {:ok, _previous, previous_bytes} <- desk_revision(path, expected_token),
-                 :ok <- validate_desk_piece(location, piece_id),
-                 :ok <- preserve_revision(base, "desk", expected_token, previous_bytes),
-                 :ok <- safe_dir(base),
-                 :ok <- current_scope(base, expected_scope),
-                 :ok <- replaceable(path),
-                 record <- %{
-                   "format" => @desk_format,
-                   "version" => @desk_version,
-                   "piece_id" => piece_id,
-                   "updated_at" => now()
-                 },
-                 :ok <- atomic(path, Jason.encode!(record, pretty: true) <> "\n"),
-                 {:ok, saved, _bytes} <- read_desk_file(path) do
-              {:ok, saved}
-            else
-              {:error, reason} -> {:error, explain(reason)}
+            if actual_token != expected_token,
+              do:
+                Repo.rollback(
+                  {:error,
+                   "The Correspondence desk changed since it was opened. Reopen it before retrying."}
+                )
+
+            if existing do
+              Repo.insert!(
+                LocalRecord.changeset(%LocalRecord{}, %{
+                  scope: d.scope,
+                  kind: "revision",
+                  record_key: "desk:desk:#{existing.lock_version}",
+                  data: stringify(existing.data || %{}),
+                  bytes: existing.bytes
+                })
+              )
             end
+
+            attrs = %{
+              scope: d.scope,
+              kind: "desk",
+              record_key: "desk",
+              data: record,
+              lock_version: (existing && existing.lock_version + 1) || 1
+            }
+
+            if existing,
+              do: existing |> LocalRecord.changeset(attrs) |> Repo.update!(),
+              else: %LocalRecord{} |> LocalRecord.changeset(attrs) |> Repo.insert!()
+
+            {:ok, value} = desk_for_scope(%{scope: d.scope})
+            value
           end)
-        end)
+        rescue
+          _ -> {:error, :concurrent_write}
+        end
+
+      case result do
+        {:ok, saved} ->
+          {:ok, saved}
+
+        {:error, {:error, message}} ->
+          {:error, message}
+
+        {:error, :concurrent_write} ->
+          {:error,
+           "The Correspondence desk changed since it was opened. Reopen it before retrying."}
+
+        {:error, reason} ->
+          {:error, explain(reason)}
       end
     end
   end
+
+  defp desk_for_scope(%{scope: scope}) do
+    case Repo.get_by(LocalRecord, scope: scope, kind: "desk", record_key: "desk") do
+      nil ->
+        {:ok, empty_desk()}
+
+      row ->
+        data = row.data || %{}
+
+        if is_map(data) and data["format"] == @desk_format and data["version"] == @desk_version and
+             (is_nil(data["piece_id"]) or uuid_value?(data["piece_id"])) and
+             valid_time?(data["updated_at"]) do
+          {:ok,
+           %{
+             piece_id: data["piece_id"],
+             token: digest(Jason.encode!(data)),
+             updated_at: data["updated_at"]
+           }}
+        else
+          {:error, "The Correspondence desk record is malformed."}
+        end
+    end
+  end
+
+  defp desk_fresh(%{token: token}, token) when is_binary(token), do: :ok
+  defp desk_fresh(%{token: nil}, nil), do: :ok
+
+  defp desk_fresh(_, _),
+    do:
+      {:error, "The Correspondence desk changed since it was opened. Reopen it before retrying."}
 
   defp validate_desk_piece(_location, nil), do: :ok
 
@@ -1174,196 +1494,29 @@ defmodule Still.Correspondence do
     end
   end
 
-  defp desk_revision(path, expected_token) do
-    case read_desk_file(path) do
-      {:ok, nil, nil} when is_nil(expected_token) ->
-        {:ok, nil, nil}
-
-      {:ok, nil, nil} ->
-        {:error,
-         "The Correspondence desk changed since it was opened. Reopen it before retrying."}
-
-      {:ok, current, bytes} when current.token == expected_token ->
-        {:ok, current, bytes}
-
-      {:ok, _current, _bytes} ->
-        {:error,
-         "The Correspondence desk changed since it was opened. Reopen it before retrying."}
-
-      {:error, message} ->
-        {:error, message}
-    end
-  end
-
-  defp desk_path(dirs), do: Path.join(Path.dirname(dirs.journals), "desk.json")
-
   defp empty_desk, do: %{piece_id: nil, token: nil, updated_at: nil}
 
-  defp read_desk_file(path) do
-    case File.lstat(path) do
-      {:error, :enoent} ->
-        {:ok, nil, nil}
-
-      {:ok, %{type: :regular}} ->
-        with {:ok, bytes} <- File.read(path),
-             {:ok, raw} when is_map(raw) <- Jason.decode(bytes),
-             true <- valid_desk_record?(raw) do
-          state = %{
-            piece_id: raw["piece_id"],
-            token: digest(bytes),
-            updated_at: raw["updated_at"]
-          }
-
-          {:ok, state, bytes}
-        else
-          _ ->
-            {:error, "The Correspondence desk file is invalid; its contents were left untouched."}
-        end
-
-      {:ok, _} ->
-        {:error, "The Correspondence desk path is unsafe; its contents were left untouched."}
-
-      {:error, reason} ->
-        {:error, explain(reason)}
-    end
-  end
-
-  defp valid_desk_record?(raw) do
-    Map.has_key?(raw, "piece_id") and raw["format"] == @desk_format and
-      raw["version"] == @desk_version and
-      (is_nil(raw["piece_id"]) or uuid_value?(raw["piece_id"])) and
-      valid_time?(raw["updated_at"])
-  end
-
-  defp preserve_revision(_base, _id, nil, nil), do: :ok
-
-  defp preserve_revision(base, id, token, bytes) when is_binary(token) and is_binary(bytes) do
-    revisions = Path.join(base, "revisions")
-    record_dir = Path.join(revisions, id)
-    path = Path.join(record_dir, token <> ".json")
-
-    with :ok <- ensure_safe_dir(revisions),
-         :ok <- ensure_safe_dir(record_dir) do
-      case File.lstat(path) do
-        {:error, :enoent} ->
-          atomic(path, bytes)
-
-        {:ok, %{type: :regular}} ->
-          with {:ok, existing} <- File.read(path), true <- existing == bytes do
-            :ok
-          else
-            _ -> {:error, "A saved Correspondence revision conflicts with the current record."}
-          end
-
-        _ ->
-          {:error, "A saved Correspondence revision path is unsafe."}
-      end
-    end
-  end
-
-  defp preserve_revision(_, _, _, _),
-    do: {:error, "Could not preserve the previous Correspondence record."}
-
-  defp ensure_safe_dir(path) do
-    case File.lstat(path) do
-      {:ok, %{type: :directory}} -> :ok
-      {:error, :enoent} -> with :ok <- File.mkdir(path), :ok <- File.chmod(path, 0o700), do: :ok
-      {:ok, _} -> {:error, "A Correspondence revision folder is unsafe."}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp current_scope(base, expected_scope) do
+  defp ensure_current_scope!(scope) do
     active = Storage.collection_location()
 
-    if active.available and active.scope == expected_scope and
-         Path.expand(active.folder) == Path.dirname(base),
-       do: :ok,
-       else: {:error, "The active collection changed. Reopen Correspondence before continuing."}
+    if active.available and active.scope == scope,
+      do: :ok,
+      else:
+        Repo.rollback(
+          {:error, "The active collection changed. Reopen Correspondence before continuing."}
+        )
   end
 
-  defp with_fs_lock(base, expected_scope, fun) do
-    lock = Path.join(base, ".still-correspondence-lock")
-    owner_path = Path.join(lock, "owner")
-    owner_token = Ecto.UUID.generate()
-
-    case File.mkdir(lock) do
-      :ok ->
-        result =
-          try do
-            with :ok <- File.chmod(lock, 0o700),
-                 :ok <- write_lock_owner(owner_path, owner_token),
-                 :ok <- current_scope(base, expected_scope) do
-              fun.()
-            end
-          rescue
-            error ->
-              {:error, "Could not safely update Correspondence: #{Exception.message(error)}"}
-          end
-
-        case release_lock(lock, owner_path, owner_token) do
-          :ok ->
-            result
-
-          {:error, reason} ->
-            case result do
-              {:ok, _} ->
-                {:error,
-                 "Correspondence was updated, but its lock could not be released: #{reason}"}
-
-              {:error, message} ->
-                {:error, "#{message} The update lock also needs attention: #{reason}"}
-
-              _ ->
-                {:error, "The Correspondence update lock needs attention: #{reason}"}
-            end
-        end
-
-      {:error, :eexist} ->
-        {:error, "Another Still instance is updating Correspondence. Retry after it finishes."}
-
-      {:error, reason} ->
-        {:error, explain(reason)}
-    end
-  end
-
-  defp write_lock_owner(path, token) do
-    case File.open(path, [:write, :binary, :exclusive]) do
-      {:ok, io} ->
-        try do
-          with :ok <- IO.binwrite(io, token <> "\n"), :ok <- :file.sync(io), do: :ok
-        after
-          File.close(io)
-        end
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp release_lock(lock, owner_path, owner_token) do
-    with :ok <- safe_dir(lock),
-         :ok <- safe_file(owner_path),
-         {:ok, bytes} <- File.read(owner_path),
-         true <- bytes == owner_token <> "\n",
-         :ok <- File.rm(owner_path),
-         :ok <- File.rmdir(lock) do
-      :ok
-    else
-      _ -> {:error, "The lock owner changed or the lock folder is not safe to remove."}
-    end
-  end
-
-  defp existing(_dir, id, nil, _kind) when is_binary(id),
+  defp existing(_db, id, nil, _kind) when is_binary(id),
     do: {:error, "Reopen this record before saving your changes."}
 
-  defp existing(_dir, nil, token, _kind) when not is_nil(token),
+  defp existing(_db, nil, token, _kind) when not is_nil(token),
     do: {:error, "The new record revision is invalid."}
 
-  defp existing(_dir, nil, nil, _kind), do: {:ok, nil}
+  defp existing(_db, nil, nil, _kind), do: {:ok, nil}
 
-  defp existing(dir, id, token, kind) when is_binary(id) and is_binary(token) do
-    with {:ok, r} <- read_record(dir, id, kind), :ok <- fresh(r, token), do: {:ok, r}
+  defp existing(db, id, token, kind) when is_binary(id) and is_binary(token) do
+    with {:ok, r} <- read_record(db, id, kind), :ok <- fresh(r, token), do: {:ok, r}
   end
 
   defp existing(_, _, _, _), do: {:error, "Reopen this record before saving your changes."}
@@ -1408,13 +1561,19 @@ defmodule Still.Correspondence do
   defp accepted_ids(_, _, _),
     do: {:error, "Accepted piece identifiers must belong to the packet."}
 
-  defp unique_name(dir, name, id) do
-    with {:ok, js} <- records(dir, :journal) do
-      if Enum.any?(js, &(String.downcase(&1.name) == String.downcase(name) and &1.id != id)),
-        do: {:error, "A journal with this name already exists."},
-        else: :ok
+  defp unique_name(%{scope: scope}, name, id) when is_binary(name) do
+    case records(%{scope: scope}, :journal) do
+      {:ok, js} ->
+        if Enum.any?(js, &(String.downcase(&1.name) == String.downcase(name) and &1.id != id)),
+          do: {:error, "A journal with this name already exists."},
+          else: :ok
+
+      error ->
+        error
     end
   end
+
+  defp unique_name(_, _, _), do: :ok
 
   defp choose_id(nil), do: {:ok, Ecto.UUID.generate()}
 
@@ -1437,28 +1596,10 @@ defmodule Still.Correspondence do
   defp date(_), do: {:error, "Enter a valid calendar date."}
 
   defp store(location) do
-    with {:ok, active} <- active_location(location), do: read_store(active.folder)
+    with {:ok, active} <- active_location(location), do: {:ok, %{scope: active.scope}}
   end
 
-  defp write_store(location) do
-    with {:ok, active} <- active_location(location) do
-      base = Path.join(active.folder, @root)
-
-      case File.lstat(base) do
-        {:error, :enoent} ->
-          with :ok <- create_store(active.folder), do: read_store(active.folder)
-
-        {:ok, %{type: :directory}} ->
-          read_store(active.folder)
-
-        {:ok, _} ->
-          {:error, "The Correspondence path is a symlink or not a directory."}
-
-        {:error, reason} ->
-          {:error, explain(reason)}
-      end
-    end
-  end
+  defp write_store(location), do: store(location)
 
   defp active_location(location) do
     active = Storage.collection_location()
@@ -1474,242 +1615,10 @@ defmodule Still.Correspondence do
       is_binary(scope) and scope != active.scope ->
         {:error, "The active collection changed. Reopen Correspondence before continuing."}
 
-      not File.dir?(active.folder) ->
-        {:error, "The selected collection folder became unavailable."}
-
       true ->
         {:ok, active}
     end
   end
-
-  defp create_store(root) do
-    base = Path.join(root, @root)
-
-    case File.lstat(base) do
-      {:ok, %{type: :directory}} ->
-        marker = Path.join(base, @marker)
-
-        with :ok <- safe_file(marker),
-             {:ok, bytes} <- File.read(marker),
-             {:ok, @format} <- Jason.decode(bytes) do
-          :ok
-        else
-          _ ->
-            {:error,
-             "The Correspondence folder is unrecognized; its contents were left untouched."}
-        end
-
-      {:error, :enoent} ->
-        initialize_store(root, base)
-
-      {:ok, _} ->
-        {:error, "The Correspondence path is a symlink or not a directory."}
-
-      {:error, e} ->
-        {:error, explain(e)}
-    end
-  end
-
-  defp initialize_store(root, base) do
-    stage = Path.join(root, ".correspondence-init-#{Ecto.UUID.generate()}.partial")
-
-    with :ok <- safe_dir(root),
-         :ok <- absent(stage),
-         :ok <- File.mkdir(stage),
-         :ok <- File.chmod(stage, 0o700),
-         :ok <- atomic(Path.join(stage, @marker), Jason.encode!(@format) <> "\n"),
-         {:ok, _} <- child(stage, "journals"),
-         {:ok, _} <- child(stage, "packets"),
-         {:ok, _} <- child(stage, "snapshots"),
-         :ok <- sync(stage) do
-      case File.rename(stage, base) do
-        :ok ->
-          case sync(root) do
-            :ok ->
-              :ok
-
-            {:error, reason} ->
-              {:error,
-               "Correspondence initialization may have completed, but its folder could not be synced: #{explain(reason)}. Reopen the collection before retrying."}
-          end
-
-        {:error, reason} ->
-          case File.lstat(base) do
-            {:ok, %{type: :directory}} ->
-              case read_store(root) do
-                {:ok, _} ->
-                  :ok
-
-                {:error, _} ->
-                  {:error,
-                   "Another initialization may have published Correspondence, but the resulting folder needs repair. The staged copy was preserved."}
-              end
-
-            _ ->
-              {:error,
-               "Could not publish the staged Correspondence folder: #{explain(reason)}. The staged copy was preserved at #{stage}."}
-          end
-      end
-    else
-      {:error, reason} ->
-        {:error,
-         "Could not initialize Correspondence: #{explain(reason)}. Any staged files were preserved for inspection."}
-    end
-  end
-
-  defp read_store(root) do
-    base = Path.join(root, @root)
-
-    case File.lstat(base) do
-      {:error, :enoent} ->
-        {:ok,
-         %{
-           journals: Path.join(base, "journals"),
-           packets: Path.join(base, "packets"),
-           snapshots: Path.join(base, "snapshots")
-         }}
-
-      {:ok, %{type: :directory}} ->
-        marker = Path.join(base, @marker)
-
-        with :ok <- safe_file(marker),
-             {:ok, bytes} <- File.read(marker),
-             {:ok, @format} <- Jason.decode(bytes),
-             {:ok, journals} <- existing_child(base, "journals"),
-             {:ok, packets} <- existing_child(base, "packets"),
-             {:ok, snapshots} <- existing_child(base, "snapshots") do
-          {:ok, %{journals: journals, packets: packets, snapshots: snapshots}}
-        else
-          {:error, :enoent} ->
-            {:error,
-             "Correspondence data is incomplete; reconnect or repair the collection folder."}
-
-          _ ->
-            {:error,
-             "The Correspondence folder is unrecognized or unsafe; its contents were left untouched."}
-        end
-
-      {:ok, _} ->
-        {:error, "The Correspondence path is a symlink or not a directory."}
-
-      {:error, e} ->
-        {:error, explain(e)}
-    end
-  end
-
-  defp existing_child(base, name) do
-    path = Path.join(base, name)
-    with :ok <- safe_dir(path), do: {:ok, path}
-  end
-
-  defp child(base, name) do
-    path = Path.join(base, name)
-
-    case File.lstat(path) do
-      {:ok, %{type: :directory}} ->
-        {:ok, path}
-
-      {:error, :enoent} ->
-        with :ok <- File.mkdir(path), :ok <- File.chmod(path, 0o700), do: {:ok, path}
-
-      {:ok, _} ->
-        {:error, "A Correspondence subfolder is a symlink or not a directory."}
-
-      {:error, e} ->
-        {:error, explain(e)}
-    end
-  end
-
-  defp safe_dir(p),
-    do:
-      case(File.lstat(p),
-        do: (
-          {:ok, %{type: :directory}} -> :ok
-          {:ok, _} -> {:error, "A Correspondence path is unsafe."}
-          e -> e
-        )
-      )
-
-  defp safe_file(p),
-    do:
-      case(File.lstat(p),
-        do: (
-          {:ok, %{type: :regular}} -> :ok
-          {:ok, _} -> {:error, "A Correspondence file is not a regular file."}
-          e -> e
-        )
-      )
-
-  defp replaceable(p),
-    do:
-      case(File.lstat(p),
-        do: (
-          {:error, :enoent} -> :ok
-          {:ok, %{type: :regular}} -> :ok
-          _ -> {:error, "A Correspondence record path is unsafe."}
-        )
-      )
-
-  defp absent(p),
-    do:
-      case(File.lstat(p),
-        do: (
-          {:error, :enoent} -> :ok
-          _ -> {:error, "A snapshot with this identifier already exists."}
-        )
-      )
-
-  defp atomic(path, bytes) do
-    tmp = path <> ".tmp-" <> Ecto.UUID.generate()
-
-    result =
-      case File.open(tmp, [:write, :binary, :exclusive]) do
-        {:ok, io} ->
-          try do
-            with :ok <- IO.binwrite(io, bytes), :ok <- :file.sync(io), do: :ok
-          after
-            File.close(io)
-          end
-
-        e ->
-          e
-      end
-
-    with :ok <- result,
-         :ok <- File.chmod(tmp, 0o600),
-         :ok <- File.rename(tmp, path) do
-      case sync(Path.dirname(path)) do
-        :ok ->
-          :ok
-
-        {:error, reason} ->
-          {:error,
-           "The file may already be published at #{path}, but its folder sync failed (#{explain(reason)}). Reopen before retrying."}
-      end
-    else
-      {:error, reason} ->
-        File.rm(tmp)
-        {:error, reason}
-    end
-  end
-
-  defp sync(p) do
-    case :file.open(String.to_charlist(p), [:read, :raw]) do
-      {:ok, io} ->
-        r = :file.sync(io)
-        :file.close(io)
-        if r in [:ok, {:error, :eisdir}, {:error, :enotsup}, {:error, :einval}], do: :ok, else: r
-
-      {:error, e} when e in [:eisdir, :enotsup, :einval] ->
-        :ok
-
-      {:error, e} ->
-        {:error, e}
-    end
-  end
-
-  defp digest(v), do: :crypto.hash(:sha256, v) |> Base.encode16(case: :lower)
-  defp now, do: DateTime.utc_now() |> DateTime.to_iso8601()
 
   defp event_at(%{events: events}) do
     current = DateTime.utc_now()
@@ -1730,6 +1639,9 @@ defmodule Still.Correspondence do
         DateTime.to_iso8601(current)
     end
   end
+
+  defp digest(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
+  defp now, do: DateTime.utc_now() |> DateTime.to_iso8601()
 
   defp invalid(s), do: {:error, "The #{s} data is invalid."}
   defp explain(e) when is_binary(e), do: e

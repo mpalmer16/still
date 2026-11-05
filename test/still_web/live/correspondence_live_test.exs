@@ -28,6 +28,17 @@ defmodule StillWeb.CorrespondenceLiveTest do
         body: "The lamp comes on\nbefore anyone arrives."
       })
 
+    {:ok, works, _} = live(conn, ~p"/correspondence/writing")
+    refute has_element?(works, "#correspondence-work-#{piece.id}")
+
+    {:ok, reading, _} = live(conn, ~p"/writing/#{piece.id}")
+    reading |> element("#submission-focus") |> render_click()
+    assert has_element?(reading, "#submission-focus[aria-pressed=true]")
+    assert {:ok, unchanged} = Poems.get(location, piece.id)
+    assert unchanged.path == piece.path
+    assert unchanged.token == piece.token
+    assert File.read!(piece.path) == piece.body
+
     {:ok, home, _html} = live(conn, ~p"/correspondence")
     refute has_element?(home, "#desk-piece-title")
     render_click(element(home, "[phx-click='place_on_desk'][phx-value-id='#{piece.id}']"))
@@ -107,19 +118,20 @@ defmodule StillWeb.CorrespondenceLiveTest do
     assert sent.status == "submitted"
 
     assert sent.snapshot.pieces |> hd() |> Map.fetch!(:body) ==
-             "The lamp comes on\nbefore anyone arrives."
+             "A Window at Dusk\n\nThe lamp comes on\nbefore anyone arrives."
 
-    {:ok, changed} =
-      Poems.save(location, piece, %{
-        title: "A Window at Dusk",
-        body: "The lamp comes on\nafter the house is quiet."
-      })
-
-    assert changed.body == "The lamp comes on\nafter the house is quiet."
+    {:ok, editor, _} = live(conn, ~p"/writing/#{piece.id}/edit")
+    assert has_element?(editor, "#submitted-writing-note", "Saving edits creates a new version")
+    revised = "A Window at Dusk\n\nThe lamp comes on\nafter the house is quiet."
+    render_submit(element(editor, "#file-writing-form"), %{"writing" => %{"body" => revised}})
+    assert {:ok, changed} = Poems.get(location, piece.id)
+    assert {:ok, revisions} = Poems.revisions(location, piece.id)
+    assert Enum.any?(revisions, &(&1.body == piece.body))
+    assert changed.body == "A Window at Dusk\n\nThe lamp comes on\nafter the house is quiet."
     assert {:ok, still_sent} = Correspondence.packet(location, packet.id)
 
     assert still_sent.snapshot.pieces |> hd() |> Map.fetch!(:body) ==
-             "The lamp comes on\nbefore anyone arrives."
+             "A Window at Dusk\n\nThe lamp comes on\nbefore anyone arrives."
 
     render_submit(element(packet_view, "#response-form"), %{
       "response" => %{
@@ -144,6 +156,13 @@ defmodule StillWeb.CorrespondenceLiveTest do
            )
 
     assert has_element?(piece_view, "a[href='/correspondence/packets/new?from=#{packet.id}']")
+
+    piece_view |> element("#submission-focus") |> render_click()
+    assert has_element?(piece_view, "#submission-focus[aria-pressed=false]")
+    {:ok, works, _} = live(conn, ~p"/correspondence/writing")
+    refute has_element?(works, "#correspondence-work-#{piece.id}")
+    assert {:ok, packet_after_unmarking} = Correspondence.packet(location, packet.id)
+    assert hd(packet_after_unmarking.snapshot.pieces).body == piece.body
   end
 
   test "an empty collection has a gentle first step and no invented activity", %{conn: conn} do

@@ -1,6 +1,8 @@
 defmodule Still.StorageTest do
-  use ExUnit.Case, async: false
+  use Still.DataCase, async: false
 
+  alias Ecto.Adapters.SQL.Sandbox
+  alias Still.Repo
   alias Still.Storage
 
   setup do
@@ -14,6 +16,12 @@ defmodule Still.StorageTest do
     Application.put_env(:still, :storage_state_directory, state)
 
     on_exit(fn ->
+      Sandbox.unboxed_run(Repo, fn ->
+        Repo.query!("DELETE FROM collection_folders WHERE root LIKE ?", [
+          "%#{Path.basename(root)}%"
+        ])
+      end)
+
       if previous,
         do: Application.put_env(:still, :storage_state_directory, previous),
         else: Application.delete_env(:still, :storage_state_directory)
@@ -29,7 +37,7 @@ defmodule Still.StorageTest do
     refute initial.configured
     refute initial.available
     assert initial.changed
-    assert {:error, _} = Storage.backup()
+    assert {:error, _} = backup()
 
     assert {:error, _} = Storage.set_folder("relative-folder")
     assert {:error, _} = Storage.set_folder(Path.join(folder, "missing"))
@@ -47,12 +55,13 @@ defmodule Still.StorageTest do
   end
 
   test "publishes a verified snapshot and tracks logical content changes", %{folder: folder} do
-    assert {:ok, _} = Storage.set_folder(folder)
+    assert {:ok, configured} = Storage.set_folder(folder)
+    folder = configured.folder
     {entry_id, room_id} = create_fixture_rows()
 
     try do
       assert {:ok, status} =
-               Ecto.Adapters.SQL.Sandbox.unboxed_run(Still.Repo, fn -> Storage.backup() end)
+               backup()
 
       assert status.configured
       assert status.available
@@ -60,14 +69,15 @@ defmodule Still.StorageTest do
       assert File.read!(status.last_backup.path) |> binary_part(0, 16) == "SQLite format 3\0"
       refute status.changed
       assert Storage.status().last_backup == status.last_backup
-      assert File.ls!(folder) |> Enum.reject(&String.ends_with?(&1, ".partial")) |> length() == 1
+      assert status.last_backup.path == Path.join(folder, "still-backup.sqlite3")
+      assert File.ls!(folder) == ["still-backup.sqlite3"]
 
       # A filesystem timestamp change alone does not mean writing changed.
       :ok = File.touch(Still.Repo.config()[:database])
       refute Storage.status().changed
 
       :ok = File.chmod(folder, 0o500)
-      assert {:error, _} = Storage.backup()
+      assert {:error, _} = backup()
       failed = Storage.status()
       assert failed.last_backup == status.last_backup
       refute failed.changed
@@ -90,7 +100,7 @@ defmodule Still.StorageTest do
       refute Storage.status().changed
 
       backup_path = status.last_backup.path
-      File.rm_rf!(Path.dirname(backup_path))
+      File.rm!(backup_path)
       missing = Storage.status()
       assert missing.changed
       assert missing.last_backup.path == backup_path
@@ -100,11 +110,48 @@ defmodule Still.StorageTest do
     end
   end
 
+  test "automatic backup skips unchanged databases and replaces the verified file after a change",
+       %{
+         folder: folder
+       } do
+    check = fn -> Sandbox.unboxed_run(Repo, &Storage.backup_if_needed/0) end
+    assert :skipped = check.()
+    assert {:ok, configured} = Storage.set_folder(folder)
+    {entry_id, room_id} = create_fixture_rows()
+
+    try do
+      assert {:ok, initial} = check.()
+      assert :unchanged = check.()
+      scope = Sandbox.unboxed_run(Repo, fn -> Storage.collection_location().scope end)
+
+      update_row("UPDATE entries SET pending = '{}', collection_scope = ? WHERE id = ?", [
+        scope,
+        entry_id
+      ])
+
+      assert :skipped = check.()
+
+      update_row("UPDATE entries SET body = ?, pending = 'null' WHERE id = ?", [
+        "new words",
+        entry_id
+      ])
+
+      assert {:ok, updated} = check.()
+      assert updated.last_backup.path == initial.last_backup.path
+      refute updated.changed
+      assert File.ls!(configured.folder) == ["still-backup.sqlite3"]
+      assert :unchanged = check.()
+    after
+      remove_fixture_rows(entry_id, room_id)
+    end
+  end
+
   test "an unavailable destination retains its proof and works again when reconnected", %{
     folder: folder
   } do
-    assert {:ok, _} = Storage.set_folder(folder)
-    assert {:ok, backed} = Storage.backup()
+    assert {:ok, configured} = Storage.set_folder(folder)
+    folder = configured.folder
+    assert {:ok, backed} = backup()
     original = File.read!(backed.last_backup.path)
     disconnected = folder <> "-disconnected"
     File.rename!(folder, disconnected)
@@ -115,7 +162,7 @@ defmodule Still.StorageTest do
     assert unavailable.changed
     assert unavailable.last_backup == backed.last_backup
     assert unavailable.error =~ "Reconnect its drive"
-    assert {:error, message} = Storage.backup()
+    assert {:error, message} = backup()
     assert message =~ "Reconnect its drive"
     assert {:error, _} = Storage.set_folder(folder <> "-missing")
     assert Storage.status().folder == folder
@@ -133,15 +180,17 @@ defmodule Still.StorageTest do
   test "changing or clearing a destination clears only its associated success proof", %{
     folder: folder
   } do
-    assert {:ok, _} = Storage.set_folder(folder)
+    assert {:ok, configured} = Storage.set_folder(folder)
+    folder = configured.folder
 
     assert {:ok, _status} =
-             Ecto.Adapters.SQL.Sandbox.unboxed_run(Still.Repo, fn -> Storage.backup() end)
+             backup()
 
     alternate = folder <> "-alternate"
     File.mkdir_p!(alternate)
 
     assert {:ok, changed} = Storage.set_folder(alternate)
+    alternate = changed.folder
     assert changed.folder == alternate
     assert changed.last_backup == nil
     assert changed.changed
@@ -153,10 +202,11 @@ defmodule Still.StorageTest do
   end
 
   test "a settings write failure preserves the last saved folder", %{folder: folder, state: state} do
-    assert {:ok, _} = Storage.set_folder(folder)
+    assert {:ok, configured} = Storage.set_folder(folder)
+    folder = configured.folder
 
     assert {:ok, backup_status} =
-             Ecto.Adapters.SQL.Sandbox.unboxed_run(Still.Repo, fn -> Storage.backup() end)
+             backup()
 
     state_file = state |> Path.join("*.json") |> Path.wildcard() |> hd()
     saved = state_file <> ".saved"
@@ -179,14 +229,15 @@ defmodule Still.StorageTest do
     folder: folder,
     state: state
   } do
-    assert {:ok, _} = Storage.set_folder(folder)
+    assert {:ok, configured} = Storage.set_folder(folder)
+    folder = configured.folder
     state_file = state |> Path.join("*.json") |> Path.wildcard() |> hd()
     File.write!(state_file, "not valid settings")
 
     status = Storage.status()
     assert status.changed
     assert status.error =~ "could not be read"
-    assert {:error, message} = Storage.backup()
+    assert {:error, message} = backup()
     assert message =~ "could not be read"
 
     assert {:ok, repaired} = Storage.set_folder(folder)
@@ -195,14 +246,16 @@ defmodule Still.StorageTest do
     assert repaired.last_backup == nil
   end
 
-  test "altered backup contents lose their proof and another backup never replaces them", %{
-    folder: folder
-  } do
+  test "altered backup contents lose their proof and the next verified backup replaces the one file",
+       %{
+         folder: folder
+       } do
     {entry_id, room_id} = create_fixture_rows()
 
     try do
-      assert {:ok, _} = Storage.set_folder(folder)
-      assert {:ok, first} = Storage.backup()
+      assert {:ok, configured} = Storage.set_folder(folder)
+      folder = configured.folder
+      assert {:ok, first} = backup()
       path = first.last_backup.path
       {:ok, snapshot} = Exqlite.start_link(database: path, mode: :readwrite)
 
@@ -219,11 +272,11 @@ defmodule Still.StorageTest do
       status = Storage.status()
       assert status.changed
       assert status.error =~ "no longer matches"
-      assert {:ok, second} = Storage.backup()
+      assert {:ok, second} = backup()
       refute second.changed
-      refute second.last_backup.path == path
-      assert File.read!(path) == altered
-      assert length(File.ls!(folder)) == 2
+      assert second.last_backup.path == path
+      refute File.read!(path) == altered
+      assert File.ls!(folder) == ["still-backup.sqlite3"]
 
       assert %{rows: [["original words"]]} =
                Ecto.Adapters.SQL.Sandbox.unboxed_run(Still.Repo, fn ->
@@ -234,8 +287,106 @@ defmodule Still.StorageTest do
     end
   end
 
+  test "refuses an unrecognized backup path and refuses a folder containing the live database", %{
+    folder: folder
+  } do
+    final = Path.join(folder, "still-backup.sqlite3")
+    File.write!(final, "keep this ordinary file")
+    assert {:ok, _} = Storage.set_folder(folder)
+    assert {:error, _} = backup()
+    assert File.read!(final) == "keep this ordinary file"
+
+    db_root = Path.dirname(Still.Repo.config()[:database])
+    assert {:error, message} = Storage.set_folder(db_root)
+    assert message =~ "outside Still's live database"
+
+    alias_root = Path.join(Path.dirname(folder), "live-database-parent-alias")
+    File.ln_s!(db_root, alias_root)
+    assert {:error, message} = Storage.set_folder(alias_root)
+    assert message =~ "outside Still's live database"
+  end
+
+  test "preserves a valid but unrelated SQLite file at the backup name", %{folder: folder} do
+    sqlite = Path.join(Path.dirname(folder), "unrelated.sqlite3")
+    File.touch!(sqlite)
+    {:ok, db} = Exqlite.start_link(database: sqlite, mode: :readwrite)
+
+    try do
+      Exqlite.query!(db, "CREATE TABLE unrelated (words TEXT)")
+      Exqlite.query!(db, "INSERT INTO unrelated VALUES ('keep these words')")
+    after
+      GenServer.stop(db)
+    end
+
+    final = Path.join(folder, "still-backup.sqlite3")
+    File.copy!(sqlite, final)
+    original = File.read!(final)
+    assert {:ok, _} = Storage.set_folder(folder)
+
+    assert {:error, message} = backup()
+    assert message =~ "not a Still backup"
+    assert File.read!(final) == original
+    assert Storage.status().last_backup == nil
+  end
+
+  test "refuses a valid Still database backup with a different collection identity", %{
+    folder: folder
+  } do
+    other_root = folder <> "-other-collection"
+
+    other_id =
+      Sandbox.unboxed_run(Repo, fn -> Still.Writing.Files.collection_scope(other_root) end)
+
+    unrelated = Path.join(Path.dirname(folder), "different-collection.sqlite3")
+    {:ok, db} = Exqlite.start_link(database: Repo.config()[:database], mode: :readwrite)
+
+    try do
+      Exqlite.query!(db, "VACUUM INTO ?", [unrelated])
+    after
+      GenServer.stop(db)
+    end
+
+    final = Path.join(folder, "still-backup.sqlite3")
+    File.copy!(unrelated, final)
+    original = File.read!(final)
+    assert {:ok, _} = Storage.set_folder(folder)
+
+    assert {:error, message} = backup()
+    assert message =~ "belongs to another collection"
+    assert File.read!(final) == original
+
+    assert %{rows: [[^other_id]]} =
+             Sandbox.unboxed_run(Repo, fn ->
+               Repo.query!("SELECT id FROM collection_folders WHERE root = ?", [other_root])
+             end)
+  end
+
+  test "restores only to a new local SQLite file outside the selected writing folder", %{
+    folder: folder
+  } do
+    assert {:ok, _} = Storage.set_folder(folder)
+    assert {:ok, status} = backup()
+    destination = Path.join(Path.dirname(folder), "restored.sqlite3")
+    assert {:ok, ^destination} = Storage.restore_backup(status.last_backup.path, destination)
+
+    assert :ok =
+             Exqlite.start_link(database: destination, mode: :readonly)
+             |> then(fn {:ok, db} ->
+               GenServer.stop(db)
+               :ok
+             end)
+
+    assert {:error, _} = Storage.restore_backup(status.last_backup.path, destination)
+
+    assert {:error, _} =
+             Storage.restore_backup(status.last_backup.path, Path.join(folder, "inside.sqlite3"))
+
+    assert {:error, _} =
+             Storage.restore_backup(status.last_backup.path, Still.Repo.config()[:database])
+  end
+
   defp create_fixture_rows do
-    Ecto.Adapters.SQL.Sandbox.unboxed_run(Still.Repo, fn ->
+    Sandbox.unboxed_run(Repo, fn ->
       %{rows: [[entry_id]]} =
         Still.Repo.query!("""
         INSERT INTO entries (body, lock_version, origin, source, inserted_at, updated_at)
@@ -261,14 +412,16 @@ defmodule Still.StorageTest do
   end
 
   defp update_row(sql, params) do
-    Ecto.Adapters.SQL.Sandbox.unboxed_run(Still.Repo, fn -> Still.Repo.query!(sql, params) end)
+    Sandbox.unboxed_run(Repo, fn -> Repo.query!(sql, params) end)
   end
 
   defp remove_fixture_rows(entry_id, room_id) do
-    Ecto.Adapters.SQL.Sandbox.unboxed_run(Still.Repo, fn ->
-      Still.Repo.query!("DELETE FROM versions WHERE entry_id = ?", [entry_id])
-      Still.Repo.query!("DELETE FROM room_states WHERE id = ?", [room_id])
-      Still.Repo.query!("DELETE FROM entries WHERE id = ?", [entry_id])
+    Sandbox.unboxed_run(Repo, fn ->
+      Repo.query!("DELETE FROM versions WHERE entry_id = ?", [entry_id])
+      Repo.query!("DELETE FROM room_states WHERE id = ?", [room_id])
+      Repo.query!("DELETE FROM entries WHERE id = ?", [entry_id])
     end)
   end
+
+  defp backup, do: Sandbox.unboxed_run(Repo, fn -> Storage.backup() end)
 end

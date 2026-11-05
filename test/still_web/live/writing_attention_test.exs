@@ -13,7 +13,7 @@ defmodule StillWeb.WritingAttentionTest do
     first = historical("opal quartz orchard\na patient ladder waits")
     second = historical("lantern compass resting\nbeside a distant harbor")
     body = "opal quartz orchard\n\nlantern compass resting\n"
-    {:ok, piece} = Poems.save(location, Poems.new(location), %{title: "Two passages", body: body})
+    {:ok, piece} = Poems.save(location, Poems.new(location), %{body: body, title_line: nil})
     %{location: location, piece: piece, first: first, second: second}
   end
 
@@ -92,12 +92,12 @@ defmodule StillWeb.WritingAttentionTest do
 
     assert Enum.join(lines, "\n") == piece.body
     assert has_element?(view, "#file-passage-3", "lantern compass resting")
-    view |> element("#listen-passage-3") |> render_click()
+    render_hook(view, "focus_passage", %{"id" => piece.id, "line" => "3"})
     assert has_element?(view, "#drawn-before-#{second.id}")
     refute has_element?(view, "#reading-company")
-    assert has_element?(view, "#listen-passage-3[aria-pressed=true]")
-    view |> element("#listen-whole") |> render_click()
-    refute has_element?(view, ".passage-listening")
+    assert has_element?(view, "[data-echo-line='3'].passage-focused")
+    view |> element("#whole-page-echoes") |> render_click()
+    refute has_element?(view, ".passage-focused")
     refute has_element?(view, ".gravity-presence")
     assert has_element?(view, "#reading-company")
     assert Poems.get(location, piece.id) == {:ok, piece}

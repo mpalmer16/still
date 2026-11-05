@@ -10,6 +10,9 @@ defmodule StillWeb.StorageLive do
     {:ok,
      assign(socket,
        page_title: "Storage & Backups",
+       native_controls?:
+         System.get_env("STILL_NATIVE") == "true" or
+           Application.get_env(:still, :native_control_token) not in [nil, ""],
        storage: status,
        folder: status.folder || "",
        notice: nil,
@@ -19,15 +22,29 @@ defmodule StillWeb.StorageLive do
 
   @impl true
   def handle_event("set_folder", %{"storage" => %{"folder" => folder}}, socket) do
-    result(socket, Storage.set_folder(folder), "Backup folder saved.")
+    if socket.assigns.native_controls? do
+      {:noreply,
+       assign(socket,
+         problem:
+           "Use File → Choose Writing Folder… to change the writing folder in the Mac app.",
+         notice: nil
+       )}
+    else
+      result(socket, Storage.set_folder(folder), "Writing folder saved.")
+    end
   end
+
+  def handle_event("clear_folder", _, %{assigns: %{native_controls?: true}} = socket),
+    do:
+      {:noreply,
+       assign(socket, problem: "Use File → Clear Writing Folder in the Mac app.", notice: nil)}
 
   def handle_event("clear_folder", _, socket),
     do:
       result(
         socket,
         Storage.clear_folder(),
-        "Backup folder cleared. Your database stays where it is."
+        "Writing folder cleared. Your database stays where it is."
       )
 
   def handle_event("backup", _, socket),
@@ -90,8 +107,7 @@ defmodule StillWeb.StorageLive do
           Choose any local folder, including one synchronized by a service you use. Still does not contact that service.
         </p>
         <p>
-          New writing uses a <code>poems/</code>
-          directory inside this chosen folder. Changing or clearing the folder changes which writing collection opens; existing writing files stay where they are. Database backups contain the historical SQLite collection only. <.link navigate={
+          New writing uses ordinary text files in this chosen folder. The live SQLite database stays in its current local location; backups are written as <code>still-backup.sqlite3</code>. Changing or clearing the folder changes where writing files are read and saved; existing writing files stay where they are. <.link navigate={
             ~p"/writing"
           }>Open Saved writing</.link>.
         </p>
@@ -102,18 +118,26 @@ defmodule StillWeb.StorageLive do
         </p>
 
         <section aria-labelledby="backup-folder-heading">
-          <h2 id="backup-folder-heading">Backup folder</h2>
+          <h2 id="backup-folder-heading">Writing folder</h2>
           <p :if={!@storage.configured} id="no-backup-folder">
-            No backup folder is configured. You can keep writing normally.
+            No writing folder is configured. You can keep writing normally.
           </p>
           <p :if={@storage.configured}>
             Current folder: <code id="backup-folder-path">{@storage.folder}</code>
           </p>
           <p>
-            In the Mac app, use File → Choose Backup Folder…. In a browser, enter an absolute folder path on the computer running Still.
+            {if @native_controls?,
+              do: "In the Mac app, use File → Choose Writing Folder… to select a local text folder.",
+              else: "In a browser, enter an absolute folder path on the computer running Still."}
           </p>
-          <.form for={%{}} as={:storage} id="backup-folder-form" phx-submit="set_folder">
-            <label for="backup-folder">Local folder</label>
+          <.form
+            :if={!@native_controls?}
+            for={%{}}
+            as={:storage}
+            id="backup-folder-form"
+            phx-submit="set_folder"
+          >
+            <label for="backup-folder">Local writing folder</label>
             <input
               id="backup-folder"
               type="text"
@@ -126,16 +150,27 @@ defmodule StillWeb.StorageLive do
             <button type="submit">Use This Folder</button>
           </.form>
           <div class="storage-actions">
-            <button :if={@storage.configured} id="clear-backup-folder" phx-click="clear_folder">Clear Folder</button>
-            <button :if={@storage.configured} id="open-backup-folder" phx-click="open_folder">Open Backup Folder</button>
+            <button
+              :if={@storage.configured && !@native_controls?}
+              id="clear-backup-folder"
+              phx-click="clear_folder"
+            >Clear Folder</button>
+            <button :if={@storage.configured} id="open-backup-folder" phx-click="open_folder">Open Writing Folder</button>
           </div>
           <p>
-            Changing or clearing this setting does not move or delete your database or earlier backups.
+            Changing or clearing this setting does not move or delete your database or writing files in another folder.
           </p>
         </section>
 
         <section aria-labelledby="backup-heading">
           <h2 id="backup-heading">Database backup</h2>
+          <p>
+            Still keeps one latest verified database backup in this folder. Each successful backup safely replaces that file.
+          </p>
+          <p :if={Application.get_env(:still, :automatic_backup, false)}>
+            While Still is open, it checks for changes after one minute and then every five minutes.
+            You can see the last successful backup below.
+          </p>
           <div id="last-backup">
             <p :if={is_nil(@storage.last_backup)}>
               No successful backup is recorded for this folder.

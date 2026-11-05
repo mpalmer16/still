@@ -9,6 +9,7 @@ defmodule StillWeb.CorrespondenceWork do
   attr :places, :list, default: []
   attr :revisions, :list, default: []
   attr :history, :list, default: []
+  attr :submission_focus, :boolean, default: false
   attr :proof_sources, :list, default: []
   attr :comparison, :any, default: nil
   attr :proof_problem, :string, default: nil
@@ -24,6 +25,7 @@ defmodule StillWeb.CorrespondenceWork do
       <header :if={!@comparison} class="editorial-work-heading">
         <div>
           <h1>{title(@piece)}</h1>
+          <.submission_mark piece_id={@piece.id} marked={@submission_focus} show_link={false} />
         </div>
         <div class="editorial-work-actions">
           <.link
@@ -33,7 +35,7 @@ defmodule StillWeb.CorrespondenceWork do
             class="corr-text-link"
           >Then &amp; now <span aria-hidden="true">↗</span></.link>
           <.link navigate={~p"/writing/#{value(@piece, :id)}/edit"} class="corr-text-link">
-            Edit in Now <span aria-hidden="true">↗</span>
+            Edit in Write <span aria-hidden="true">↗</span>
           </.link>
           <.link
             patch={~p"/correspondence/packets/new?piece=#{value(@piece, :id)}"}

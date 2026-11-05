@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {test} from 'node:test'
 const source = await readFile(new URL('../assets/js/echo_attention.js', import.meta.url), 'utf8')
-const {echoAttention} = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
+const {echoAttention, passageAttention} = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 
 function surface() {
   const listeners = new Map(), sent = []
@@ -58,4 +58,71 @@ test('waits for composition and cancels disconnected, unfocused, and destroyed c
   assert.equal(r.sent.length, 2)
   assert.equal(r.listeners.size, 0)
   assert.equal(r.timers.size, 0)
+})
+
+function readingSurface() {
+  const sent = [], listeners = new Map(), timers = new Map()
+  let selected = null, next = 0
+  const stanza = line => {
+    const node = {dataset: {echoLine: line}, closest: () => node}
+    return node
+  }
+  const first = stanza('1'), second = stanza('3')
+  const child = {closest: () => first}
+  const el = {
+    dataset: {echoDocument: 'page'},
+    contains: node => [first, second, child].includes(node),
+    addEventListener: (name, fn) => listeners.set(name, fn),
+    removeEventListener: name => listeners.delete(name),
+  }
+  const doc = {getSelection: () => selected, addEventListener() {}, removeEventListener() {}}
+  const clock = {
+    setTimeout(fn, delay) { timers.set(++next, {fn, delay}); return next },
+    clearTimeout: key => timers.delete(key),
+  }
+  const attention = passageAttention(el, payload => sent.push(payload), {doc, clock})
+  return {first, second, child, sent, timers, attention,
+    fire(name, target, relatedTarget = null) {
+      listeners.get(name)?.({target, relatedTarget, pointerType: 'mouse'})
+    },
+    select(anchorNode, focusNode) { selected = {isCollapsed: false, anchorNode, focusNode} },
+    tick() { const ready = [...timers.values()]; timers.clear(); ready.forEach(({fn}) => fn()) },
+  }
+}
+
+test('reading sends one passage after a settled hover and ignores movement within it', () => {
+  const r = readingSurface()
+  r.fire('pointerover', r.first)
+  assert.deepEqual([...r.timers.values()].map(timer => timer.delay), [450])
+  r.fire('pointerout', r.first, r.second)
+  r.fire('pointerover', r.second, r.first)
+  r.fire('pointerout', r.second)
+  r.tick()
+  assert.deepEqual(r.sent, [])
+
+  r.fire('pointerover', r.first)
+  r.fire('pointerover', r.child, r.first)
+  assert.equal(r.timers.size, 1)
+  r.tick()
+  r.fire('pointerover', r.first)
+  r.tick()
+  assert.deepEqual(r.sent, [{id: 'page', line: '1'}])
+  r.attention.destroy()
+})
+
+test('reading selection takes precedence and disconnect cancels pending attention', () => {
+  const r = readingSurface()
+  r.fire('pointerdown', r.first)
+  r.select(r.first, r.second)
+  r.fire('pointerup', r.first)
+  r.fire('pointerout', r.first)
+  r.tick()
+  r.fire('pointerover', r.first)
+  r.tick()
+  assert.deepEqual(r.sent, [{id: 'page', line: '3'}])
+  r.fire('focusin', r.first)
+  r.attention.disconnect()
+  r.tick()
+  assert.equal(r.sent.length, 1)
+  r.attention.destroy()
 })

@@ -4,7 +4,7 @@ defmodule Still.Writing.Threads do
   import Ecto.Query
 
   alias Still.{Poems, Repo, Writing}
-  alias Still.Writing.Entry
+  alias Still.Writing.{Entry, Notebook}
 
   @word_pattern ~r/[\p{L}\p{M}]+(?:['’][\p{L}\p{M}]+)*/u
   @single_word ~r/^[\p{L}\p{M}]+(?:['’][\p{L}\p{M}]+)*$/u
@@ -26,7 +26,12 @@ defmodule Still.Writing.Threads do
   @doc "Loads historical Lists and, when configured, safely readable saved pages."
   def load(location) when is_map(location) do
     historical =
-      Repo.all(from entry in Entry, where: entry.origin == "before", order_by: [asc: entry.id])
+      Repo.all(
+        from(entry in Entry,
+          where: entry.origin == "before" and is_nil(entry.file_id),
+          order_by: [asc: entry.id]
+        )
+      )
       |> Enum.map(&historical_document/1)
 
     if location[:configured] || location["configured"] do
@@ -53,14 +58,14 @@ defmodule Still.Writing.Threads do
     seed = Keyword.get(opts, :seed, "still-threads-v1") |> to_string()
     from = Keyword.get(opts, :from)
     from_doc = Enum.find(documents, &(&1.key == from))
-    from_words = if from_doc, do: MapSet.new(tokens(from_doc.body)), else: MapSet.new()
+    from_words = if from_doc, do: MapSet.new(document_index(from_doc).words), else: MapSet.new()
     from_filter? = Keyword.has_key?(opts, :from)
 
     if from_filter? and is_nil(from_doc) do
       []
     else
       documents
-      |> Enum.flat_map(fn doc -> Enum.uniq(tokens(doc.body)) |> Enum.map(&{&1, doc}) end)
+      |> Enum.flat_map(fn doc -> Enum.map(document_index(doc).words, &{&1, doc}) end)
       |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
       |> Enum.flat_map(fn {word, occurrences} ->
         families = occurrences |> Enum.map(& &1.family) |> Enum.uniq()
@@ -108,9 +113,9 @@ defmodule Still.Writing.Threads do
       []
     else
       Enum.flat_map(documents, fn doc ->
-        case matching_stanza(doc, normalized) do
+        case Map.get(document_index(doc).passages, normalized) do
           nil -> []
-          passage -> [passage]
+          passage -> [%{document: doc, text: passage.text, line: passage.line}]
         end
       end)
     end
@@ -198,9 +203,23 @@ defmodule Still.Writing.Threads do
       id: piece.id,
       title: Poems.display_title(piece),
       body: piece.body,
-      label: "Saved writing",
+      label: file_notebook_label(piece),
       family: if(is_binary(source_key) and source_key != "", do: source_key, else: key)
     }
+  end
+
+  defp file_notebook_label(piece) do
+    Map.get(piece, :notebook_label) ||
+      case Map.get(piece, :notebook_id) do
+        id when is_integer(id) ->
+          case Repo.get(Notebook, id) do
+            nil -> Map.get(piece, :notebook) || "Saved writing"
+            notebook -> notebook.label
+          end
+
+        _ ->
+          Map.get(piece, :notebook) || "Saved writing"
+      end
   end
 
   defp tokens(text) when is_binary(text) do
@@ -211,18 +230,35 @@ defmodule Still.Writing.Threads do
 
   defp tokens(_), do: []
 
-  defp matching_stanza(doc, word) do
-    doc.body
-    |> split_lines()
-    |> stanzas()
-    |> Enum.find_value(fn %{text: text, start_line: start_line} ->
-      lines = split_lines(text)
+  defp document_index(%{key: key, body: body} = doc) when is_binary(key) and is_binary(body) do
+    cache_key = {__MODULE__, Repo.config()[:database], :document, doc.kind, key}
 
-      case Enum.find_index(lines, fn line -> word in tokens(line) end) do
-        nil -> nil
-        offset -> %{document: doc, text: text, line: start_line + offset}
-      end
-    end)
+    case Still.Writing.IndexCache.get(cache_key) do
+      {^body, index} -> index
+      _ -> Still.Writing.IndexCache.put(cache_key, body, build_document_index(body))
+    end
+  end
+
+  defp document_index(%{body: body}) when is_binary(body), do: build_document_index(body)
+  defp document_index(_doc), do: %{words: [], passages: %{}}
+
+  defp build_document_index(body) do
+    passages =
+      body
+      |> split_lines()
+      |> stanzas()
+      |> Enum.reduce(%{}, fn %{text: text, start_line: start_line}, passages ->
+        text
+        |> split_lines()
+        |> Enum.with_index()
+        |> Enum.reduce(passages, fn {line, offset}, found ->
+          Enum.reduce(Enum.uniq(tokens(line)), found, fn word, acc ->
+            Map.put_new(acc, word, %{text: text, line: start_line + offset})
+          end)
+        end)
+      end)
+
+    %{words: Map.keys(passages), passages: passages}
   end
 
   # Keep each line ending attached to its exact source line, including CRLF.

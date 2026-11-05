@@ -1,6 +1,6 @@
 defmodule Still.Correspondence.PlaceImportTest do
-  use ExUnit.Case, async: false
-  alias Still.{Correspondence, Poems, Storage}
+  use Still.DataCase, async: false
+  alias Still.{Correspondence, LocalRecord, Repo, Poems, Storage}
   alias Still.Correspondence.PlaceImport
 
   @moduletag :tmp_dir
@@ -194,44 +194,46 @@ defmodule Still.Correspondence.PlaceImportTest do
     assert {:ok, _} = Correspondence.save_packet(location, attrs)
   end
 
-  test "a collection write lock reports failure and preserves every existing place", %{
+  test "an unavailable collection leaves existing places intact and reports the failed import", %{
     location: location,
     collection: folder
   } do
     {:ok, existing} =
       Correspondence.save_journal(location, %{name: "Keep", notes: "Exact existing notes"})
 
-    path = Path.join([folder, "correspondence", "journals", existing.id <> ".json"])
-    before = File.read!(path)
     {:ok, plan} = PlaceImport.preview(location, ~s([{"name":"New"}]))
-    lock = Path.join([folder, "correspondence", ".still-correspondence-lock"])
-    File.mkdir!(lock)
+    moved = folder <> "-moved"
+    File.rename!(folder, moved)
     assert %{imported: [], error: error} = PlaceImport.commit(plan)
     assert is_binary(error)
-    assert File.read!(path) == before
-    File.rmdir!(lock)
-    assert {:ok, [^existing]} = Correspondence.journals(location)
-    assert %{imported: ["New"], error: nil} = PlaceImport.commit(plan)
+    File.rename!(moved, folder)
+    assert {:ok, [^existing]} = Correspondence.journals(Storage.collection_location())
+    {:ok, valid_plan} = PlaceImport.preview(location, ~s([{"name":"New"}]))
+    assert %{imported: ["New"], error: nil} = PlaceImport.commit(valid_plan)
   end
 
-  test "old place JSON reads as active without rewriting; malformed flags are rejected", %{
-    location: location,
-    collection: folder
+  test "legacy shaped place data defaults to active and malformed flags are rejected", %{
+    location: location
   } do
     {:ok, journal} = Correspondence.save_journal(location, %{name: "Older Place"})
-    path = Path.join([folder, "correspondence", "journals", journal.id <> ".json"])
-    bytes = path |> File.read!() |> Jason.decode!() |> Map.delete("inactive") |> Jason.encode!()
-    File.write!(path, bytes)
+
+    row =
+      Repo.get_by!(LocalRecord, scope: location.scope, kind: "journal", record_key: journal.id)
+
+    row |> LocalRecord.changeset(%{data: Map.delete(row.data, "inactive")}) |> Repo.update!()
     assert {:ok, old} = Correspondence.journal(location, journal.id)
     refute old.inactive
-    assert File.read!(path) == bytes
-    File.write!(path, Jason.encode!(Map.put(Jason.decode!(bytes), "inactive", "false")))
+    malformed = Map.put(Map.delete(row.data, "inactive"), "inactive", "false")
+
+    Repo.get_by!(LocalRecord, scope: location.scope, kind: "journal", record_key: journal.id)
+    |> LocalRecord.changeset(%{data: malformed})
+    |> Repo.update!()
+
     assert {:error, _} = Correspondence.journal(location, journal.id)
   end
 
   test "keywords and reach import, explain literal echoes, and persist personal possibilities", %{
-    location: location,
-    collection: folder
+    location: location
   } do
     json =
       Jason.encode!([
@@ -316,21 +318,16 @@ defmodule Still.Correspondence.PlaceImportTest do
 
     assert Correspondence.pieces_to_consider(removed, [other]) == []
     assert {:ok, ^piece} = Poems.get(location, piece.id)
-    path = Path.join([folder, "correspondence", "journals", journal.id <> ".json"])
 
-    old_bytes =
-      path
-      |> File.read!()
-      |> Jason.decode!()
-      |> Map.drop(~w(keywords reach reach_note possible_piece_ids))
-      |> Jason.encode!()
+    row =
+      Repo.get_by!(LocalRecord, scope: location.scope, kind: "journal", record_key: journal.id)
 
-    File.write!(path, old_bytes)
+    legacy_data = Map.drop(row.data, ["keywords", "reach", "reach_note", "possible_piece_ids"])
+    row |> LocalRecord.changeset(%{data: legacy_data}) |> Repo.update!()
     assert {:ok, legacy} = Correspondence.journal(location, journal.id)
     assert legacy.keywords == nil
     assert legacy.reach == "unknown"
     assert legacy.possible_piece_ids == []
-    assert File.read!(path) == old_bytes
 
     for {key, value} <- [
           {"keywords", []},
@@ -338,7 +335,13 @@ defmodule Still.Correspondence.PlaceImportTest do
           {"reach_note", false},
           {"possible_piece_ids", ["bad"]}
         ] do
-      File.write!(path, Jason.encode!(Map.put(Jason.decode!(old_bytes), key, value)))
+      current =
+        Repo.get_by!(LocalRecord, scope: location.scope, kind: "journal", record_key: journal.id)
+
+      current
+      |> LocalRecord.changeset(%{data: Map.put(legacy_data, key, value)})
+      |> Repo.update!()
+
       assert {:error, _} = Correspondence.journal(location, journal.id)
     end
   end

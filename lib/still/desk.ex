@@ -88,17 +88,22 @@ defmodule Still.Desk do
   defp cursor_key(_location, %{saved: false}), do: {:ok, @local_cursor}
 
   defp cursor_key(%{configured: true, scope: scope}, %{saved: true})
-       when is_binary(scope) and byte_size(scope) == 64,
-       do: {:ok, "collection:" <> scope}
+       when is_binary(scope),
+       do:
+         if(valid_scope?(scope),
+           do: {:ok, "collection:" <> scope},
+           else: {:error, "A saved page needs a valid collection scope."}
+         )
 
   defp cursor_key(_location, %{saved: true}),
     do: {:error, "A saved page needs a configured collection."}
 
   defp saved_key(%{configured: true, scope: scope}) when is_binary(scope) do
-    if Regex.match?(~r/\A[0-9a-f]{64}\z/i, scope), do: "collection:" <> scope
+    if valid_scope?(scope), do: "collection:" <> scope
   end
 
   defp saved_key(_location), do: nil
+  defp valid_scope?(scope), do: Regex.match?(~r/\A(?:[0-9a-f]{64}|[0-9a-f-]{36})\z/i, scope)
 
   defp encode_cursor(cursor),
     do: %{"id" => cursor.id, "saved" => cursor.saved, "beside" => cursor.beside}
@@ -171,7 +176,7 @@ defmodule Still.Desk do
   defp valid_active?(@local_cursor, cursors), do: Map.has_key?(cursors, @local_cursor)
 
   defp valid_active?("collection:" <> scope = key, cursors),
-    do: Regex.match?(~r/\A[0-9a-f]{64}\z/i, scope) and Map.has_key?(cursors, key)
+    do: valid_scope?(scope) and Map.has_key?(cursors, key)
 
   defp valid_active?(_active, _cursors), do: false
 
@@ -179,7 +184,7 @@ defmodule Still.Desk do
     do: valid_encoded_cursor?(cursor)
 
   defp valid_stored_cursor?({"collection:" <> scope, %{"saved" => true} = cursor}) do
-    Regex.match?(~r/\A[0-9a-f]{64}\z/i, scope) and valid_encoded_cursor?(cursor)
+    valid_scope?(scope) and valid_encoded_cursor?(cursor)
   end
 
   defp valid_stored_cursor?(_), do: false

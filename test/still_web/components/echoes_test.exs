@@ -12,14 +12,19 @@ defmodule StillWeb.EchoesTest do
         id_prefix: "passage",
         query: "second",
         target_line: 3,
-        active_line: 2
+        active_line: 2,
+        document_id: 1
       })
 
     parsed = LazyHTML.from_fragment(html)
     lines = LazyHTML.query(parsed, "[data-authored-line]") |> Enum.map(&LazyHTML.text/1)
     assert Enum.join(lines, "\n") == body
     assert Enum.count(LazyHTML.query(parsed, "#passage-3[data-search-target=true]")) == 1
-    assert Enum.count(LazyHTML.query(parsed, "#listen-passage-2[aria-pressed=true]")) == 1
+
+    assert Enum.count(
+             LazyHTML.query(parsed, "[data-echo-line='2'].passage-focused[tabindex='0']")
+           ) == 1
+
     assert Enum.count(LazyHTML.query(parsed, "[data-authored-line] button")) == 0
     assert Enum.count(LazyHTML.query(parsed, "word")) == 0
   end

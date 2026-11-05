@@ -3,6 +3,8 @@ defmodule StillWeb.EntryLive do
 
   alias Still.Writing
   alias Still.Writing.Attention
+  alias Still.Writing.ReadingPlace
+  alias StillWeb.ReadingLinks
 
   @impl true
   def mount(_params, _session, socket) do
@@ -17,6 +19,9 @@ defmodule StillWeb.EntryLive do
      |> assign(:search_earlier, false)
      |> assign(:search_written, false)
      |> assign(:previous_reading, nil)
+     |> assign(:focused_reading, false)
+     |> assign(:reading_context, %{})
+     |> assign(:reader_return, nil)
      |> assign(:notebook_neighbors, nil)
      |> assign(:form, to_form(Writing.change_entry(Writing.new_entry())))
      |> assign(:status, :quiet)
@@ -48,69 +53,93 @@ defmodule StillWeb.EntryLive do
   end
 
   @impl true
-  def handle_params(%{"id" => id} = params, _uri, socket) do
+  def handle_params(params, uri, socket) do
+    if Map.has_key?(params, "id") or socket.assigns.live_action in [:before, :wander] do
+      Writing.with_collection_snapshot(fn -> handle_reading_params(params, uri, socket) end)
+    else
+      handle_reading_params(params, uri, socket)
+    end
+  end
+
+  defp handle_reading_params(%{"id" => id} = params, _uri, socket) do
     entry = Writing.get_entry!(id)
 
     query = Writing.search_query(params["q"])
     version = Writing.get_version(entry, params["version"])
+    focused = socket.assigns.live_action == :read
 
-    if socket.assigns.entry && socket.assigns.entry.id == entry.id && params["read"] != "1" &&
-         query == "" && !params["version"] && !socket.assigns.historical_version do
-      {:noreply, assign(socket, :page_title, Writing.opening(entry))}
-    else
-      editing = false
+    cond do
+      focused && params["from"] == "notebook" ->
+        {:noreply,
+         push_navigate(socket,
+           to: ReadingLinks.reader(entry, ReadingPlace.context(entry, params))
+         )}
 
-      if connected?(socket) do
-        Writing.remember_visit(entry)
-      end
+      socket.assigns.editing && !focused && socket.assigns.entry &&
+        socket.assigns.entry.id == entry.id && params["read"] != "1" &&
+        query == "" && !params["version"] && !socket.assigns.historical_version ->
+        {:noreply, assign(socket, :page_title, Writing.opening(entry))}
 
-      words = version || entry
+      true ->
+        editing = false
 
-      {:noreply,
-       socket
-       |> load_entry(entry, editing)
-       |> assign(:historical_version, version)
-       |> assign(
-         :page_title,
-         if(version,
-           do: "#{version.title || "Untitled"} · Earlier words",
-           else: Writing.opening(entry)
+        if connected?(socket) do
+          Writing.remember_visit(entry)
+        end
+
+        words = version || entry
+
+        {:noreply,
+         socket
+         |> assign(:focused_reading, focused)
+         |> assign(
+           :reading_context,
+           if(focused, do: ReadingPlace.context(entry, params), else: %{})
          )
-       )
-       |> assign(:version_missing, !!params["version"] && is_nil(version))
-       |> assign(:search_query, query)
-       |> assign(:search_highlights, query != "")
-       |> assign(:search_earlier, params["earlier"] == "1")
-       |> assign(:search_written, params["written"] == "1")
-       |> assign(:search_line, Writing.search_passage(words.body, query).line)
-       |> assign(:arrival, arrival(params))
-       |> assign(:checkpoint, true)
-       |> assign(:status, :quiet)
-       |> assign(:recovery_available, false)
-       |> assign(:versions_open, false)
-       |> assign(:versions, [])
-       |> assign(:stale_body, nil)
-       |> assign(:beside, if(entry.beside_id, do: Writing.get_entry(entry.beside_id)))
-       |> assign(
-         :memory,
-         nil
-       )
-       |> assign(:return_writing, Writing.current_writing())
-       |> assign(:return_beside, Writing.current_beside())
-       |> record_reading()
-       |> settle_before(entry.body)}
+         |> assign(:reader_return, if(focused, do: nil, else: ReadingPlace.last()))
+         |> load_entry(entry, editing)
+         |> assign(:historical_version, version)
+         |> assign(
+           :page_title,
+           if(version,
+             do: "#{version.title || "Untitled"} · Earlier words",
+             else: Writing.opening(entry)
+           )
+         )
+         |> assign(:version_missing, !!params["version"] && is_nil(version))
+         |> assign(:search_query, query)
+         |> assign(:search_highlights, query != "")
+         |> assign(:search_earlier, params["earlier"] == "1")
+         |> assign(:search_written, params["written"] == "1")
+         |> assign(:search_line, Writing.search_passage(words.body, query).line)
+         |> assign(:arrival, arrival(params))
+         |> assign(:checkpoint, true)
+         |> assign(:status, :quiet)
+         |> assign(:recovery_available, false)
+         |> assign(:versions_open, false)
+         |> assign(:versions, [])
+         |> assign(:stale_body, nil)
+         |> assign(:beside, if(entry.beside_id, do: Writing.get_entry(entry.beside_id)))
+         |> assign(
+           :memory,
+           nil
+         )
+         |> assign(:return_writing, Writing.current_writing())
+         |> assign(:return_beside, Writing.current_beside())
+         |> record_reading()
+         |> settle_before(entry.body)}
     end
   end
 
-  def handle_params(_params, _uri, %{assigns: %{live_action: action}} = socket)
-      when action in [:before, :wander] do
+  defp handle_reading_params(_params, _uri, %{assigns: %{live_action: action}} = socket)
+       when action in [:before, :wander] do
     case Writing.wander_entry() do
       nil -> {:noreply, push_navigate(socket, to: ~p"/?new=1")}
       entry -> {:noreply, push_navigate(socket, to: ~p"/w/#{entry.id}?read=1&cross=far")}
     end
   end
 
-  def handle_params(params, _uri, socket) do
+  defp handle_reading_params(params, _uri, socket) do
     list? = socket.assigns.live_action == :list
     beside = lookup_beside(Map.get(params, "beside"))
     waiting = if !list? && !beside && params["new"] != "1", do: Writing.current_writing()
@@ -146,7 +175,7 @@ defmodule StillWeb.EntryLive do
          |> assign(:echo_attention, nil)
          |> assign(:notebook_neighbors, nil)
          |> assign(:form, to_form(Writing.change_entry(Writing.new_entry())))
-         |> assign(:page_title, "Now")
+         |> assign(:page_title, "Write")
          |> assign(:editing, true)
          |> assign(:title_enabled, list?)
          |> assign(:list_writing, list?)
@@ -175,32 +204,38 @@ defmodule StillWeb.EntryLive do
   def handle_event("dismiss_search_highlights", _, socket),
     do: {:noreply, assign(socket, :search_highlights, false)}
 
-  def handle_event("listen_passage", %{"line" => line}, socket) do
-    case listened_passage(socket, line) do
+  def handle_event("focus_passage", %{"id" => id, "line" => line}, socket)
+      when is_binary(line) do
+    case focused_passage(socket, id, line) do
       {:ok, passage} ->
         entry = socket.assigns.entry
 
         field =
-          Writing.gravity_field(passage.text,
-            reading: true,
-            entry_id: entry.id,
-            exclude_ids: source_sibling_ids(entry),
-            previous: Enum.reject(socket.assigns.gravity_field, & &1.departing)
-          )
+          Writing.with_collection_snapshot(fn ->
+            Writing.gravity_field(passage.text,
+              reading: true,
+              entry_id: entry.id,
+              exclude_ids: source_sibling_ids(entry),
+              previous: Enum.reject(socket.assigns.gravity_field, & &1.departing)
+            )
+          end)
 
         {:noreply,
-         socket
-         |> assign(:listening_line, passage.first_line)
-         |> move_field(field, entry.id, entry.body)}
+         assign(socket,
+           listening_line: passage.first_line,
+           gravity_field: StillWeb.Echoes.immediate(field),
+           field_waiting: [],
+           field_transition: nil
+         )}
 
       :error ->
         {:noreply, socket}
     end
   end
 
-  def handle_event("listen_passage", _, socket), do: {:noreply, socket}
+  def handle_event("focus_passage", _, socket), do: {:noreply, socket}
 
-  def handle_event("listen_whole", _, socket) do
+  def handle_event("clear_passage_focus", _, socket) do
     if current_historical_reading?(socket) do
       entry = socket.assigns.entry
 
@@ -572,6 +607,7 @@ defmodule StillWeb.EntryLive do
 
   defp load_entry(socket, entry, editing) do
     list? = Writing.list_entry?(entry)
+    quiet? = socket.assigns.focused_reading and not editing
 
     socket
     |> assign(:entry, entry)
@@ -590,19 +626,36 @@ defmodule StillWeb.EntryLive do
     |> assign(:notebook_neighbors, if(editing, do: nil, else: Writing.notebook_neighbors(entry)))
     |> assign(
       :connections,
-      if(editing, do: socket.assigns.connections, else: Writing.connections(entry))
+      if(quiet?,
+        do: %{siblings: [], nearby: nil, echo: nil, far: nil},
+        else: if(editing, do: socket.assigns.connections, else: Writing.connections(entry))
+      )
     )
     |> assign(
       :companions,
-      if(editing,
+      if(editing or quiet?,
         do: [],
         else: Enum.reject(Writing.companions(entry), &(&1.id == entry.beside_id))
       )
     )
-    |> assign(:gravity_field, if(editing, do: [], else: reading_field(entry)))
+    |> assign(:gravity_field, if(editing or quiet?, do: [], else: reading_field(entry)))
   end
 
   defp record_reading(%{assigns: %{editing: true}} = socket), do: socket
+
+  defp record_reading(%{assigns: %{focused_reading: true}} = socket) do
+    socket =
+      if connected?(socket) do
+        case ReadingPlace.remember(socket.assigns.entry, socket.assigns.reading_context) do
+          {:ok, _} -> socket
+          {:error, message} -> put_flash(socket, :error, message)
+        end
+      else
+        socket
+      end
+
+    assign(socket, :previous_reading, nil)
+  end
 
   defp record_reading(socket) do
     entry = socket.assigns.entry
@@ -646,7 +699,7 @@ defmodule StillWeb.EntryLive do
     sibling_ids = Writing.source_siblings(entry) |> Enum.map(& &1.id)
 
     Writing.gravity_field(entry.body,
-      title: entry.title,
+      title: if(is_nil(entry.file_id), do: entry.title),
       list: Writing.list_entry?(entry),
       entry_id: entry.id,
       exclude_ids: sibling_ids,
@@ -655,16 +708,25 @@ defmodule StillWeb.EntryLive do
     |> Enum.map(&Map.merge(&1, %{departing: false, delay: 0}))
   end
 
+  defp current_historical_reading?(%{assigns: %{focused_reading: true}}), do: false
+
   defp current_historical_reading?(%{
          assigns: %{editing: false, historical_version: nil, entry: %{origin: "before"}}
        }),
        do: true
 
+  defp current_historical_reading?(%{
+         assigns: %{editing: false, historical_version: nil, entry: %{file_id: file_id}}
+       })
+       when is_binary(file_id),
+       do: true
+
   defp current_historical_reading?(_socket), do: false
 
-  defp listened_passage(socket, line) do
-    if current_historical_reading?(socket) do
-      with {number, ""} <- Integer.parse(to_string(line)),
+  defp focused_passage(socket, id, line) do
+    if current_historical_reading?(socket) && id == to_string(socket.assigns.entry.id) do
+      with {number, ""} <- Integer.parse(line),
+           true <- number != socket.assigns.listening_line,
            passage <-
              Enum.find(Attention.passages(socket.assigns.entry.body), fn passage ->
                passage.kind == :passage && passage.first_line == number
@@ -729,6 +791,11 @@ defmodule StillWeb.EntryLive do
 
   defp reading_path(%{origin: "now", id: id}, crossing), do: ~p"/w/#{id}?read=1&cross=#{crossing}"
   defp reading_path(%{id: id}, crossing), do: ~p"/w/#{id}?cross=#{crossing}"
+
+  defp sequence_path(entry, %{focused_reading: true, reading_context: context}),
+    do: ReadingLinks.reader(entry, Map.put(context, "version", nil))
+
+  defp sequence_path(entry, _assigns), do: ~p"/w/#{entry.id}?read=1"
 
   defp accept_list_title(attrs, socket) do
     body = Map.get(attrs, "body", "")
@@ -801,6 +868,7 @@ defmodule StillWeb.EntryLive do
       flash={@flash}
       active={
         cond do
+          @focused_reading -> "pages"
           !@editing || (@entry && @entry.origin == "before") -> "before"
           @list_writing -> "list"
           true -> "write"
@@ -828,7 +896,7 @@ defmodule StillWeb.EntryLive do
             @entry && @entry.origin == "before" -> "Before, again"
             @beside -> "Alongside these words"
             @list_writing -> "A new list"
-            true -> "Now"
+            true -> "Write"
           end}</span>
         </div>
 
@@ -899,6 +967,15 @@ defmodule StillWeb.EntryLive do
               <span class="saving-status">Saving…</span>
             </div>
             <div class="footer-actions">
+              <StillWeb.CopyText.copy_text
+                id="copy-entry-edit"
+                body={(@entry && @entry.body) || @form[:body].value || ""}
+                title={if @title_enabled && @entry, do: @entry.title, else: nil}
+                title_source={if @title_enabled, do: "explicit", else: "first_line"}
+                editing
+                body_selector="#writing-body"
+                title_selector="#writing-title"
+              />
               <button
                 id="save-writing"
                 type="submit"
@@ -922,6 +999,40 @@ defmodule StillWeb.EntryLive do
 
       <StillWeb.Echoes.field :if={@editing} fragments={@gravity_field} />
 
+      <nav
+        :if={!@editing && @entry && @focused_reading}
+        class="reading-context"
+        aria-label="Reading place"
+      >
+        <.link
+          id="reading-origin"
+          navigate={ReadingLinks.origin(%{entry: @entry, context: @reading_context})}
+          class="quiet-link"
+        >
+          {if @reading_context["from"] == "notebook", do: "Contents", else: "Back to results"}
+        </.link>
+        <span class="reader-reference">{Writing.reference_label(@entry)}</span>
+        <.link
+          id="wander-with-this"
+          navigate={ReadingLinks.wander(@entry, @reading_context)}
+          class="quiet-link"
+        >
+          Wander with this <span aria-hidden="true">↗</span>
+        </.link>
+      </nav>
+      <nav
+        :if={!@editing && !@focused_reading && @reader_return}
+        class="reading-context"
+        aria-label="Return to reading"
+      >
+        <.link
+          id="return-to-reading"
+          navigate={ReadingLinks.resume(@reader_return)}
+          class="quiet-link"
+        >
+          Back to reading · {Writing.reference_label(@reader_return.entry)}
+        </.link>
+      </nav>
       <article
         :if={!@editing && @historical_version}
         class="reading-room historical-reading"
@@ -939,9 +1050,20 @@ defmodule StillWeb.EntryLive do
             )}</time>
           </p>
           <p>You are reading an earlier version. The current words are unchanged.</p>
-          <.link navigate={~p"/w/#{@entry.id}?read=1"} class="quiet-link">Read current words</.link>
+          <.link
+            navigate={
+              if @focused_reading,
+                do: ReadingLinks.reader(@entry, Map.put(@reading_context, "version", nil)),
+                else: ~p"/w/#{@entry.id}?read=1"
+            }
+            class="quiet-link"
+          >Read current words</.link>
         </div>
-        <h1 id="reading-title" tabindex="-1" class="list-title">
+        <h1
+          id="reading-title"
+          tabindex="-1"
+          class={if @entry.file_id, do: "sr-only", else: "list-title"}
+        >
           <.highlight
             text={@historical_version.title || "Earlier words"}
             query={if @search_highlights, do: @search_query, else: ""}
@@ -956,6 +1078,14 @@ defmodule StillWeb.EntryLive do
           />
         </div>
         <div class="reading-foot">
+          <StillWeb.CopyText.copy_text
+            id="copy-entry-version"
+            body={@historical_version.body}
+            title={@historical_version.title}
+            title_source={if @historical_version.title, do: "explicit", else: "first_line"}
+            title_in_body={not is_nil(@entry.file_id)}
+          />
+          <.reader_actions :if={@focused_reading} entry={@entry} context={@reading_context} />
           <button
             :if={@search_highlights && @search_query != ""}
             id="clear-search-highlights"
@@ -964,7 +1094,7 @@ defmodule StillWeb.EntryLive do
             phx-click="dismiss_search_highlights"
           >Clear highlights</button>
           <.link
-            :if={@search_query != ""}
+            :if={@search_query != "" && !@focused_reading}
             navigate={results_path(@search_query, @search_earlier, @search_written)}
             class="quiet-link"
           >Back to results</.link>
@@ -996,13 +1126,18 @@ defmodule StillWeb.EntryLive do
         <header class="reading-heading">
           <div class="room-intro">
             <span class="room-line" aria-hidden="true"></span>
-            <span>{if @entry.origin == "before", do: "From before", else: "Written here"}</span>
+            <span>{cond do
+              @focused_reading && @entry.notebook -> "Notebook reading"
+              @focused_reading -> "Reading"
+              @entry.origin == "before" -> "From before"
+              true -> "Written here"
+            end}</span>
             <span :if={@entry.returned_at} class="return-whisper">& now</span>
           </div>
           <h1
             id="reading-title"
             tabindex="-1"
-            class={if(@entry.title, do: "list-title", else: "sr-only")}
+            class={if(@entry.title && is_nil(@entry.file_id), do: "list-title", else: "sr-only")}
           >
             <.highlight
               text={@entry.title || Writing.opening(@entry)}
@@ -1012,24 +1147,34 @@ defmodule StillWeb.EntryLive do
         </header>
         <div class="list-body" id="list-body">
           <StillWeb.Echoes.reading
-            :if={@entry.origin == "before"}
+            :if={@entry.origin == "before" || @entry.file_id}
             body={@entry.body}
             query={if @search_highlights, do: @search_query, else: ""}
             id_prefix="passage"
             target_line={@search_line}
             active_line={@listening_line}
+            document_id={@entry.id}
+            listening={!@focused_reading}
           />
           <.shaped_words
-            :if={@entry.origin != "before"}
+            :if={@entry.origin != "before" && is_nil(@entry.file_id)}
             body={@entry.body}
             query={if @search_highlights, do: @search_query, else: ""}
             id_prefix="passage"
             target_line={@search_line}
           />
         </div>
-        <StillWeb.Echoes.field fragments={@gravity_field} />
+        <StillWeb.Echoes.field fragments={@gravity_field} responsive={not is_nil(@listening_line)} />
         <.recovery recovery_available={@recovery_available} status={@status} entry_id={@entry.id} />
         <div class="reading-foot">
+          <StillWeb.CopyText.copy_text
+            id="copy-entry-reading"
+            body={@entry.body}
+            title={@entry.title}
+            title_source={if @entry.title, do: "explicit", else: "first_line"}
+            title_in_body={not is_nil(@entry.file_id)}
+          />
+          <.reader_actions :if={@focused_reading} entry={@entry} context={@reading_context} />
           <button
             :if={@search_highlights && @search_query != ""}
             id="clear-search-highlights"
@@ -1045,11 +1190,20 @@ defmodule StillWeb.EntryLive do
             class="quiet-link"
           >Back where I was</button>
           <.link
-            :if={@search_query != ""}
+            :if={@search_query != "" && !@focused_reading}
             navigate={results_path(@search_query, @search_earlier, @search_written)}
             class="quiet-link"
           >Back to results</.link>
           <button :if={@entry.origin == "before"} type="button" class="quiet-link" phx-click="edit">Change these words</button>
+          <.link
+            :if={@entry.file_id}
+            navigate={
+              if @focused_reading,
+                do: ~p"/writing/#{@entry.file_id}/edit",
+                else: ~p"/writing/#{@entry.file_id}/edit?from=wander"
+            }
+            class="quiet-link"
+          >Change these words</.link>
           <button
             :if={@entry.origin == "before"}
             id="add-to-saved-writing"
@@ -1065,7 +1219,9 @@ defmodule StillWeb.EntryLive do
           >Follow a word</.link>
           <button type="button" class="quiet-link" phx-click="toggle_versions">Earlier words</button>
           <.link
-            :if={@entry.origin == "before" && @entry.notebook}
+            :if={
+              !@focused_reading && (@entry.origin == "before" || @entry.file_id) && @entry.notebook
+            }
             id="notebook-return"
             navigate={~p"/notebooks?#{[notebook: @place.key, at: @entry.id]}" <> "#list-#{@entry.id}"}
             class="quiet-link"
@@ -1079,7 +1235,7 @@ defmodule StillWeb.EntryLive do
           <.link
             :if={@notebook_neighbors.previous}
             id="notebook-previous"
-            navigate={~p"/w/#{@notebook_neighbors.previous.id}?read=1"}
+            navigate={sequence_path(@notebook_neighbors.previous, assigns)}
             class="quiet-link"
             aria-label={"Previous List: #{Writing.opening(@notebook_neighbors.previous)}"}
           >
@@ -1090,7 +1246,7 @@ defmodule StillWeb.EntryLive do
           <.link
             :if={@notebook_neighbors.next}
             id="notebook-next"
-            navigate={~p"/w/#{@notebook_neighbors.next.id}?read=1"}
+            navigate={sequence_path(@notebook_neighbors.next, assigns)}
             class="quiet-link"
             aria-label={"Next List: #{Writing.opening(@notebook_neighbors.next)}"}
           >
@@ -1169,13 +1325,13 @@ defmodule StillWeb.EntryLive do
           </p>
         </details>
 
-        <aside :if={@beside} class="beside-room" aria-label="Written beside">
+        <aside :if={!@focused_reading && @beside} class="beside-room" aria-label="Written beside">
           <p class="section-whisper">Written beside</p>
           <.link navigate={~p"/w/#{@beside.id}"} class="beside-title">{Writing.opening(@beside)}</.link>
           <div class="threshold-body"><.shaped_words body={threshold_excerpt(@beside)} /></div>
         </aside>
 
-        <section class="drift-room" aria-label="Keep wandering">
+        <section :if={!@focused_reading} class="drift-room" aria-label="Keep wandering">
           <div
             :if={
               @connections.echo &&
@@ -1239,9 +1395,29 @@ defmodule StillWeb.EntryLive do
     """
   end
 
-  attr :recovery_available, :boolean, required: true
-  attr :status, :atom, required: true
-  attr :entry_id, :integer, default: nil
+  attr :entry, :any, required: true
+  attr :context, :map, required: true
+
+  defp reader_actions(assigns) do
+    ~H"""
+    <.link
+      id="reading-origin-bottom"
+      navigate={ReadingLinks.origin(%{entry: @entry, context: @context})}
+      class="quiet-link"
+    >
+      {if @context["from"] == "notebook", do: "Contents", else: "Back to results"}
+    </.link>
+    <.link
+      id="wander-with-this-bottom"
+      navigate={ReadingLinks.wander(@entry, @context)}
+      class="quiet-link"
+    >Wander with this</.link>
+    """
+  end
+
+  attr(:recovery_available, :boolean, required: true)
+  attr(:status, :atom, required: true)
+  attr(:entry_id, :integer, default: nil)
 
   defp recovery(assigns) do
     ~H"""
@@ -1269,8 +1445,8 @@ defmodule StillWeb.EntryLive do
     """
   end
 
-  attr :open, :boolean, required: true
-  attr :versions, :list, required: true
+  attr(:open, :boolean, required: true)
+  attr(:versions, :list, required: true)
 
   defp versions(assigns) do
     ~H"""

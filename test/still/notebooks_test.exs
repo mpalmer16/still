@@ -29,6 +29,36 @@ defmodule Still.NotebooksTest do
     assert Repo.all(RoomState) == []
   end
 
+  test "managed notebooks preserve physical labels, can be empty, and select one current notebook" do
+    attrs = %{
+      key: "Studio/Notebook 04b",
+      label: "Notebook 04b",
+      series: "Studio",
+      year: 2024,
+      number_label: "04b",
+      description: "Blue cloth cover",
+      pen: "Black fountain pen"
+    }
+
+    assert {:ok, first} = Still.Writing.Notebooks.create(attrs)
+    assert {:ok, second} = Still.Writing.Notebooks.create(%{key: "Shelf/09", label: "09"})
+    assert {:ok, _} = Still.Writing.Notebooks.choose_current(first.id)
+    assert Still.Writing.Notebooks.current().id == first.id
+    assert {:ok, _} = Still.Writing.Notebooks.choose_current(second.id)
+    assert Still.Writing.Notebooks.current().id == second.id
+    assert {:ok, _} = Still.Writing.Notebooks.choose_current(nil)
+    assert Still.Writing.Notebooks.current() == nil
+
+    empty = Writing.notebook(first.key)
+    assert empty.entries == []
+    assert empty.sections == []
+    assert empty.number_label == "04b"
+    assert empty.year == 2024
+    assert empty.description == "Blue cloth cover"
+    assert empty.pen == "Black fountain pen"
+    assert Enum.any?(Writing.notebooks(), &(&1.key == first.key and &1.count == 0))
+  end
+
   test "the whole source notebook remains ordered after living edits, beyond Find limits" do
     entries =
       for position <- Enum.reverse(0..136) do

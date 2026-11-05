@@ -29,9 +29,9 @@ defmodule Still.HistoricalSavedWritingTest do
     before = Writing.get_entry!(entry.id)
     versions = Writing.list_versions(entry)
     assert {:ok, saved} = Writing.add_to_saved_writing(location, entry.id)
-    assert saved.body == entry.body
+    assert saved.body == entry.title <> "\n\n" <> entry.body
     assert saved.title == entry.title
-    assert File.read!(saved.path) == entry.body
+    assert File.read!(saved.path) == saved.body
 
     assert saved.historical_source == %{
              "kind" => "historical_list",
@@ -41,8 +41,9 @@ defmodule Still.HistoricalSavedWritingTest do
              "source_number" => "14"
            }
 
-    metadata = File.read!(Path.join(Path.dirname(saved.path), "metadata.json"))
-    refute metadata =~ "private/import"
+    indexed = Still.Repo.get!(Still.Writing.Entry, saved.entry_id)
+    refute Jason.encode!(indexed.source) =~ "private/import"
+    refute File.exists?(Path.join(Path.dirname(saved.path), "metadata.json"))
 
     assert {:ok, edited} =
              Poems.save(location, saved, %{
@@ -58,7 +59,7 @@ defmodule Still.HistoricalSavedWritingTest do
     assert same.token == edited.token
     assert {:ok, [^same]} = Poems.list(location)
     assert {:ok, [revision]} = Poems.revisions(location, same.id)
-    assert revision.body == entry.body
+    assert revision.body == saved.body
     assert revision.title == entry.title
     assert Writing.get_entry!(entry.id) == before
     assert Writing.list_versions(entry) == versions
@@ -106,19 +107,15 @@ defmodule Still.HistoricalSavedWritingTest do
     entry: entry
   } do
     {:ok, first} = Writing.add_to_saved_writing(location, entry.id)
-    path = Path.join(Path.dirname(first.path), "metadata.json")
+    indexed = Still.Repo.get!(Still.Writing.Entry, first.entry_id)
 
-    bytes =
-      path
-      |> File.read!()
-      |> Jason.decode!()
-      |> Map.delete("historical_source")
-      |> Jason.encode!()
+    indexed
+    |> Ecto.Changeset.change(source: Map.delete(indexed.source, "historical_source"))
+    |> Still.Repo.update!()
 
-    File.write!(path, bytes)
     assert {:error, message} = Writing.add_to_saved_writing(location, entry.id)
     assert message =~ "different source"
-    assert File.read!(path) == bytes
+    assert File.read!(first.path) == first.body
     File.rename!(folder, folder <> "-offline")
     assert {:error, _} = Writing.add_to_saved_writing(location, entry.id)
     refute File.exists?(folder)

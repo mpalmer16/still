@@ -23,8 +23,24 @@ defmodule StillWeb.EntryLiveTest do
     assert html =~ "Imported words"
     assert html =~ "with their spacing"
     refute has_element?(view, "#writing-form")
+    assert has_element?(view, "#copy-entry-reading button[aria-label='Copy text']")
+
+    [payload] =
+      view
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#copy-entry-reading")
+      |> LazyHTML.attribute("data-persisted")
+
+    assert %{"body" => ^original_body, "title" => ^original_title, "title_source" => "explicit"} =
+             Jason.decode!(payload)
 
     element(view, "button", "Change these words") |> render_click()
+
+    assert has_element?(
+             view,
+             "#copy-entry-edit[data-body-selector='#writing-body'][data-title-selector='#writing-title']"
+           )
 
     revised_title = "A returned title"
     revised_body = "A changed thought\n\tkept with its branch"
@@ -37,7 +53,21 @@ defmodule StillWeb.EntryLiveTest do
     assert saved.title == revised_title
     assert saved.body == revised_body
     assert saved.returned_at
-    assert [%{title: ^original_title, body: ^original_body}] = Writing.list_versions(saved)
+
+    assert [%{title: ^original_title, body: ^original_body} = version] =
+             Writing.list_versions(saved)
+
+    {:ok, earlier, _} = live(conn, ~p"/w/#{saved.id}?read=1&version=#{version.id}")
+    assert has_element?(earlier, "#copy-entry-version button[aria-label='Copy text']")
+
+    [payload] =
+      earlier
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#copy-entry-version")
+      |> LazyHTML.attribute("data-persisted")
+
+    assert %{"body" => ^original_body, "title" => ^original_title} = Jason.decode!(payload)
   end
 
   test "opening the new Now page does not create a historical database entry", %{conn: conn} do

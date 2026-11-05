@@ -1,7 +1,8 @@
 defmodule StillWeb.WritingLive do
   use StillWeb, :live_view
-  alias Still.{Desk, Poems, Storage, Writing}
+  alias Still.{Correspondence, Desk, Poems, Storage, Writing}
   alias Still.Writing.Attention
+  alias StillWeb.ReadingLinks
 
   @impl true
   def mount(_, _, socket) do
@@ -21,8 +22,13 @@ defmodule StillWeb.WritingLive do
   end
 
   @impl true
-  def handle_params(params, _, socket) do
+  def handle_params(params, _uri, socket) do
+    Writing.with_collection_snapshot(fn -> load_params(params, socket) end, recover: true)
+  end
+
+  defp load_params(params, socket) do
     location = Storage.collection_location()
+    discovery_problem = Still.Writing.Discovery.problem(location)
     {result, resume?, beside} = opening(socket.assigns.live_action, params, location)
     if socket.assigns.gravity_timer, do: Process.cancel_timer(socket.assigns.gravity_timer)
 
@@ -43,18 +49,27 @@ defmodule StillWeb.WritingLive do
             {:error, message} -> {[], message}
           end
 
+        status = Correspondence.writing_status(location)
         cursor_problem = if editing && connected?(socket), do: remember(location, piece, beside)
 
         {:noreply,
          socket
          |> assign(
            piece: piece,
+           submission_focus: Map.get(status.focused, piece.id, false),
+           submitted: MapSet.member?(status.submitted, piece.id),
            draft: words(piece),
            location: location,
            editing: editing,
+           wander_return:
+             if(
+               socket.assigns.live_action == :edit && params["from"] == "wander" && piece.entry_id,
+               do: ReadingLinks.wander(piece.entry_id)
+             ),
+           notebooks: Writing.notebooks(),
            draft_key: draft_key(location, piece),
            dirty: false,
-           problem: problem || cursor_problem,
+           problem: problem || cursor_problem || discovery_problem,
            revisions: revisions,
            notice: nil,
            recovery_waiting: false,
@@ -63,7 +78,7 @@ defmodule StillWeb.WritingLive do
            echo_attention: if(same_editor?, do: socket.assigns.echo_attention),
            listening_line: nil,
            beside: beside,
-           page_title: if(editing, do: "Now", else: Poems.display_title(piece)),
+           page_title: if(editing, do: "Write", else: Poems.display_title(piece)),
            delete_confirm: false
          )
          |> maybe_reset_field(same_editor?)
@@ -74,8 +89,8 @@ defmodule StillWeb.WritingLive do
          assign(socket,
            piece: nil,
            location: location,
-           problem: message,
-           page_title: "Now",
+           problem: message || discovery_problem,
+           page_title: "Write",
            gravity_field: [],
            reading_echo: nil,
            editing: false
@@ -148,13 +163,29 @@ defmodule StillWeb.WritingLive do
   end
 
   @impl true
+  def handle_event(
+        "toggle_submission_focus",
+        _,
+        %{assigns: %{piece: %{token: token} = piece}} = socket
+      )
+      when is_binary(token) do
+    marked? = !socket.assigns.submission_focus
+
+    case Correspondence.set_focus(socket.assigns.location, piece.id, marked?) do
+      :ok -> {:noreply, assign(socket, submission_focus: marked?)}
+      {:error, message} -> {:noreply, put_flash(socket, :error, message)}
+    end
+  end
+
   def handle_event("writing_changed", %{"writing" => attrs}, socket) do
     draft = draft_words(attrs, socket.assigns.piece)
 
     {:noreply,
      socket
      |> assign(draft: draft, dirty: draft != words(socket.assigns.piece), notice: nil)
-     |> settle(draft.body)}
+     |> then(fn updated ->
+       if draft.body != socket.assigns.draft.body, do: settle(updated, draft.body), else: updated
+     end)}
   end
 
   def handle_event(
@@ -189,13 +220,14 @@ defmodule StillWeb.WritingLive do
 
   def handle_event("echo_attention", _, socket), do: {:noreply, socket}
 
-  def handle_event("listen_passage", %{"line" => value}, socket) do
+  def handle_event("focus_passage", %{"id" => id, "line" => value}, socket) do
     piece = socket.assigns.piece
 
     with false <- socket.assigns.editing,
-         true <- not is_nil(piece),
+         %{id: ^id} <- piece,
          true <- is_binary(value),
          {line, ""} <- Integer.parse(value),
+         true <- line != socket.assigns.listening_line,
          passage when not is_nil(passage) <-
            Enum.find(
              Attention.passages(piece.body),
@@ -205,15 +237,20 @@ defmodule StillWeb.WritingLive do
       field = Writing.saved_field(piece, passage.text, previous: previous)
 
       {:noreply,
-       socket |> assign(:listening_line, line) |> move_field(field, piece.id, piece.body)}
+       assign(socket,
+         listening_line: line,
+         gravity_field: StillWeb.Echoes.immediate(field),
+         field_waiting: [],
+         field_transition: nil
+       )}
     else
       _ -> {:noreply, socket}
     end
   end
 
-  def handle_event("listen_passage", _, socket), do: {:noreply, socket}
+  def handle_event("focus_passage", _, socket), do: {:noreply, socket}
 
-  def handle_event("listen_whole", _, socket) do
+  def handle_event("clear_passage_focus", _, socket) do
     if socket.assigns.editing do
       {:noreply, socket}
     else
@@ -237,34 +274,36 @@ defmodule StillWeb.WritingLive do
          do: params["draft_key"],
          else: socket.assigns.draft_key
 
-    case Poems.save(location, socket.assigns.piece, %{
-           body: draft.body,
-           title: blank_title(draft.title)
-         }) do
-      {:ok, piece} ->
-        target_key = draft_key(location, piece)
-        problem = remember(location, piece, socket.assigns.beside)
+    with :ok <- validate_position(draft.source_order),
+         {:ok, piece} <- Poems.save(location, socket.assigns.piece, save_attrs(draft)) do
+      target_key = draft_key(location, piece)
+      problem = remember(location, piece, socket.assigns.beside)
 
-        {:noreply,
-         socket
-         |> assign(
-           piece: piece,
-           draft: words(piece),
-           dirty: false,
-           problem: problem,
-           notice: "Saved on this Mac",
-           draft_key: target_key
-         )
-         |> push_event("file-saved", %{
-           id: piece.id,
-           token: piece.token,
-           body: piece.body,
-           title: Poems.explicit_title(piece) || "",
-           source_key: source_key,
-           target_key: target_key
-         })
-         |> finish_save(piece, params["read"] in [true, "true"])}
-
+      {:noreply,
+       socket
+       |> assign(
+         piece: piece,
+         draft: words(piece),
+         dirty: false,
+         problem: problem,
+         notice: "Saved on this Mac",
+         draft_key: target_key
+       )
+       |> push_event("file-saved", %{
+         id: piece.id,
+         token: piece.token,
+         body: piece.body,
+         title: "",
+         title_line: piece.title_line,
+         relative_path: piece.relative_path,
+         notebook_id: piece.notebook_id,
+         list_label: piece.list_label,
+         source_order: piece.source_order,
+         source_key: source_key,
+         target_key: target_key
+       })
+       |> finish_save(piece, params["read"] in [true, "true"])}
+    else
       {:error, message} ->
         {:noreply,
          assign(socket,
@@ -326,6 +365,21 @@ defmodule StillWeb.WritingLive do
   def handle_event("keep_file", _, socket),
     do: {:noreply, push_event(socket, "file-keep-saved", %{})}
 
+  def handle_event(
+        "rename_file",
+        %{"file" => %{"name" => name}},
+        %{assigns: %{editing: false}} = socket
+      ) do
+    case Poems.rename(socket.assigns.location, socket.assigns.piece, name) do
+      {:ok, piece} ->
+        {:noreply,
+         assign(socket, piece: piece, draft: words(piece), problem: nil, notice: "File renamed")}
+
+      {:error, message} ->
+        {:noreply, assign(socket, problem: message)}
+    end
+  end
+
   def handle_event("request_delete", _, socket),
     do: {:noreply, assign(socket, delete_confirm: true)}
 
@@ -353,7 +407,12 @@ defmodule StillWeb.WritingLive do
 
   def handle_event("confirm_delete", _, socket), do: {:noreply, socket}
 
-  defp finish_save(socket, piece, true), do: push_navigate(socket, to: ~p"/writing/#{piece.id}")
+  defp finish_save(socket, piece, true),
+    do: push_navigate(socket, to: socket.assigns.wander_return || ~p"/writing/#{piece.id}")
+
+  defp finish_save(%{assigns: %{wander_return: path}} = socket, piece, false)
+       when is_binary(path),
+       do: push_patch(socket, to: ~p"/writing/#{piece.id}/edit?from=wander", replace: true)
 
   defp finish_save(socket, piece, false),
     do: push_patch(socket, to: ~p"/writing/#{piece.id}/edit", replace: true)
@@ -377,6 +436,7 @@ defmodule StillWeb.WritingLive do
           list: true,
           exclude_ids:
             Writing.historical_source_ids(socket.assigns.piece) ++
+              List.wrap(Map.get(socket.assigns.piece, :entry_id)) ++
               if(socket.assigns.beside, do: [socket.assigns.beside.id], else: [])
         )
 
@@ -451,9 +511,71 @@ defmodule StillWeb.WritingLive do
     end
   end
 
-  defp words(piece), do: %{body: piece.body, title: Poems.explicit_title(piece) || ""}
-  defp blank_title(""), do: nil
-  defp blank_title(title), do: title
+  defp words(piece) do
+    %{
+      body: piece.body,
+      title: "",
+      title_line:
+        if(Map.get(piece, :title_needs_review),
+          do: "",
+          else: to_string(Map.get(piece, :title_line) || "")
+        ),
+      relative_path: Map.get(piece, :relative_path) || "",
+      notebook_id: to_string(draft_notebook_id(piece) || ""),
+      list_label: Map.get(piece, :list_label) || "",
+      source_order: to_string(Map.get(piece, :source_order) || "")
+    }
+  end
+
+  defp draft_notebook_id(piece) do
+    case {Map.get(piece, :notebook_id), Map.get(piece, :token)} do
+      {id, _token} when is_integer(id) ->
+        id
+
+      {_, nil} ->
+        case Writing.current_notebook() do
+          %{id: id} -> id
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp validate_position(value) do
+    position = integer_or_nil(value)
+
+    if value in [nil, ""] or
+         (is_integer(position) and position >= 0 and position <= 9_223_372_036_854_775_807),
+       do: :ok,
+       else: {:error, "Enter a whole number of zero or more for the notebook position."}
+  end
+
+  defp save_attrs(draft) do
+    %{
+      body: draft.body,
+      title_line: integer_or_nil(draft.title_line),
+      relative_path: blank_nil(draft.relative_path),
+      notebook_id: integer_or_nil(draft.notebook_id),
+      list_label: blank_nil(draft.list_label),
+      source_order: integer_or_nil(draft.source_order)
+    }
+  end
+
+  defp blank_nil(""), do: nil
+  defp blank_nil(value), do: value
+
+  defp integer_or_nil(value) when is_integer(value), do: value
+
+  defp integer_or_nil(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {number, ""} -> number
+      _ -> nil
+    end
+  end
+
+  defp integer_or_nil(_), do: nil
 
   defp draft_words(attrs, piece) do
     body = Map.get(attrs, "body", piece.body)
@@ -463,7 +585,15 @@ defmodule StillWeb.WritingLive do
         do: piece.body,
         else: body
 
-    %{body: body, title: Map.get(attrs, "title", Poems.explicit_title(piece) || "")}
+    Map.merge(words(piece), %{
+      body: body,
+      title: "",
+      title_line: Map.get(attrs, "title_line", Map.get(words(piece), :title_line, "")),
+      relative_path: Map.get(attrs, "relative_path", Map.get(words(piece), :relative_path, "")),
+      notebook_id: Map.get(attrs, "notebook_id", Map.get(words(piece), :notebook_id, "")),
+      list_label: Map.get(attrs, "list_label", Map.get(words(piece), :list_label, "")),
+      source_order: Map.get(attrs, "source_order", Map.get(words(piece), :source_order, ""))
+    })
   end
 
   defp draft_key(location, %{token: nil}), do: "still:poem-draft:#{location.draft_scope}:new"
@@ -502,8 +632,13 @@ defmodule StillWeb.WritingLive do
         <div class="room-intro">
           <span class="room-line" aria-hidden="true"></span><span>{if @beside,
             do: "Alongside these words",
-            else: "Now"}</span>
+            else: "Write"}</span>
         </div>
+        <p :if={@submitted} id="submitted-writing-note" class="file-note" role="status">
+          This piece has been sent. Saving edits creates a new version. The exact words sent are kept in <.link navigate={
+            ~p"/correspondence/writing/#{@piece.id}"
+          }>Correspondence</.link>.
+        </p>
         <p :if={@problem} id="file-problem" role="alert" class="file-note">{@problem}</p>
         <p :if={@recovery_problem} id="file-recovery-problem" role="alert" class="file-note">
           {@recovery_problem}
@@ -540,21 +675,7 @@ defmodule StillWeb.WritingLive do
             phx-hook="WritingFocus"
             class="file-page"
           >
-            <label for="file-writing-title" class="sr-only">Title (optional)</label>
-            <input
-              id="file-writing-title"
-              name="writing[title]"
-              value={@draft.title}
-              class="title-input"
-              placeholder={
-                if @draft.body == "",
-                  do: "A title, if you like.",
-                  else: Poems.display_title(%{title: nil, body: @draft.body})
-              }
-              title="Add a title, or leave this empty to use the first line."
-              autocomplete="off"
-              phx-debounce="700"
-            />
+            <input id="file-writing-title" name="writing[title]" type="hidden" value="" />
             <label for="file-writing-body" class="sr-only">Writing</label>
             <textarea
               id="file-writing-body"
@@ -576,10 +697,108 @@ defmodule StillWeb.WritingLive do
               phx-debounce="700"
             >{"\n" <> @draft.body}</textarea>
           </div>
+          <details
+            id="file-page-details"
+            class="file-location file-writing-details"
+            phx-mounted={JS.ignore_attributes(["open"])}
+          >
+            <summary>Page details</summary>
+            <p :if={@piece.title_needs_review} class="file-note" role="alert">
+              The text at the old title line changed outside Still. Choose a line again if you want one marked as the title.
+            </p>
+            <div class="still-form-grid">
+              <div class="still-field still-field-wide">
+                <label for="file-relative-path">File name or relative path</label>
+                <input
+                  id="file-relative-path"
+                  name="writing[relative_path]"
+                  value={@draft.relative_path}
+                  placeholder="Uses the title or first nonblank line"
+                  autocomplete="off"
+                  readonly={not is_nil(@piece.token)}
+                />
+                <p :if={@piece.token}>
+                  To correct the file name, save your words and choose Read, then open Text file and title meaning.
+                </p>
+              </div>
+              <div class="still-field still-field-wide">
+                <label for="file-title-line">Title meaning</label>
+                <p>Mark a line already in your writing as the title. The words stay in the text.</p>
+                <input
+                  id="file-title-line"
+                  name="writing[title_line]"
+                  type="number"
+                  min="1"
+                  value={@draft.title_line}
+                  placeholder="No title line"
+                />
+                <button
+                  id="save-title-meaning"
+                  type="submit"
+                  name="record_title_meaning"
+                  value="true"
+                  class="quiet-link"
+                >Save title meaning</button>
+              </div>
+              <div class="still-field still-field-wide">
+                <label for="file-notebook">Notebook</label>
+                <select
+                  id="file-notebook"
+                  name="writing[notebook_id]"
+                  disabled={not is_nil(@piece.token)}
+                >
+                  <option value="">No notebook</option>
+                  <option
+                    :for={book <- Enum.filter(@notebooks, &Map.get(&1, :managed, false))}
+                    value={book.id}
+                    selected={to_string(@draft.notebook_id) == to_string(book.id)}
+                  >
+                    {book.label}
+                  </option>
+                </select>
+                <p :if={@piece.token} class="section-whisper">
+                  To change notebooks, move this file into another notebook folder in Finder, then refresh Saved writing.
+                </p>
+              </div>
+              <div class="still-field">
+                <label for="file-list-label">List number</label>
+                <input
+                  id="file-list-label"
+                  name="writing[list_label]"
+                  value={@draft.list_label}
+                  placeholder="Next number on Save"
+                />
+              </div>
+              <p class="file-note">
+                Leave the List number empty to follow the notebook’s numbering choice. Numbered notebooks use the next number; unnumbered collections keep the title alone. You can enter a different number, including a suffix such as 12a. Changing a saved List number also updates its filename.
+              </p>
+              <div class="still-field">
+                <label for="file-source-order">Position in notebook</label>
+                <input
+                  id="file-source-order"
+                  name="writing[source_order]"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  phx-debounce="blur"
+                  value={@draft.source_order}
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+          </details>
           <p id="file-keyboard-hint" class="sr-only">
             Tab indents. Shift+Tab removes an indent. Escape leaves the editor for the page controls. Command or Control+S saves; Command or Control+Enter saves and reads.
           </p>
           <footer class="writing-footer file-writing-footer">
+            <StillWeb.CopyText.copy_text
+              id="copy-file-edit"
+              body={@piece.body}
+              title={Poems.explicit_title(@piece)}
+              title_source={Map.get(@piece, :title_source) || "first_line"}
+              title_in_body
+              editing
+              body_selector="#file-writing-body"
+            />
             <span id="file-save-status" role="status" class="save-message">{cond do
               @notice -> @notice
               @dirty -> "Local draft · Save keeps these changes"
@@ -587,7 +806,15 @@ defmodule StillWeb.WritingLive do
               true -> "Local draft · not saved as a file"
             end}</span>
             <div class="footer-actions">
-              <button id="save-file" type="submit" class="quiet-link">Save</button>
+              <.link
+                :if={@wander_return}
+                id="back-to-wander"
+                navigate={@wander_return}
+                class="quiet-link"
+              >Back to Wander</.link>
+              <button id="save-file" type="submit" class="quiet-link">{if @submitted && @dirty,
+                do: "Save new version",
+                else: "Save"}</button>
               <button id="new-file" type="button" class="quiet-link">New</button>
               <.link id="open-saved-writing" navigate={~p"/writing"} class="quiet-link">Saved writing</.link>
               <button
@@ -597,10 +824,16 @@ defmodule StillWeb.WritingLive do
                 name="read"
                 value="true"
                 class="quiet-link"
-              >Read</button>
+              >{if @wander_return, do: "Save & return to Wander", else: "Read"}</button>
             </div>
           </footer>
         </.form>
+        <.submission_mark
+          :if={@piece.token}
+          marked={@submission_focus}
+          piece_id={@piece.id}
+          submitted={@submitted}
+        />
         <p :if={!@location.configured} id="file-local-only" class="file-note file-storage-note">
           This page is kept only in this browser or Mac profile.
           <.link navigate={~p"/storage"}>Choose a collection folder</.link>
@@ -612,7 +845,13 @@ defmodule StillWeb.WritingLive do
         <details class="file-location" id="file-save-destination">
           <summary>Save location</summary>
           <p :if={@location.configured}>
-            <code :if={@piece.path}>{@piece.path}</code><span :if={!@piece.path}>The writing will be saved in a folder named for its title inside <code>{Path.join(@location.folder, "poems")}</code>.</span>
+            <code :if={@piece.path}>{@piece.path}</code><span :if={!@piece.path}>The writing will be saved in <code>{@location.folder}</code>{if @draft.relative_path !=
+                                                                                                                                                   "",
+                                                                                                                                                 do:
+                                                                                                                                                   " as " <>
+                                                                                                                                                     @draft.relative_path,
+                                                                                                                                                 else:
+                                                                                                                                                   " with a name chosen on Save"}.</span>
           </p>
           <p :if={!@location.configured}>No collection folder is chosen.</p>
           <.link navigate={~p"/storage"} class="quiet-link">Storage &amp; Backups</.link>
@@ -632,17 +871,26 @@ defmodule StillWeb.WritingLive do
       </div>
       <StillWeb.Echoes.field :if={@piece && @editing} fragments={@gravity_field} />
       <article :if={@piece && !@editing} class="reading-room file-reading">
-        <h1 class="file-title">{Poems.display_title(@piece)}</h1>
+        <h1 class="sr-only">Saved writing</h1>
         <div id="file-text" class="file-lines">
           <StillWeb.Echoes.reading
             body={@piece.body}
+            document_id={@piece.id}
             id_prefix="file-passage"
             active_line={@listening_line}
           />
         </div>
-        <StillWeb.Echoes.field :if={@listening_line} fragments={@gravity_field} />
+        <StillWeb.Echoes.field :if={@listening_line} fragments={@gravity_field} responsive />
         <p :if={@piece.body == ""} id="file-empty" class="file-note">An empty page, kept here.</p>
+        <.submission_mark marked={@submission_focus} piece_id={@piece.id} submitted={@submitted} />
         <div class="file-reading-actions">
+          <StillWeb.CopyText.copy_text
+            id="copy-file-reading"
+            body={@piece.body}
+            title={@piece.title}
+            title_source={Map.get(@piece, :title_source) || "first_line"}
+            title_in_body
+          />
           <.link id="edit-file" navigate={~p"/writing/#{@piece.id}/edit"} class="quiet-link">Change these words</.link>
           <.link navigate={~p"/writing"} class="quiet-link">Saved writing</.link>
           <button id="delete-file" phx-click="request_delete" class="quiet-link">Delete</button>
@@ -680,8 +928,29 @@ defmodule StillWeb.WritingLive do
           <button phx-click="cancel_delete" class="quiet-link">Cancel</button>
         </section>
         <p :if={@problem} id="file-problem" class="file-note" role="alert">{@problem}</p>
-        <details class="file-location">
-          <summary>Text file</summary><code>{@piece.path}</code>
+        <details id="file-title-meaning" class="file-location">
+          <summary>Text file and title meaning</summary><code>{@piece.path}</code>
+          <.form for={%{}} as={:file} id="rename-file-form" phx-submit="rename_file">
+            <label for="rename-file-name">File name</label>
+            <input
+              id="rename-file-name"
+              name="file[name]"
+              value={Path.basename(@piece.relative_path)}
+              required
+            />
+            <button id="rename-file" type="submit" class="quiet-link">Rename file</button>
+            <p>
+              The name changes within this folder. Your words, List number, and earlier versions stay with it.
+            </p>
+          </.form>
+          <p :if={@notice} role="status">{@notice}</p>
+          <p :if={@piece.title_line && !@piece.title_needs_review}>
+            Line {@piece.title_line} in the text is marked as its title. The line remains in the writing.
+          </p>
+          <p :if={@piece.title_line && @piece.title_needs_review}>
+            The text at line {@piece.title_line} changed outside Still. Review the line number and save its title meaning again.
+          </p>
+          <p :if={!@piece.title_line}>No line is marked as the title.</p>
           <p :if={@piece.historical_source} id="historical-writing-source">
             {historical_source_label(@piece.historical_source)}. The original is preserved separately.
           </p>
@@ -689,9 +958,7 @@ defmodule StillWeb.WritingLive do
         <section :if={@revisions != []} id="file-revisions" class="file-history">
           <h2>Earlier words</h2>
           <details :for={revision <- @revisions} id={"file-revision-#{revision.id}"}>
-            <summary>{date(revision.created_at)}</summary><h3 :if={revision.title}>
-              {revision.title}
-            </h3>
+            <summary>{date(revision.created_at)}</summary>
             <div class="file-lines">{revision.body}</div>
           </details>
         </section>
@@ -703,8 +970,13 @@ defmodule StillWeb.WritingLive do
   defp historical_source_label(source) do
     [
       "From the historical List “#{source["title"] || "Untitled"}”",
-      if(source["notebook"], do: String.replace(source["notebook"], "/", " · ")),
-      if(source["source_number"], do: "source " <> source["source_number"])
+      if(source["notebook"],
+        do:
+          Writing.Geography.reference_label(
+            Writing.geography(%{origin: "before", notebook: source["notebook"]}),
+            source["source_number"]
+          )
+      )
     ]
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" · ")

@@ -96,4 +96,43 @@ defmodule Still.SearchTest do
     assert length(Enum.uniq_by(results, & &1.id)) == 94
     assert length(Writing.find_entries(query: "needle", limit: 100)) == 47
   end
+
+  test "derived folded text refreshes when current or earlier words change at the same timestamp" do
+    {:ok, entry} = Writing.save_entry(nil, "currentword opening")
+    assert [%{entry: %{id: id}}] = Writing.find_entries(query: "currentword")
+    assert id == entry.id
+    original_updated_at = entry.updated_at
+
+    Repo.update_all(from(e in Still.Writing.Entry, where: e.id == ^entry.id),
+      set: [body: "replacementword opening"]
+    )
+
+    assert Repo.get!(Still.Writing.Entry, entry.id).updated_at == original_updated_at
+    assert Writing.find_entries(query: "currentword") == []
+    assert [%{entry: %{id: id}}] = Writing.find_entries(query: "replacementword")
+    assert id == entry.id
+
+    {:ok, current} = Writing.save_entry(nil, "presentday phrase")
+
+    {:ok, version} =
+      Repo.insert(%Version{
+        entry_id: current.id,
+        title: "Past title",
+        body: "earlierword remains"
+      })
+
+    assert [%{version: %{id: found_version}}] =
+             Writing.find_entries(query: "earlierword", earlier: true)
+
+    Repo.update_all(from(v in Version, where: v.id == ^version.id),
+      set: [body: "revisedword remains"]
+    )
+
+    assert Writing.find_entries(query: "earlierword", earlier: true) == []
+
+    assert [%{entry: %{id: entry_id}, version: %{id: version_id}}] =
+             Writing.find_entries(query: "revisedword", earlier: true)
+
+    assert {entry_id, version_id, found_version} == {current.id, version.id, version.id}
+  end
 end

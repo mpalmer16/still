@@ -1,6 +1,6 @@
 defmodule Still.Correspondence.PlaceIconsTest do
-  use ExUnit.Case, async: false
-  alias Still.{Correspondence, Storage}
+  use Still.DataCase, async: false
+  alias Still.{Correspondence, LocalRecord, Repo, Storage}
   alias Still.Correspondence.{Icons, IconFetcher, PlaceImport}
 
   @png Base.decode64!(
@@ -59,16 +59,16 @@ defmodule Still.Correspondence.PlaceIconsTest do
                journal.token
              )
 
-    path = Path.join([folder, "correspondence", "journals", journal.id <> ".json"])
+    row =
+      Repo.get_by!(LocalRecord, scope: location.scope, kind: "journal", record_key: journal.id)
 
-    bytes =
-      File.read!(path) |> Jason.decode!() |> Map.drop(~w(description icon_url)) |> Jason.encode!()
+    row
+    |> LocalRecord.changeset(%{data: Map.drop(row.data, ["description", "icon_url"])})
+    |> Repo.update!()
 
-    File.write!(path, bytes)
     assert {:ok, legacy} = Correspondence.journal(location, journal.id)
     assert legacy.description == nil
     assert legacy.icon_url == nil
-    assert File.read!(path) == bytes
     assert Icons.candidates(legacy) == ["https://review.example/favicon.ico"]
 
     for attrs <- [
@@ -81,8 +81,8 @@ defmodule Still.Correspondence.PlaceIconsTest do
     end
   end
 
-  test "icons download once, fall back to favicon, and travel with the collection without changing journals",
-       %{location: location, folder: folder, root: root} do
+  test "icons download once and keep their bytes in the scoped database cache",
+       %{location: location, root: root, folder: folder} do
     {:ok, journal} =
       Correspondence.save_journal(location, %{
         name: "Synthetic",
@@ -90,8 +90,6 @@ defmodule Still.Correspondence.PlaceIconsTest do
         website: "https://review.example/about"
       })
 
-    path = Path.join([folder, "correspondence", "journals", journal.id <> ".json"])
-    before = File.read!(path)
     parent = self()
 
     fetcher = fn url ->
@@ -106,21 +104,30 @@ defmodule Still.Correspondence.PlaceIconsTest do
     assert_received {:fetch, "https://review.example/logo.png"}
     assert_received {:fetch, "https://review.example/favicon.ico"}
     assert Icons.ensure(location, journal, fn _ -> flunk("must use local copy") end) == uri
-    assert File.read!(path) == before
     assert {:ok, ^journal} = Correspondence.journal(location, journal.id)
-    # A whole-collection copy includes the verified image without any network access.
-    copy = Path.join(root, "copied")
-    {:ok, _} = File.cp_r(folder, copy)
-    {:ok, _} = Storage.set_folder(copy)
-    copied_location = Storage.collection_location()
-    {:ok, copied} = Correspondence.journal(copied_location, journal.id)
+    key = journal.id <> ":" <> Icons.source_key(journal)
+    cached = Repo.get_by!(LocalRecord, scope: location.scope, kind: "icon", record_key: key)
+    assert cached.bytes == @png
+    assert Icons.cached(location, journal) == {:ok, uri}
+    {:ok, blank} = Correspondence.save_journal(location, %{name: "No icon"})
 
-    assert Icons.ensure(copied_location, copied, fn _ -> flunk("copied cache must be offline") end) ==
-             uri
+    assert Icons.cached_many(location, [journal, blank]) == %{
+             journal.id => {:ok, uri},
+             blank.id => :missing
+           }
+
+    refute File.exists?(Path.join(folder, "correspondence"))
+
+    # A distinct writer-selected folder has a distinct local database scope.
+    other_folder = Path.join(root, "other")
+    File.mkdir_p!(other_folder)
+    {:ok, _} = Storage.set_folder(other_folder)
+    other_location = Storage.collection_location()
+    assert Icons.cached(other_location, journal) == :missing
   end
 
   test "offline and unsafe images are optional, retry later, and URL changes invalidate the cache",
-       %{location: location, folder: folder} do
+       %{location: location} do
     {:ok, journal} =
       Correspondence.save_journal(location, %{
         name: "Synthetic",
@@ -145,13 +152,10 @@ defmodule Still.Correspondence.PlaceIconsTest do
 
     assert Icons.cached(location, edited) == :missing
     assert Icons.ensure(location, edited, fn _ -> {:ok, %{bytes: @png}} end)
-    # Tampering fails the content hash rather than displaying changed bytes.
-    [cache_path] =
-      Path.wildcard(Path.join([folder, "correspondence", "icons", "*.json"]))
-      |> Enum.filter(fn path -> Map.has_key?(Jason.decode!(File.read!(path)), "data") end)
-
-    cache = Jason.decode!(File.read!(cache_path)) |> Map.put("sha256", "wrong")
-    File.write!(cache_path, Jason.encode!(cache))
+    # Tampering with stored bytes fails the content hash rather than displaying changed bytes.
+    cache_key = edited.id <> ":" <> Icons.source_key(edited)
+    row = Repo.get_by!(LocalRecord, scope: location.scope, kind: "icon", record_key: cache_key)
+    row |> LocalRecord.changeset(%{bytes: "changed"}) |> Repo.update!()
     assert Icons.cached(location, edited) == :missing
     assert {:error, _} = IconFetcher.raster(String.duplicate("x", 262_145))
     assert {:error, _} = IconFetcher.raster("<html>error</html>")
@@ -165,6 +169,7 @@ defmodule Still.Correspondence.PlaceIconsTest do
       })
 
     assert Icons.ensure(location, journal, fn _ -> {:error, :offline} end) == nil
+    assert Icons.cached_many(location, [journal]) == %{journal.id => :unavailable}
 
     assert :ok =
              Correspondence.write_icon_cache(location, journal, %{
@@ -182,8 +187,11 @@ defmodule Still.Correspondence.PlaceIconsTest do
     assert Icons.cached(location, blank) == :missing
   end
 
-  test "late downloads cannot write after a source or collection changes, and symlinks are refused",
-       %{location: location, folder: folder, root: root} do
+  test "late downloads cannot write after a source or collection changes", %{
+    location: location,
+    folder: folder,
+    root: root
+  } do
     {:ok, journal} =
       Correspondence.save_journal(location, %{
         name: "Synthetic",
@@ -203,7 +211,15 @@ defmodule Still.Correspondence.PlaceIconsTest do
     end
 
     assert Icons.ensure(location, journal, changed) == nil
-    refute File.exists?(Path.join([folder, "correspondence", "icons"]))
+
+    refute not is_nil(
+             Repo.one(
+               Ecto.Query.from(r in LocalRecord,
+                 where: r.scope == ^location.scope and r.kind == "icon"
+               )
+             )
+           )
+
     {:ok, current} = Correspondence.journal(location, journal.id)
     elsewhere = Path.join(root, "elsewhere")
     File.mkdir_p!(elsewhere)
@@ -215,12 +231,7 @@ defmodule Still.Correspondence.PlaceIconsTest do
 
     assert Icons.ensure(location, current, switch) == nil
     assert File.ls!(elsewhere) == []
-    {:ok, _} = Storage.set_folder(folder)
-    current_location = Storage.collection_location()
-    File.ln_s!(elsewhere, Path.join([folder, "correspondence", "icons"]))
-    assert Icons.ensure(current_location, current, fn _ -> {:ok, %{bytes: @png}} end) == nil
-    assert File.ls!(elsewhere) == []
-    assert {:ok, _} = Correspondence.journal(current_location, journal.id)
+    refute File.exists?(Path.join(folder, "correspondence"))
   end
 
   test "fetches only pinned public addresses, including redirects, and treats URL text as data" do

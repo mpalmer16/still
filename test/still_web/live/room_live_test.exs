@@ -138,7 +138,7 @@ defmodule StillWeb.RoomLiveTest do
            )
 
     assert has_element?(view, "#landscape-index[href='/notebooks']", "All notebooks")
-    assert has_element?(view, "#landscape-now[href='/']", "Now")
+    assert has_element?(view, "#landscape-now[href='/']", "Write")
     refute render(view) =~ "Lists 8"
     refute render(view) =~ "Early Notebooks/Lists 3"
     assert Writing.get_entry!(now.id).body == "The page in the room"

@@ -2,7 +2,8 @@ defmodule StillWeb.ArchiveLiveTest do
   use StillWeb.ConnCase
   import Phoenix.LiveViewTest
 
-  alias Still.Writing
+  alias Still.{Repo, Storage, Writing}
+  alias Still.Writing.CollectionLock
 
   test "pages can be found by a phrase and opened", %{conn: conn} do
     {:ok, matched} = Writing.save_entry(nil, "An imaginary quartet played in the cellar")
@@ -19,7 +20,7 @@ defmodule StillWeb.ArchiveLiveTest do
 
     assert has_element?(
              view,
-             "a[href^='/w/#{matched.id}?'][href*='q=quartet'][href$='#passage-1']"
+             "a[href^='/read/#{matched.id}?'][href*='q=quartet'][href$='#passage-1']"
            )
   end
 
@@ -53,8 +54,8 @@ defmodule StillWeb.ArchiveLiveTest do
 
     assert has_element?(
              found,
-             ".entry-row[href^='/w/#{entry.id}?'] .entry-notebook",
-             "Early Notebooks · Lists 3 · source 14"
+             ".entry-row[href^='/read/#{entry.id}?'] .entry-notebook",
+             "Early/Notebook 3, No. 14"
            )
 
     assert has_element?(found, ".entry-date", "from before")
@@ -65,14 +66,60 @@ defmodule StillWeb.ArchiveLiveTest do
 
     assert has_element?(
              earlier,
-             ".entry-row[href*='version=#{version.id}'] .entry-notebook",
-             "Early Notebooks · Lists 3 · source 14"
+             ".entry-row[href^='/read/#{entry.id}?'][href*='version=#{version.id}'] .entry-notebook",
+             "Early/Notebook 3, No. 14"
            )
 
     assert has_element?(
              earlier,
-             ".entry-row[href*='version=#{version.id}'] .earlier-label",
+             ".entry-row[href^='/read/#{entry.id}?'][href*='version=#{version.id}'] .earlier-label",
              "Earlier words"
            )
+  end
+
+  @tag :tmp_dir
+  test "Find reports collection lock errors, then retries the same search", %{
+    conn: conn,
+    tmp_dir: root
+  } do
+    folder = Path.join(root, "writing")
+    File.mkdir_p!(folder)
+    File.write!(Path.join(folder, "quartet.md"), "An imaginary quartet played in the cellar.")
+    assert {:ok, _} = Storage.set_folder(folder)
+
+    parent = self()
+
+    owner =
+      spawn(fn ->
+        result =
+          CollectionLock.with_lock(Repo.config()[:database], fn ->
+            send(parent, :collection_lock_held)
+
+            receive do
+              :release -> :released
+            end
+          end)
+
+        send(parent, {:collection_lock_released, result})
+      end)
+
+    on_exit(fn -> if Process.alive?(owner), do: Process.exit(owner, :kill) end)
+    assert_receive :collection_lock_held
+
+    {:ok, view, _html} = live(conn, ~p"/pages?q=quartet")
+
+    assert has_element?(view, "#search-collection-problem[role=alert]", "Try again")
+    assert has_element?(view, "#search-collection-problem", "updating this collection")
+    refute has_element?(view, ".entry-row")
+    refute has_element?(view, ".archive-empty")
+    refute has_element?(view, "#search-status", "No matches.")
+
+    send(owner, :release)
+    assert_receive {:collection_lock_released, :released}
+
+    view |> element("#search-collection-problem button") |> render_click()
+
+    assert has_element?(view, ".entry-row", "imaginary quartet")
+    refute has_element?(view, "#search-collection-problem")
   end
 end

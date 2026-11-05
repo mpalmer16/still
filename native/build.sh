@@ -8,7 +8,6 @@ still_display_name="${STILL_BUNDLE_DISPLAY_NAME:-Still}"
 still_executable_name="${STILL_BUNDLE_EXECUTABLE:-Still}"
 still_native_port="${STILL_NATIVE_PORT:-4040}"
 still_native_build="$still_project/_build/native_macos"
-still_data_directory="${STILL_DATA_DIRECTORY:-$still_project/data}"
 cd "$still_project"
 
 if [[ ! "$still_bundle_identifier" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then
@@ -54,11 +53,11 @@ swiftc -swift-version 5 -warnings-as-errors -O -module-cache-path "$still_native
 iconutil -c icns "$still_native_build/Still.iconset" -o "$still_bundle/Contents/Resources/Still.icns"
 python3 native/package_runtime.py "$still_bundle"
 
-python3 - "$still_bundle" "$still_data_directory" "$still_bundle_identifier" "$still_display_name" "$still_executable_name" "$still_native_port" <<'PY'
+python3 - "$still_bundle" "$still_bundle_identifier" "$still_display_name" "$still_executable_name" "$still_native_port" <<'PY'
 import plistlib,sys,platform
 from pathlib import Path
-bundle, data = Path(sys.argv[1]), str(Path(sys.argv[2]).resolve())
-identifier, display_name, executable, port = sys.argv[3:]
+bundle = Path(sys.argv[1])
+identifier, display_name, executable, port = sys.argv[2:]
 with (bundle/'Contents/Info.plist').open('wb') as f:
     plistlib.dump({
       'CFBundleName':display_name, 'CFBundleDisplayName':display_name,
@@ -68,7 +67,6 @@ with (bundle/'Contents/Info.plist').open('wb') as f:
       'CFBundleIconFile':'Still.icns',
       'NSHighResolutionCapable':True, 'NSPrincipalClass':'NSApplication',
       'NSAppTransportSecurity': {'NSAllowsLocalNetworking':True},
-      **({'StillLegacyDataDirectory':data} if (Path(data)/'still.db').is_file() else {}),
       'StillNativePort':str(int(port)),
     },f)
 PY

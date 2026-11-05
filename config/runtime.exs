@@ -68,6 +68,7 @@ if config_env() == :prod do
 
   host = System.get_env("PHX_HOST") || "localhost"
   native? = System.get_env("STILL_NATIVE") == "true"
+  config :still, :automatic_backup, native? and System.get_env("PHX_SERVER") == "true"
 
   config :still, StillWeb.Endpoint,
     url: [

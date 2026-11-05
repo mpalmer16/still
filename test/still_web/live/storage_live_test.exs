@@ -28,6 +28,30 @@ defmodule StillWeb.StorageLiveTest do
     assert render_click(view, "backup") =~ "Choose a backup folder"
   end
 
+  test "native Storage page routes writing-folder changes through the recovery-aware File menu",
+       %{
+         conn: conn,
+         folder: folder
+       } do
+    previous = Application.get_env(:still, :native_control_token)
+    Application.put_env(:still, :native_control_token, "synthetic-native-token")
+
+    try do
+      {:ok, view, _} = live(conn, ~p"/storage")
+      refute has_element?(view, "#backup-folder-form")
+      assert has_element?(view, "#backup-folder-heading", "Writing folder")
+
+      assert render_click(view, "set_folder", %{storage: %{folder: folder}}) =~
+               "Use File → Choose Writing Folder"
+
+      assert Storage.status().folder == nil
+    after
+      if previous,
+        do: Application.put_env(:still, :native_control_token, previous),
+        else: Application.delete_env(:still, :native_control_token)
+    end
+  end
+
   test "selection persists, can change and clear, and leaves Now and its revisions alone", %{
     conn: conn,
     folder: folder,

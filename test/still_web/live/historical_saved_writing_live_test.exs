@@ -31,23 +31,25 @@ defmodule StillWeb.HistoricalSavedWritingLiveTest do
     assert {:ok, [piece]} = Poems.list(location)
     assert_redirect(reading, ~p"/writing/#{piece.id}/edit")
     {:ok, editor, _} = live(conn, ~p"/writing/#{piece.id}/edit")
-    assert has_element?(editor, "#file-writing-title[value='The:Cedars:']")
+    assert has_element?(editor, "#file-writing-title[value='']")
+    assert has_element?(editor, "#file-title-line[value='1']")
     assert render(element(editor, "#file-writing-body")) =~ entry.body
 
     render_submit(element(editor, "#file-writing-form"), %{
-      "writing" => %{"title" => "The Cedars", "body" => entry.body}
+      "writing" => %{"title_line" => "1", "body" => "The Cedars\n\n  keep a quiet line"}
     })
 
     assert {:ok, renamed} = Poems.get(location, piece.id)
-    assert renamed.title == "The Cedars"
+    assert renamed.title_line == 1
+    assert Poems.display_title(renamed) == "The Cedars"
     assert Writing.get_entry!(entry.id).title == entry.title
     {:ok, again, _} = live(conn, ~p"/w/#{entry.id}?read=1")
     render_click(element(again, "#add-to-saved-writing"))
     assert_redirect(again, ~p"/writing/#{piece.id}/edit")
     assert {:ok, [_]} = Poems.list(location)
     {:ok, saved, _} = live(conn, ~p"/writing/#{piece.id}")
-    assert has_element?(saved, "#historical-writing-source", "Early Notebooks · Lists 2")
-    assert has_element?(saved, ".file-title", "The Cedars")
+    assert has_element?(saved, "#historical-writing-source", "Early/Notebook 2")
+    assert has_element?(saved, "#file-title-meaning", "Line 1 in the text is marked as its title")
   end
 
   test "missing destination explains setup without modifying the original", %{
@@ -59,7 +61,7 @@ defmodule StillWeb.HistoricalSavedWritingLiveTest do
     {:ok, _} = Storage.clear_folder()
     {:ok, reading, _} = live(conn, ~p"/w/#{entry.id}?read=1")
     render_click(element(reading, "#add-to-saved-writing"))
-    assert render(reading) =~ "Choose a collection folder before saving writing."
+    assert render(reading) =~ "Choose a collection folder before saving or reading files."
     assert Writing.get_entry!(entry.id).body == before.body
     assert Writing.get_entry!(entry.id).title == before.title
     assert {:error, _} = Poems.list(location)

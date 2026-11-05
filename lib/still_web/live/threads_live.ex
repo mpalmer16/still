@@ -260,7 +260,7 @@ defmodule StillWeb.ThreadsLive do
           <span>{if @collection.documents == [],
             do: "As you keep pages or bring notebooks into Still, their words can meet here.",
             else: "Follow another word, or bring one of your own."}</span>
-          <.link :if={@collection.documents == []} navigate={~p"/"} class="quiet-link">Return to Now</.link>
+          <.link :if={@collection.documents == []} navigate={~p"/"} class="quiet-link">Return to Write</.link>
         </div>
 
         <footer class="threads-footer">

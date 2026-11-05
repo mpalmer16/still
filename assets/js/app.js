@@ -1,6 +1,7 @@
 import {WritingFocus} from "./writing_focus"
 import {FileRecovery} from "./file_recovery"
-import {echoAttention} from "./echo_attention"
+import {CopyText} from "./copy_text"
+import {echoAttention, passageAttention} from "./echo_attention"
 import "phoenix_html"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
@@ -88,6 +89,15 @@ const scheduleRecoveryCheck = hook => {
     hook.checkScheduled = false
     if (!hook.recoveryDestroyed) hook.checkRecovery()
   })
+}
+
+const PassageAttention = {
+  mounted() {
+    this.attention = passageAttention(this.el, payload => this.pushEvent("focus_passage", payload))
+  },
+  disconnected() { this.attention.disconnect() },
+  reconnected() { this.attention.reconnect() },
+  destroyed() { this.attention.destroy() },
 }
 
 const AttentiveFileRecovery = {
@@ -427,7 +437,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, FileRecovery: AttentiveFileRecovery, WritingFocus},
+  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, FileRecovery: AttentiveFileRecovery, WritingFocus, CopyText, PassageAttention},
 })
 
 liveSocket.connect()

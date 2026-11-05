@@ -1,6 +1,14 @@
-const equal = (a, b) => a?.body === b?.body && a?.title === b?.title
-const valid = value => value && typeof value.body === "string" && typeof value.title === "string"
-const unique = copies => [...new Map(copies.map(copy => [JSON.stringify([copy.body, copy.title]), copy])).values()]
+const fields = ["title_line", "relative_path", "notebook_id", "list_label", "source_order"]
+const equal = (a, b) => a?.body === b?.body && String(a?.title ?? "") === String(b?.title ?? "") &&
+  fields.every(field => String(a?.[field] ?? "") === String(b?.[field] ?? ""))
+const valid = value => value && typeof value.body === "string" && typeof (value.title ?? "") === "string"
+const unique = copies => [...new Map(copies.map(copy => [JSON.stringify([copy.body, copy.title ?? "", ...fields.map(field => copy[field] ?? "")]), copy])).values()]
+
+const currentWords = value => {
+  const words = {...value, title: ""}
+  for (const field of fields) words[field] = words[field] == null ? "" : String(words[field])
+  return words
+}
 
 export function readCopies(storage, key) {
   const raw = storage.getItem(key)
@@ -8,7 +16,7 @@ export function readCopies(storage, key) {
   const bucket = JSON.parse(raw)
   if (!bucket || !(bucket.active === null || valid(bucket.active)) ||
       !Array.isArray(bucket.held) || !bucket.held.every(valid)) throw new Error("Unreadable writing recovery copy")
-  return bucket
+  return {active: bucket.active ? currentWords(bucket.active) : null, held: bucket.held.map(currentWords)}
 }
 
 function writeCopies(storage, key, bucket) {
@@ -87,16 +95,25 @@ export const FileRecovery = {
   mounted() {
     this.form = this.el.form
     this.title = this.form.querySelector("#file-writing-title")
+    if (this.title) this.title.value = ""
     this.key = this.el.dataset.draftKey
-    this.baseline = JSON.parse(this.el.dataset.persisted)
-    this.baseline.title ??= ""
+    this.baseline = currentWords(JSON.parse(this.el.dataset.persisted))
     this.baseToken = this.el.dataset.baseToken || null
     this.failed = false
     this.arrivalPending = true
     this.words = () => {
       const body = this.el.value
-      // A textarea normalizes CRLF on display; a title-only edit must retain the original bytes.
-      return {body: body === this.baseline.body.replace(/\r\n?/g, "\n") ? this.baseline.body : body, title: this.title.value}
+      if (this.title) this.title.value = ""
+      const value = field => this.form.querySelector(`[name="writing[${field}]"]`)?.value ?? ""
+      return {
+        body: body === this.baseline.body.replace(/\r\n?/g, "\n") ? this.baseline.body : body,
+        title: "",
+        title_line: value("title_line"),
+        relative_path: value("relative_path"),
+        notebook_id: value("notebook_id"),
+        list_label: value("list_label"),
+        source_order: value("source_order"),
+      }
     }
     this.flags = () => {
       const dirty = !equal(this.words(), this.baseline)
@@ -126,7 +143,7 @@ export const FileRecovery = {
       this.el.style.height = `${Math.max(this.el.scrollHeight, Number.parseFloat(getComputedStyle(this.el).minHeight) || 320)}px`
       if (window.scrollY !== scroll) window.scrollTo({top: scroll, behavior: "instant"})
     }
-    this.capture = () => {
+    this.capture = (resize = true) => {
       const wasFailed = this.failed
       try {
         captureAfterArrival(localStorage, this.key, {...this.words(), baseToken: this.baseToken}, this.baseline, this.arrivalPending)
@@ -136,7 +153,7 @@ export const FileRecovery = {
       }
       catch { this.problem() }
       this.flags()
-      this.fit()
+      if (resize) this.fit()
       this.form.dispatchEvent(new Event("still:writing-display-changed"))
     }
     this.submitWriting = read => {
@@ -169,7 +186,7 @@ export const FileRecovery = {
     }
     this.onSaved = ({detail}) => {
       if (![detail.source_key, detail.target_key].includes(this.key)) return
-      this.baseline = {body: detail.body, title: detail.title ?? ""}
+      this.baseline = currentWords(detail)
       this.baseToken = detail.token
       this.key = detail.recovery_key
       this.failed = this.key !== detail.target_key
@@ -182,7 +199,7 @@ export const FileRecovery = {
         end: this.el.selectionEnd, direction: this.el.selectionDirection, scroll: window.scrollY})) }
       catch { /* Position is optional; words have their own verified recovery copy. */ }
     }
-    this.onInput = () => { this.capture(); this.keepPosition() }
+    this.onInput = event => { this.capture(event.target === this.el); this.keepPosition() }
     this.onPrepare = () => { this.capture(); this.keepPosition() }
     this.onNavigation = ({detail}) => {
       if (detail.kind === "redirect") { this.capture(); this.keepPosition(); this.leaving = true }
@@ -227,7 +244,11 @@ export const FileRecovery = {
         restoreCopy(localStorage, this.key, this.offered, this.words(), this.baseline)
         this.arrivalPending = false
         this.el.value = this.offered.body
-        this.title.value = this.offered.title
+        this.title.value = ""
+        for (const field of fields) {
+          const input = this.form.querySelector(`[name="writing[${field}]"]`)
+          if (input) input.value = this.offered[field] ?? ""
+        }
         this.capture()
         this.keepPosition()
         this.pushEvent("writing_changed", {writing: this.words()})
@@ -250,7 +271,11 @@ export const FileRecovery = {
       const active = resumableCopy(localStorage, this.key, this.baseToken, this.el.dataset.resumeActive === "true")
       if (active) {
         this.el.value = active.body
-        this.title.value = active.title
+        this.title.value = ""
+        for (const field of fields) {
+          const input = this.form.querySelector(`[name="writing[${field}]"]`)
+          if (input) input.value = active[field] ?? ""
+        }
         this.arrivalPending = false
         this.pushEvent("writing_changed", {writing: this.words()})
       }

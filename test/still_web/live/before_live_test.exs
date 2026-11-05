@@ -155,8 +155,8 @@ defmodule StillWeb.BeforeLiveTest do
   test "a title in ordinary words finds its colon form without invented chronology", %{conn: conn} do
     entry = piece()
     {:ok, view, _} = live(conn, ~p"/pages?q=uncertain%20light")
-    assert has_element?(view, "a[href^='/w/#{entry.id}?']")
-    assert has_element?(view, ".entry-notebook", String.replace(entry.notebook, "/", " · "))
+    assert has_element?(view, "a[href^='/read/#{entry.id}?']")
+    assert has_element?(view, ".entry-notebook", "Early/Notebook 1")
     refute has_element?(view, "time")
   end
 

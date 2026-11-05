@@ -27,7 +27,7 @@ defmodule StillWeb.ListLiveTest do
     pasted = "A possible title\n\nrain: furnace:\n  another line\n"
 
     render_change(element(view, "#file-writing-form"), %{
-      "writing" => %{"title" => "", "body" => pasted}
+      "writing" => %{"title_line" => "", "body" => pasted}
     })
 
     assert Writing.list_entries() == []
@@ -38,12 +38,13 @@ defmodule StillWeb.ListLiveTest do
     assert has_element?(view, "#file-save-status", "Local draft")
 
     render_submit(element(view, "#file-writing-form"), %{
-      "writing" => %{"title" => "My own title", "body" => pasted}
+      "writing" => %{"title_line" => "1", "body" => pasted}
     })
 
     assert {:ok, [saved]} = Poems.list(Storage.collection_location())
     assert saved.body == pasted
-    assert saved.title == "My own title"
+    assert saved.title_line == 1
+    assert Poems.display_title(saved) == "A possible title"
     assert_patch(view, ~p"/writing/#{saved.id}/edit")
     assert has_element?(view, "#file-writing-body")
   end
@@ -55,7 +56,7 @@ defmodule StillWeb.ListLiveTest do
     original = "First complete draft\n\twith the same spacing"
 
     render_submit(element(view, "#file-writing-form"), %{
-      "writing" => %{"title" => "Desk page", "body" => original}
+      "writing" => %{"title_line" => "1", "body" => original}
     })
 
     assert {:ok, [saved]} = Poems.list(Storage.collection_location())
@@ -63,16 +64,16 @@ defmodule StillWeb.ListLiveTest do
     revised = "Second complete draft\n\twith a new ending"
 
     render_submit(element(view, "#file-writing-form"), %{
-      "writing" => %{"title" => "Desk page renamed", "body" => revised}
+      "writing" => %{"title_line" => "1", "body" => revised}
     })
 
     {:ok, versions} = Poems.revisions(Storage.collection_location(), saved.id)
-    assert Enum.any?(versions, &(&1.body == original and &1.title == "Desk page"))
+    assert Enum.any?(versions, &(&1.body == original and &1.title_line == 1))
 
     {:ok, _find, _} = live(conn, ~p"/pages")
     {:ok, resumed, _} = live(conn, ~p"/")
     assert has_element?(resumed, "#file-writing-body")
-    assert has_element?(resumed, "#file-writing-title[value='Desk page renamed']")
+    assert has_element?(resumed, "#file-writing-title[value='']")
 
     assert resumed
            |> element("#file-writing-body")
@@ -80,6 +81,6 @@ defmodule StillWeb.ListLiveTest do
            |> LazyHTML.from_fragment()
            |> LazyHTML.text() == revised
 
-    assert Writing.list_entries() == []
+    assert Enum.any?(Writing.list_entries(), &(&1.file_id == saved.id and &1.body == revised))
   end
 end

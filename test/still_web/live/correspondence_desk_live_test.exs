@@ -29,6 +29,7 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
        } do
     first = save_piece(location, "First desk piece", "First exact manuscript words.\n")
     second = save_piece(location, "Second desk piece", "Second exact manuscript words.\n")
+    assert :ok = Correspondence.set_focus(location, second.id, true)
     journal = save_journal(location, "Desk Review")
     packet = prepare_packet(location, journal, [first])
     {:ok, sent} = Correspondence.submit(location, packet.id, packet.token, "2026-10-23")
