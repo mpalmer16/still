@@ -3,7 +3,8 @@
 .site-frame {
   --letter-growth: max(0, calc(var(--letters, .5) - .5));
   --writing-size: calc(17px + var(--letters, .5) * 8px + var(--letter-growth) * 16px);
-  --writing-measure: min(820px, calc(var(--writing-size) * 32));
+  --reading-measure: min(820px, calc(var(--writing-size) * 32));
+  --writing-measure: var(--reading-measure);
   --list-title-size: calc(24px + var(--letters, .5) * 8px);
   --secondary-size: calc(16px + var(--letters, .5) * 4px + var(--letter-growth) * 8px);
   --peripheral-size: calc(13.5px + var(--letters, .5) * 3px + var(--letter-growth) * 6px);

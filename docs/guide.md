@@ -32,6 +32,15 @@ changes that have not reached Save.
 Earlier versions appear beneath the reading view. The wordmark opens a new
 blank page; **Write** returns to the current piece.
 
+While you type, the title and room controls fade. Move the pointer, press
+Escape, or focus a control to bring them back. Escape moves focus to the page
+controls; Tab within the body indents. Warnings and recovery notices stay
+visible, and reduced-motion preferences remove the fade animation.
+
+**New**, beside Save, opens a blank page after the current words are saved. If
+there are unsaved changes, it keeps them in the editor and asks you to Save
+first. It does not write an unconfigured draft.
+
 A historical fragment can approach after a pause when your language shares
 literal words with the past. Timing, peripheral placement and restrained
 movement use the existing Still echo system. New files do not become part of
@@ -339,40 +348,18 @@ cleanup. Pure Swift lifecycle/location checks and actual UI checks are described
 in the native notes. Source and data must remain separate; see
 [AGENTS.md](../AGENTS.md#repository-maintenance) for repository maintenance and publication boundaries.
 
-### The writing page
-
-Write offers a wider page with inner margins. Long lines wrap on screen; Save retains the
-line breaks and indentation you actually entered. A title is always optional. Saved writing
-without one is listed by its first nonblank line (up to 60 characters, including an ellipsis).
-The first line remains in the body exactly as written. Save records the automatic
-title separately in metadata with `title_source: "first_line"`; the optional title
-input shows it as a hint. Editing the first line updates an automatic title on
-Save. An explicit title stays unchanged when the body changes. Folder names begin
-with this title and retain a full UUID suffix so duplicate titles are safe.
-
-While you type in the body, the title and room controls fade. Move the pointer, press
-Escape, or focus a control to bring them back. Escape moves to Save; Tab within the body
-continues to indent. Warnings and recovery notices stay visible, and older Lists can still
-appear beside the page. Reduced-motion preferences remove the fade animation.
-
-**New**, beside Save, opens a blank page after the current words are saved. If there are
-unsaved changes, it keeps them on the page and asks you to Save first; it never silently
-discards them or writes to an unconfigured collection.
-
-Saved writing without an explicit title is labeled from its first nonblank line.
-The title role and file identity are stored in SQLite; the filename does not
-assign a title or writing type. Existing filenames remain intact unless you
-explicitly rename them.
-
 ## Correspondence
 
 Correspondence keeps file-backed writing, manually maintained journals, ordered
 submission packets, and replies together in the selected collection. Sent manuscripts
 keep immutable copies; nothing is submitted automatically. The historical Lists and
 the Write writing experience keep their existing behavior. The editorial workspace
-uses a wide blue-grey layout, with an explicitly chosen work on the desk, shortlisted Places, side-by-side work history,
-a curated Places directory, and a live ordered manuscript in packet preparation.
-It opens dark and offers an optional light appearance within Correspondence.
+uses a wide editorial layout, with an explicitly chosen work on the desk,
+shortlisted Places, side-by-side work history, a curated Places directory, and a
+live ordered manuscript in packet preparation.
+Graphite is the default dark color; Night blue, Forest, and Plum are available.
+Still remembers the chosen dark color and the optional Light appearance across
+visits to Correspondence. The writing room keeps its own light.
 
 See [the Correspondence guide](correspondence.md) for the workflow, portable
 record layout, recovery boundaries, and a disposable synthetic preview. The preview

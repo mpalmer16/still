@@ -920,12 +920,18 @@ defmodule StillWeb.WritingLive do
           class="recovery-note"
           role="alertdialog"
           aria-label="Move writing to Trash?"
+          aria-describedby="delete-confirmation-description"
+          phx-mounted={JS.focus(to: "#cancel-delete-file")}
         >
-          <p>
+          <p id="delete-confirmation-description">
             Move this writing to Trash? Its earlier words will stay with it, and you can restore it.
           </p>
           <button id="confirm-delete-file" phx-click="confirm_delete" class="quiet-link">Move to Trash</button>
-          <button phx-click="cancel_delete" class="quiet-link">Cancel</button>
+          <button
+            id="cancel-delete-file"
+            phx-click={JS.push("cancel_delete") |> JS.focus(to: "#delete-file")}
+            class="quiet-link"
+          >Cancel</button>
         </section>
         <p :if={@problem} id="file-problem" class="file-note" role="alert">{@problem}</p>
         <details id="file-title-meaning" class="file-location">

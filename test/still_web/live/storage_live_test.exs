@@ -20,8 +20,15 @@ defmodule StillWeb.StorageLiveTest do
   } do
     {:ok, find, _} = live(conn, ~p"/pages")
     assert has_element?(find, "#storage-settings[href='/storage']")
-    {:ok, view, html} = live(conn, ~p"/storage")
-    assert html =~ "You can keep writing normally"
+    {:ok, view, _html} = live(conn, ~p"/storage")
+    assert has_element?(view, "#no-backup-folder", "You can keep a local draft")
+
+    assert has_element?(
+             view,
+             "#no-backup-folder",
+             "choose a folder before saving it as a text file"
+           )
+
     assert has_element?(view, "#backup-now[disabled]")
     assert has_element?(view, "#backup-folder-form")
     assert Storage.status().folder == nil

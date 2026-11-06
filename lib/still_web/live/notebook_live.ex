@@ -320,7 +320,8 @@ defmodule StillWeb.NotebookLive do
                   >Read</.link>
                   <.link navigate={ReadingLinks.wander(entry)} class="quiet-link">Wander</.link>
                   <button
-                    :if={entry.file_id && !@delete_list}
+                    :if={entry.file_id}
+                    id={"delete-list-#{entry.file_id}"}
                     type="button"
                     phx-click="request_delete_list"
                     phx-value-id={entry.file_id}
@@ -331,15 +332,25 @@ defmodule StillWeb.NotebookLive do
                 <div
                   :if={@delete_list && @delete_list.id == entry.file_id}
                   id="delete-list-confirmation"
-                  role="alert"
+                  role="alertdialog"
+                  aria-label="Permanently delete List?"
+                  aria-describedby="delete-list-confirmation-description"
+                  phx-mounted={JS.focus(to: "#cancel-delete-list")}
                 >
-                  <p>
+                  <p id="delete-list-confirmation-description">
                     Permanently remove <strong>{Poems.display_title(@delete_list)}</strong>
                     and its file and earlier words?
                     Submitted correspondence keeps its exact submitted text.
                   </p>
                   <button type="button" phx-click="confirm_delete_list" class="quiet-link">Permanently delete</button>
-                  <button type="button" phx-click="cancel_delete_list" class="quiet-link">Cancel</button>
+                  <button
+                    id="cancel-delete-list"
+                    type="button"
+                    phx-click={
+                      JS.push("cancel_delete_list") |> JS.focus(to: "#delete-list-#{@delete_list.id}")
+                    }
+                    class="quiet-link"
+                  >Cancel</button>
                 </div>
               </li>
             </ol>

@@ -2,7 +2,7 @@ defmodule StillWeb.CorrespondenceLive do
   use StillWeb, :live_view
 
   alias Still.{Correspondence, Poems, Storage}
-  alias Still.Correspondence.{Icons, PlaceImport, Proofs}
+  alias Still.Correspondence.{Appearance, Icons, PlaceImport, Proofs}
 
   alias StillWeb.{
     CorrespondenceHome,
@@ -13,6 +13,8 @@ defmodule StillWeb.CorrespondenceLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    appearance = Appearance.current()
+
     {:ok,
      socket
      |> allow_upload(:places, accept: ~w(.json), max_entries: 1, max_file_size: 1_048_576)
@@ -31,7 +33,8 @@ defmodule StillWeb.CorrespondenceLive do
        packet_search: "",
        import_plan: nil,
        import_result: nil,
-       correspondence_light?: false,
+       correspondence_light?: appearance.light?,
+       correspondence_color: appearance.color,
        proof_sources: [],
        comparison: nil,
        proof_problem: nil,
@@ -567,7 +570,10 @@ defmodule StillWeb.CorrespondenceLive do
   end
 
   def handle_event("toggle_palette", _, socket),
-    do: {:noreply, update(socket, :correspondence_light?, &(!&1))}
+    do: appearance_result(socket, Appearance.set_light(!socket.assigns.correspondence_light?))
+
+  def handle_event("change_correspondence_color", %{"appearance" => %{"color" => color}}, socket),
+    do: appearance_result(socket, Appearance.choose_color(color))
 
   def handle_event("keep_possible_piece", %{"possibility" => %{"piece_id" => id}}, socket) do
     save_possibility(socket, id, true)
@@ -906,6 +912,17 @@ defmodule StillWeb.CorrespondenceLive do
 
   defp packet_destination(defaults, _overview, _params), do: defaults
 
+  defp appearance_result(socket, {:ok, appearance}),
+    do:
+      {:noreply,
+       assign(socket,
+         correspondence_light?: appearance.light?,
+         correspondence_color: appearance.color
+       )}
+
+  defp appearance_result(socket, {:error, _}),
+    do: {:noreply, put_flash(socket, :error, "Could not remember the correspondence color.")}
+
   defp title_for(:home), do: "Correspondence"
   defp title_for(:collection), do: "Works"
   defp title_for(:import_journals), do: "Import Places"
@@ -945,7 +962,10 @@ defmodule StillWeb.CorrespondenceLive do
 
     ~H"""
     <Layouts.app flash={@flash} active="correspondence">
-      <div class={"correspondence-room corr-workspace #{if @correspondence_light?, do: "is-light", else: ""}"}>
+      <div
+        class={"correspondence-room corr-workspace #{if @correspondence_light?, do: "is-light", else: ""}"}
+        data-color={@correspondence_color}
+      >
         <header class="corr-header">
           <div class="corr-brand">
             <.link patch={~p"/correspondence"}>Correspondence<span>.</span></.link>
@@ -973,6 +993,18 @@ defmodule StillWeb.CorrespondenceLive do
             >Packets</.link>
           </nav>
           <div class="corr-header-actions">
+            <form id="correspondence-color-form" phx-change="change_correspondence_color">
+              <label for="correspondence-color">Color</label>
+              <select id="correspondence-color" name="appearance[color]">
+                <option
+                  :for={{label, color} <- Appearance.choices()}
+                  value={color}
+                  selected={color == @correspondence_color}
+                >
+                  {label}
+                </option>
+              </select>
+            </form>
             <button
               type="button"
               phx-click="toggle_palette"

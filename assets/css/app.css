@@ -526,14 +526,19 @@ mark { background: hsl(var(--hue, 218) 18% 25%); color: var(--ink); text-decorat
 .file-history .file-lines { margin: 25px 0; font-size: 20px; }
 @media (max-width: 600px) { .file-shelf { grid-template-columns: 1fr; gap: 15px; } }
 
-/* Now keeps the familiar room and writing measure; portable files are an internal boundary. */
-.site-frame:has(.file-now) { --writing-measure: min(1080px, calc(100vw - 480px)); }
+/* Keep the editable text as wide as reading; the page adds its own quiet inset. */
+.site-frame:has(.file-now) {
+  --file-page-inset: clamp(20px, 2.5vw, 38px);
+  --writing-measure: calc(var(--reading-measure) + var(--file-page-inset) + var(--file-page-inset) + 2px);
+}
 .writing-room.file-now { padding-top: clamp(24px, 4vh, 60px); }
 .file-now .editor-form { margin-top: 24px; }
-.file-page { padding: clamp(20px, 2.5vw, 38px); border: 1px solid rgb(177 195 221 / .09); background: rgb(177 195 221 / .018); }
+.file-page { padding: var(--file-page-inset); border: 1px solid rgb(177 195 221 / .09); background: rgb(177 195 221 / .018); }
 .file-now .file-editor { min-height: 57vh; white-space: pre-wrap; overflow-x: hidden; overflow-wrap: anywhere; }
 .file-now .file-editor:focus-visible, .file-now .title-input:focus-visible { box-shadow: none; }
 .file-now .file-writing-footer { margin-top: 24px; }
+.file-writing-footer #save-file { color: var(--soft); font-size: 13px; }
+.file-writing-footer #save-file:is(:hover, :focus-visible) { color: var(--ink); }
 .site-frame:has(.file-now) .gravity-presence { width: clamp(140px, calc((100vw - var(--writing-measure)) / 2 - 90px), 230px); }
 .site-frame:has(.file-now) .field-left { right: calc(50% + var(--writing-measure) / 2 + 40px); }
 .site-frame:has(.file-now) .field-right { left: calc(50% + var(--writing-measure) / 2 + 40px); }
@@ -541,12 +546,11 @@ mark { background: hsl(var(--hue, 218) 18% 25%); color: var(--ink); text-decorat
 .site-frame:has(.file-now) :is(.site-header, .room-intro, .title-input, .file-writing-footer, .file-location, .room-light-control, .place-whisper) { transition: opacity .6s ease; }
 html[data-still-writing-focus] .site-frame:has(.file-now):not(:has([role="alert"], #file-recovery)) :is(.site-header, .room-intro, .title-input, .file-writing-footer, .file-location, .room-light-control, .place-whisper) { opacity: 0; }
 @media (max-width: 1279px), (max-height: 620px) {
-  .site-frame:has(.file-now) { --writing-measure: min(960px, calc(100vw - 48px)); }
   .site-frame:has(.file-now) .gravity-presence { position: relative; left: auto; right: auto; width: min(100%, var(--writing-measure)); }
 }
 @media (max-width: 650px) {
   .writing-room.file-now { padding-top: 20px; }
-  .file-page { padding: 18px; }
+  .site-frame:has(.file-now) { --file-page-inset: 18px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .site-frame:has(.file-now) :is(.site-header, .room-intro, .title-input, .file-writing-footer, .file-location, .room-light-control, .place-whisper) { transition: none; }

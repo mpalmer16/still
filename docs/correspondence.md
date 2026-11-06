@@ -6,10 +6,13 @@ Historical Lists remain in SQLite and never become submission candidates.
 
 ## Everyday use
 
-Open **Correspondence** from the main navigation. The room opens dark; its optional
-light appearance stays within this room until you leave it and does not change Now. Choose the same collection folder in
-**Storage & Backups** that holds your saved writing. Without an available folder,
-Correspondence explains what is missing and stores no authoritative records elsewhere.
+Open **Correspondence** from the main navigation. Graphite is the default dark
+color. Use **Color** to choose Graphite, Night blue, Forest, or Plum, and **Light**
+to switch to a light appearance. Still remembers both choices across visits;
+they affect Correspondence only and do not change Write. Choose the same
+collection folder in **Storage & Backups** that holds your saved writing.
+Without an available folder, Correspondence explains what is missing and stores
+no authoritative records elsewhere.
 
 Pages begin with compact labels and actions rather than introductory banners.
 **On the desk** keeps a work you explicitly choose in view. Use **Place on desk**
@@ -42,9 +45,6 @@ have marked the source checked; this is your record, not live confirmation of av
 **Places** keeps a compact shortlist above the complete directory. Open a place to
 read its notes, requirements, and linked packets and pieces. **Edit place details**
 opens the manual record; **Prepare a packet** starts with that saved destination selected.
-The dark palette uses charcoal and grey with restrained blue highlights; **Light** changes this room
-only, and the next visit starts dark again.
-
 Packet preparation separates the saved-writing chooser, ordered manuscript, and
 destination. The chooser can be searched and scrolled with the keyboard. Reordering
 updates the on-screen manuscript; save before exporting or recording a submission.

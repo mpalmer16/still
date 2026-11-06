@@ -120,7 +120,7 @@ defmodule StillWeb.StorageLive do
         <section aria-labelledby="backup-folder-heading">
           <h2 id="backup-folder-heading">Writing folder</h2>
           <p :if={!@storage.configured} id="no-backup-folder">
-            No writing folder is configured. You can keep writing normally.
+            No writing folder is configured. You can keep a local draft; choose a folder before saving it as a text file.
           </p>
           <p :if={@storage.configured}>
             Current folder: <code id="backup-folder-path">{@storage.folder}</code>
