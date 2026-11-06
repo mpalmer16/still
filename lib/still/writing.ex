@@ -277,6 +277,11 @@ defmodule Still.Writing do
     Search.find(opts)
   end
 
+  def find_entry_window(opts \\ []) do
+    refresh_files()
+    Search.find_window(opts)
+  end
+
   def search_passage(body, query), do: Search.passage(body, query)
   def search_query(value), do: Search.query(value)
   def notebook_neighbors(entry), do: Notebooks.neighbors(entry)

@@ -34,7 +34,7 @@ defmodule StillWeb.ArchiveLive do
     shown_count = normalized_shown(params["shown"])
 
     results =
-      find_results(
+      Writing.find_entry_window(
         query: query,
         earlier: earlier,
         scope: if(written, do: :saved, else: :all),
@@ -100,29 +100,6 @@ defmodule StillWeb.ArchiveLive do
 
   defp notebook?(entry), do: is_binary(entry.notebook) && String.trim(entry.notebook) != ""
 
-  defp find_results(opts) do
-    count = Keyword.fetch!(opts, :limit)
-
-    Writing.with_collection_snapshot(fn ->
-      Stream.iterate(0, &(&1 + 100))
-      |> Enum.reduce_while([], fn offset, batches ->
-        limit = min(100, count - offset)
-
-        if limit <= 0 do
-          {:halt, batches}
-        else
-          batch = Writing.find_entries(Keyword.merge(opts, limit: limit, offset: offset))
-
-          if length(batch) < limit,
-            do: {:halt, [batch | batches]},
-            else: {:cont, [batch | batches]}
-        end
-      end)
-      |> Enum.reverse()
-      |> List.flatten()
-    end)
-  end
-
   defp normalized_shown(value) do
     parsed =
       case Integer.parse(to_string(value || "40")) do
@@ -149,7 +126,7 @@ defmodule StillWeb.ArchiveLive do
       "version" => if(result.version, do: result.version.id)
     }
 
-    ReadingLinks.reader(result.entry, context) <>
+    ReadingLinks.reader(result.entry.id, context) <>
       if(result.line, do: "#passage-#{result.line}", else: "#reading-title")
   end
 
@@ -190,7 +167,8 @@ defmodule StillWeb.ArchiveLive do
           </p>
         </div>
         <p :if={@written} class="archive-hint">
-          New pages and Lists you’ve changed here. Your writing saves automatically on this Mac.
+          Choose Save to write these words to your selected folder. Unsaved drafts remain on this
+          Mac for recovery.
         </p>
         <nav class="archive-scopes" aria-label="Writing to browse">
           <.link
@@ -251,7 +229,7 @@ defmodule StillWeb.ArchiveLive do
           <.link
             :for={{id, result} <- @streams.results}
             id={id}
-            navigate={result_path(result, @query, @earlier, @written, @offset)}
+            navigate={result_path(result, @query, @earlier, @written, @shown_count)}
             class="entry-row"
             aria-current={if @selected_at == result_anchor(result), do: "location"}
             phx-mounted={if @selected_at == result_anchor(result), do: JS.focus(to: "##{id}")}

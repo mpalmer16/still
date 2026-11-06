@@ -36,11 +36,16 @@ defmodule Still.Writing.Search do
     end
   end
 
-  def find(opts \\ []) do
+  def find(opts \\ []), do: do_find(opts, 100)
+
+  @doc "Returns one bounded Find window, including the page's lookahead result."
+  def find_window(opts \\ []), do: do_find(opts, 5_001)
+
+  defp do_find(opts, max_results) do
     query = query(Keyword.get(opts, :query, ""))
     query_terms = terms(query)
     earlier? = Keyword.get(opts, :earlier, false) && query != ""
-    limit = opts |> Keyword.get(:limit, 40) |> max(0) |> min(100)
+    limit = opts |> Keyword.get(:limit, 40) |> max(0) |> min(max_results)
     offset = max(Keyword.get(opts, :offset, 0), 0)
 
     ordered = ordered_entries(nil, Keyword.get(opts, :scope, :all))
