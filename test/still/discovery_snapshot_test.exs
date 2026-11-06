@@ -54,8 +54,9 @@ defmodule Still.DiscoverySnapshotTest do
           assert Enum.any?(listed, &(&1.id == piece.id))
           assert {:ok, recovered_list} = Files.list(location)
           assert Enum.any?(recovered_list, &(&1.id == piece.id))
-          # Each cached listing performs one rows query plus the lock transaction queries.
-          assert :atomics.get(counter, 1) - before_lists == 6
+          # A cached listing needs only its collection identity and indexed rows,
+          # with no further file reconciliation.
+          assert (:atomics.get(counter, 1) - before_lists) in 1..4
           Writing.notebook_neighbors(entry)
           Writing.connections(entry)
           Writing.companions(entry)

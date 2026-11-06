@@ -8,11 +8,18 @@ defmodule Still.Writing.Files do
   def collection_scope(root) do
     root = Path.expand(root)
 
-    unless Repo.get_by(CollectionFolder, root: root) do
-      Repo.insert!(%CollectionFolder{root: root}, on_conflict: :nothing, conflict_target: :root)
-    end
+    case Repo.get_by(CollectionFolder, root: root) do
+      %CollectionFolder{id: id} ->
+        id
 
-    Repo.get_by!(CollectionFolder, root: root).id
+      nil ->
+        Repo.insert!(%CollectionFolder{root: root},
+          on_conflict: :nothing,
+          conflict_target: :root
+        )
+
+        Repo.get_by!(CollectionFolder, root: root).id
+    end
   end
 
   def register_folder(location, relative, attrs) when is_map(attrs) do
@@ -137,9 +144,12 @@ defmodule Still.Writing.Files do
         String.trim(title)
 
       _ ->
-        {:ok, doc} = TextFile.decode(piece.body)
-        {:ok, label} = TextFile.display_label(doc)
-        TextFile.filename_label(piece[:relative_path], piece[:list_label]) || label
+        TextFile.filename_label(piece[:relative_path], piece[:list_label]) ||
+          case TextFile.decode(piece.body) do
+            {:ok, doc} ->
+              {:ok, label} = TextFile.display_label(doc)
+              label
+          end
     end
   end
 
@@ -198,16 +208,41 @@ defmodule Still.Writing.Files do
 
   def synchronize(location, opts \\ []) do
     with_location(location, fn active ->
-      with :ok <- recover_pending(active, Keyword.get(opts, :recover, true)),
-           {:ok, files} <- scan(active.folder),
-           :ok <- discover_notebooks(active, files),
-           {:ok, _} <- reconcile(active, files) do
-        {:ok,
-         rows(active.scope, false)
-         |> Enum.reject(& &1.file_missing)
-         |> Enum.map(&piece(&1, active))}
+      with {:ok, _files} <- refresh_projection(active, Keyword.get(opts, :recover, true)) do
+        {:ok, active |> rows_for() |> visible_pieces(active)}
       end
     end)
+  end
+
+  @doc "One verified refresh for the Saved writing list and its reconnection choices."
+  def saved_writing(location) do
+    with_location(location, fn active ->
+      with {:ok, files} <- refresh_projection(active, true) do
+        entries = rows_for(active)
+
+        {:ok,
+         %{
+           pieces: visible_pieces(entries, active),
+           reconciliation: reconciliation_for(entries, files, active)
+         }}
+      end
+    end)
+  end
+
+  defp refresh_projection(active, recover?) do
+    with :ok <- recover_pending(active, recover?),
+         {:ok, files} <- scan(active.folder),
+         :ok <- discover_notebooks(active, files),
+         {:ok, _} <- reconcile(active, files),
+         do: {:ok, files}
+  end
+
+  defp rows_for(active), do: rows(active.scope, false)
+
+  defp visible_pieces(entries, active) do
+    entries
+    |> Enum.reject(& &1.file_missing)
+    |> Enum.map(&piece(&1, active))
   end
 
   def get(location, id) do
@@ -883,7 +918,11 @@ defmodule Still.Writing.Files do
 
   defp recover_pending(active, recover?) do
     pending =
-      Repo.all(from(e in Entry, where: e.collection_scope == ^active.scope))
+      Repo.all(
+        from(e in Entry,
+          where: e.collection_scope == ^active.scope and not is_nil(e.pending)
+        )
+      )
       |> Enum.filter(&is_map(&1.pending))
 
     cond do
@@ -1187,17 +1226,6 @@ defmodule Still.Writing.Files do
   defp reconcile(active, files) do
     Repo.transaction(fn ->
       old = rows(active.scope, false)
-      paths = MapSet.new(files, & &1.relative)
-      missing = Enum.filter(old, &(not MapSet.member?(paths, &1.relative_path)))
-
-      missing =
-        Enum.map(missing, fn entry ->
-          if entry.file_missing,
-            do: entry,
-            else: entry |> Changeset.change(file_missing: true) |> persist!()
-        end)
-
-      old_by_path = Map.new(old, &{&1.relative_path, &1})
 
       reserved_paths =
         Repo.all(
@@ -1208,19 +1236,39 @@ defmodule Still.Writing.Files do
         )
         |> MapSet.new()
 
-      missing_by_identity =
-        Enum.reduce(missing, %{}, fn entry, acc ->
-          case (entry.source || %{})["file_identity"] do
-            identity when is_binary(identity) ->
-              Map.update(acc, identity, [entry], &[entry | &1])
+      if file = Enum.find(files, &MapSet.member?(reserved_paths, &1.relative)) do
+        Repo.rollback(
+          "A new file occupies the original path of writing in Trash: #{file.relative}. Rename that file before restoring or indexing it; both versions were left untouched."
+        )
+      end
 
-            _ ->
-              acc
-          end
-        end)
+      matches = reconcile_matches(old, files)
+      claimed = matches |> Map.values() |> MapSet.new(& &1.id)
+      missing = Enum.reject(old, &MapSet.member?(claimed, &1.id))
+
+      if entry = Enum.find(missing, &Map.has_key?(matches, &1.relative_path)) do
+        Repo.rollback(
+          "An indexed writing's path now holds a different file: #{entry.relative_path}. Move the present file to an unused filename and reopen Saved writing to review both identities; no writing was changed."
+        )
+      end
+
+      Enum.each(missing, fn entry ->
+        unless entry.file_missing,
+          do: entry |> Changeset.change(file_missing: true) |> persist!()
+      end)
+
+      # A path swap cannot be updated one row at a time under the unique path
+      # index. NULL is transient inside this transaction; the original structs
+      # still provide the authored filename and notebook metadata below.
+      moved_ids =
+        for {relative, entry} <- matches, entry.relative_path != relative, do: entry.id
+
+      if moved_ids != [] do
+        Repo.update_all(from(e in Entry, where: e.id in ^moved_ids), set: [relative_path: nil])
+      end
 
       missing_tokens = MapSet.new(missing, & &1.file_token)
-      identity_counts = Enum.frequencies_by(files, & &1.identity)
+      missing_paths = MapSet.new(missing, & &1.relative_path)
 
       notebooks =
         Repo.all(
@@ -1236,32 +1284,102 @@ defmodule Still.Writing.Files do
         |> Map.new(&{&1.id, &1})
 
       Enum.each(files, fn file ->
-        current = old_by_path[file.relative]
+        case matches[file.relative] do
+          %Entry{} = entry ->
+            refresh_entry(entry, file, notebooks, notebooks_by_id)
 
-        moved =
-          if is_binary(file.identity) and identity_counts[file.identity] == 1,
-            do: Map.get(missing_by_identity, file.identity, []),
-            else: []
-
-        cond do
-          MapSet.member?(reserved_paths, file.relative) ->
-            Repo.rollback(
-              "A new file occupies the original path of writing in Trash: #{file.relative}. Rename that file before restoring or indexing it; both versions were left untouched."
-            )
-
-          current ->
-            refresh_entry(current, file, notebooks, notebooks_by_id)
-
-          length(moved) == 1 ->
-            refresh_entry(hd(moved), file, notebooks, notebooks_by_id)
-
-          MapSet.member?(missing_tokens, file.document.token) ->
-            :ambiguous
-
-          true ->
-            index_file(active, file, notebooks)
+          nil ->
+            if MapSet.member?(missing_paths, file.relative) or
+                 MapSet.member?(missing_tokens, file.document.token),
+               do: :ambiguous,
+               else: index_file(active, file, notebooks)
         end
       end)
+    end)
+  end
+
+  defp reconcile_matches(old, files) do
+    by_path = Map.new(old, &{&1.relative_path, &1})
+
+    by_identity =
+      old
+      |> Enum.filter(&is_binary((&1.source || %{})["file_identity"]))
+      |> Enum.group_by(& &1.source["file_identity"])
+
+    identity_counts = Enum.frequencies_by(files, & &1.identity)
+
+    identity_matches =
+      Enum.reduce(files, %{}, fn file, acc ->
+        case {file.identity, identity_counts[file.identity], by_identity[file.identity]} do
+          {identity, 1, [entry]} when is_binary(identity) ->
+            Map.put(acc, file.relative, entry)
+
+          _ ->
+            acc
+        end
+      end)
+
+    claimed = identity_matches |> Map.values() |> MapSet.new(& &1.id)
+
+    new_paths_by_token =
+      files
+      |> Enum.reject(
+        &(Map.has_key?(by_path, &1.relative) or Map.has_key?(identity_matches, &1.relative))
+      )
+      |> Enum.group_by(& &1.document.token, & &1.relative)
+
+    path_evidence = %{
+      identity_counts: identity_counts,
+      new_paths_by_token: new_paths_by_token,
+      old_by_token: Enum.group_by(old, & &1.file_token),
+      files_by_path: Map.new(files, &{&1.relative, &1})
+    }
+
+    Enum.reduce(files, identity_matches, fn file, acc ->
+      entry = by_path[file.relative]
+
+      if not Map.has_key?(acc, file.relative) and not is_nil(entry) and
+           not MapSet.member?(claimed, entry.id) and
+           path_fallback?(entry, file, path_evidence) do
+        Map.put(acc, file.relative, entry)
+      else
+        acc
+      end
+    end)
+  end
+
+  defp path_fallback?(entry, file, evidence) do
+    old_identity = (entry.source || %{})["file_identity"]
+
+    cond do
+      is_binary(old_identity) and old_identity == file.identity ->
+        true
+
+      entry.file_missing ->
+        false
+
+      is_binary(old_identity) and Map.get(evidence.identity_counts, old_identity, 0) > 0 ->
+        false
+
+      displaced_words?(entry, file, evidence) ->
+        false
+
+      file.document.token != entry.file_token and
+          Map.get(evidence.new_paths_by_token, entry.file_token, []) != [] ->
+        false
+
+      true ->
+        true
+    end
+  end
+
+  defp displaced_words?(entry, file, evidence) do
+    Enum.any?(Map.get(evidence.old_by_token, file.document.token, []), fn other ->
+      other.id != entry.id and
+        case evidence.files_by_path[other.relative_path] do
+          nil -> true
+          current -> current.document.token != other.file_token
+        end
     end)
   end
 
@@ -1616,40 +1734,43 @@ defmodule Still.Writing.Files do
   def reconciliation(location) do
     with_location(location, fn active ->
       with {:ok, files} <- scan(active.folder), {:ok, _} <- reconcile(active, files) do
-        all = rows(active.scope, false)
-        missing = Enum.filter(all, & &1.file_missing)
-        claimed = MapSet.new(all, & &1.relative_path)
-
-        ambiguous =
-          Enum.map(missing, fn e ->
-            %{
-              id: e.file_id,
-              path: e.relative_path,
-              candidates:
-                files
-                |> Enum.filter(
-                  &(not MapSet.member?(claimed, &1.relative) and &1.document.token == e.file_token)
-                )
-                |> Enum.map(& &1.relative)
-            }
-          end)
-          |> Enum.reject(&(&1.candidates == []))
-
-        {:ok, %{missing: Enum.map(missing, &piece(&1, active)), ambiguous: ambiguous}}
+        {:ok, reconciliation_for(rows_for(active), files, active)}
       end
     end)
+  end
+
+  defp reconciliation_for(entries, files, active) do
+    missing = Enum.filter(entries, & &1.file_missing)
+    claimed = entries |> Enum.reject(& &1.file_missing) |> MapSet.new(& &1.relative_path)
+
+    ambiguous =
+      Enum.map(missing, fn e ->
+        %{
+          id: e.file_id,
+          path: e.relative_path,
+          candidates:
+            files
+            |> Enum.filter(
+              &(not MapSet.member?(claimed, &1.relative) and &1.document.token == e.file_token)
+            )
+            |> Enum.map(& &1.relative)
+        }
+      end)
+      |> Enum.reject(&(&1.candidates == []))
+
+    %{missing: Enum.map(missing, &piece(&1, active)), ambiguous: ambiguous}
   end
 
   def relink(location, id, relative) do
     with_location(location, fn active ->
       with %Entry{file_missing: true} = entry <-
              Repo.get_by(Entry, file_id: id, collection_scope: active.scope),
-           nil <- Repo.get_by(Entry, collection_scope: active.scope, relative_path: relative),
-           {:ok, path} <- safe_path(active.folder, relative),
-           {:ok, doc} <- TextFile.read(path) do
+           {:ok, canonical, path, doc} <- manual_existing_file(active.folder, relative),
+           owner <- Repo.get_by(Entry, collection_scope: active.scope, relative_path: canonical),
+           true <- is_nil(owner) or owner.id == entry.id do
         case Repo.transaction(fn ->
                refresh_entry(entry, %{
-                 relative: relative,
+                 relative: canonical,
                  document: doc,
                  identity: file_identity(path)
                })
@@ -1667,18 +1788,75 @@ defmodule Still.Writing.Files do
 
   def adopt(location, relative) do
     with_location(location, fn active ->
-      with nil <- Repo.get_by(Entry, collection_scope: active.scope, relative_path: relative),
-           {:ok, path} <- safe_path(active.folder, relative),
-           {:ok, doc} <- TextFile.read(path) do
+      with {:ok, canonical, path, doc} <- manual_existing_file(active.folder, relative),
+           nil <- Repo.get_by(Entry, collection_scope: active.scope, relative_path: canonical) do
         {:ok,
          piece(
-           index_file(active, %{relative: relative, document: doc, identity: file_identity(path)}),
+           index_file(active, %{
+             relative: canonical,
+             document: doc,
+             identity: file_identity(path)
+           }),
            active
          )}
       else
         _ -> {:error, "This file is unavailable or already indexed."}
       end
     end)
+  end
+
+  # A case-insensitive or normalization-insensitive filesystem can open the same
+  # file through several spellings. Resolve a writer-supplied existing path to
+  # the names actually listed by its folders before checking database ownership.
+  defp manual_existing_file(root, relative) do
+    with {:ok, requested_path} <- safe_path(root, relative),
+         {:ok, document} <- TextFile.read(requested_path),
+         {:ok, canonical} <- listed_relative_path(root, relative),
+         {:ok, canonical_path} <- safe_path(root, canonical),
+         identity when is_binary(identity) <- file_identity(requested_path),
+         true <- identity == file_identity(canonical_path) do
+      {:ok, canonical, canonical_path, document}
+    else
+      _ -> {:error, :unrecognized_existing_file}
+    end
+  end
+
+  defp listed_relative_path(root, relative) do
+    relative
+    |> String.split("/")
+    |> Enum.reduce_while({:ok, root, []}, fn requested, {:ok, parent, listed} ->
+      with {:ok, names} <- File.ls(parent),
+           {:ok, name} <- listed_name(names, requested) do
+        {:cont, {:ok, Path.join(parent, name), [name | listed]}}
+      else
+        _ -> {:halt, {:error, :unrecognized_existing_file}}
+      end
+    end)
+    |> case do
+      {:ok, _path, listed} -> {:ok, listed |> Enum.reverse() |> Path.join()}
+      error -> error
+    end
+  end
+
+  defp listed_name(names, requested) do
+    if requested in names do
+      {:ok, requested}
+    else
+      case spelling_key(requested) do
+        nil ->
+          {:error, :unrecognized_existing_file}
+
+        key ->
+          case Enum.filter(names, &(spelling_key(&1) == key)) do
+            [name] -> {:ok, name}
+            _ -> {:error, :unrecognized_existing_file}
+          end
+      end
+    end
+  end
+
+  defp spelling_key(name) when is_binary(name) do
+    if String.valid?(name), do: name |> String.normalize(:nfc) |> String.downcase()
   end
 
   def list_trash(location),
@@ -1899,9 +2077,11 @@ defmodule Still.Writing.Files do
 
   defp safe_path(root, relative) when is_binary(relative) do
     path = Path.expand(relative, root)
+    components = String.split(relative, "/")
 
     if Path.type(relative) != :relative or path == root or
-         not String.starts_with?(path, root <> "/") do
+         not String.starts_with?(path, root <> "/") or
+         Enum.any?(components, &(&1 in ["", ".", ".."])) do
       {:error, "Choose a relative file path inside the writing folder."}
     else
       parts = Path.split(Path.relative_to(path, root))

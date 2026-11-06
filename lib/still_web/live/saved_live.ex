@@ -1,6 +1,7 @@
 defmodule StillWeb.SavedLive do
   use StillWeb, :live_view
   alias Still.{Desk, Poems, Storage}
+  alias Still.Writing.Files
 
   @impl true
   def mount(_, _, socket),
@@ -100,28 +101,27 @@ defmodule StillWeb.SavedLive do
 
   defp load(socket, trash?) do
     location = Storage.collection_location()
+    empty_reconciliation = %{missing: [], ambiguous: []}
 
-    result =
+    {pieces, reconciliation, problem} =
       cond do
-        !location.available -> {:ok, []}
-        trash? -> Poems.list_trash(location)
-        true -> Poems.list(location)
-      end
+        !location.available ->
+          {[], empty_reconciliation, location.error}
 
-    {pieces, problem} =
-      case result do
-        {:ok, pieces} -> {pieces, location.error}
-        {:error, message} -> {[], message}
-      end
+        trash? ->
+          case Poems.list_trash(location) do
+            {:ok, pieces} -> {pieces, empty_reconciliation, location.error}
+            {:error, message} -> {[], empty_reconciliation, message}
+          end
 
-    {reconciliation, reconciliation_problem} =
-      if location.available and not trash? do
-        case Poems.reconciliation(location) do
-          {:ok, result} -> {result, nil}
-          {:error, message} -> {%{missing: [], ambiguous: []}, message}
-        end
-      else
-        {%{missing: [], ambiguous: []}, nil}
+        true ->
+          case Files.saved_writing(location) do
+            {:ok, %{pieces: pieces, reconciliation: reconciliation}} ->
+              {pieces, reconciliation, location.error}
+
+            {:error, message} ->
+              {[], empty_reconciliation, message}
+          end
       end
 
     pending_reviews =
@@ -140,7 +140,7 @@ defmodule StillWeb.SavedLive do
       location: location,
       pieces: pieces,
       submission_focus: Still.Correspondence.writing_status(location).focused,
-      problem: problem || reconciliation_problem,
+      problem: problem,
       reconciliation: reconciliation,
       pending_reviews: pending_reviews,
       trash?: trash?
@@ -226,18 +226,18 @@ defmodule StillWeb.SavedLive do
           </p>
           <ul>
             <li :for={missing <- @reconciliation.missing} id={"missing-file-#{missing.id}"}>
-              <span>{Map.get(missing, :path) || Map.get(missing, :relative_path) || "Unknown location"}</span><span>File not found.</span>
+              <span>{Map.get(missing, :path) || Map.get(missing, :relative_path) || "Unknown location"}</span><span>Location needs confirmation.</span>
               <form phx-submit="relink_file">
                 <input type="hidden" name="piece_id" value={missing.id} />
                 <label>
-                  Enter its new relative path
+                  Confirm this writing's relative path
                   <input name="path" required autocomplete="off" placeholder="Notebook 3/12" />
                 </label>
                 <button type="submit" class="quiet-link">Use this file</button>
               </form>
             </li>
             <li :for={item <- @reconciliation.ambiguous} id={"ambiguous-file-#{item.id}"}>
-              <span>{item.relative_path}</span>
+              <span>{item.path}</span>
               <form phx-submit="relink_file">
                 <input type="hidden" name="piece_id" value={item.id} />
                 <label>
@@ -264,13 +264,19 @@ defmodule StillWeb.SavedLive do
           class="recovery-note"
           role="alertdialog"
           aria-label="Permanently delete writing?"
+          aria-describedby="purge-confirmation-description"
+          phx-mounted={JS.focus(to: "#cancel-purge-file")}
         >
-          <p>
+          <p id="purge-confirmation-description">
             Permanently delete <strong>{Poems.display_title(@confirmation)}</strong>
             and all its earlier words? This cannot be undone in Still.
           </p>
           <button id="confirm-purge-file" phx-click="confirm_purge" class="quiet-link">Delete permanently</button>
-          <button phx-click="cancel_purge" class="quiet-link">Cancel</button>
+          <button
+            id="cancel-purge-file"
+            phx-click={JS.push("cancel_purge") |> JS.focus(to: "#purge-file-#{@confirmation.id}")}
+            class="quiet-link"
+          >Cancel</button>
         </section>
         <div id="writing-shelf" class="file-shelf">
           <article :for={piece <- @pieces} id={"saved-#{piece.id}"} class="file-piece">
@@ -284,7 +290,12 @@ defmodule StillWeb.SavedLive do
               <span class="file-opening">{opening(piece.body)}</span>
               <div class="file-trash-actions">
                 <button phx-click="restore_file" phx-value-id={piece.id} class="quiet-link">Restore</button>
-                <button phx-click="request_purge" phx-value-id={piece.id} class="quiet-link">Delete permanently…</button>
+                <button
+                  id={"purge-file-#{piece.id}"}
+                  phx-click="request_purge"
+                  phx-value-id={piece.id}
+                  class="quiet-link"
+                >Delete permanently…</button>
               </div>
             </div>
           </article>
