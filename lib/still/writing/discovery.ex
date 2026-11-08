@@ -5,6 +5,25 @@ defmodule Still.Writing.Discovery do
   alias Still.Writing.Files
 
   @key {__MODULE__, :snapshot}
+  @memo_key {__MODULE__, :memo}
+
+  def memo(key, fun) do
+    case Process.get(@memo_key) do
+      nil ->
+        fun.()
+
+      values ->
+        case Map.fetch(values, key) do
+          {:ok, value} ->
+            value
+
+          :error ->
+            value = fun.()
+            Process.put(@memo_key, Map.put(values, key, value))
+            value
+        end
+    end
+  end
 
   def with_snapshot(fun, opts \\ []) when is_function(fun, 0) do
     location = Storage.collection_location()
@@ -16,6 +35,8 @@ defmodule Still.Writing.Discovery do
 
       :none ->
         previous = Process.get(@key)
+        previous_memo = Process.get(@memo_key)
+        Process.put(@memo_key, %{})
 
         {scope, problem} =
           cond do
@@ -41,6 +62,10 @@ defmodule Still.Writing.Discovery do
           fun.()
         after
           if previous, do: Process.put(@key, previous), else: Process.delete(@key)
+
+          if previous_memo,
+            do: Process.put(@memo_key, previous_memo),
+            else: Process.delete(@memo_key)
         end
     end
   end

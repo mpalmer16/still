@@ -13,6 +13,26 @@ defmodule StillWeb.WritingLiveTest do
     %{folder: folder, root: root}
   end
 
+  test "new writing has a separate Scratch save and later edits stay there", %{
+    conn: conn,
+    folder: folder
+  } do
+    {:ok, _} = Storage.set_folder(folder)
+    {:ok, view, _} = live(conn, ~p"/?new=1")
+    assert has_element?(view, "#save-scratch", "Save to scratch")
+
+    render_submit(view, "save_file", %{
+      "writing" => %{"body" => "A thought outside the notebook"},
+      "scratch" => true
+    })
+
+    assert File.read!(Path.join(folder, "Scratch/A_thought_outside_the_notebook.txt")) ==
+             "A thought outside the notebook"
+
+    refute has_element?(view, "#save-scratch")
+    assert has_element?(view, "#file-save-status", "Saved on this Mac")
+  end
+
   test "a saved filename can be corrected from its reading details", %{conn: conn, folder: folder} do
     {:ok, _} = Storage.set_folder(folder)
     location = Storage.collection_location()

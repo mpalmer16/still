@@ -215,4 +215,124 @@ defmodule Still.FolderNotebooksTest do
     assert {:error, _} = Files.create_folder(location, "Inside/../Outside", %{label: "Invalid"})
     refute File.exists?(Path.join(root, "Inside"))
   end
+
+  test "section names persist without altering files, identities or earlier words", %{
+    folder: root,
+    location: location
+  } do
+    relative = "Current Notebooks/2026/Notebook 1"
+    File.mkdir_p!(Path.join(root, relative <> "/Jan - Mar"))
+    File.mkdir_p!(Path.join(root, relative <> "/Apr - Nov"))
+    {:ok, notebook} = Files.register_folder(location, relative, %{label: "Notebook 1"})
+    File.write!(Path.join(root, relative <> "/Jan - Mar/10.txt"), "Early words")
+    File.write!(Path.join(root, relative <> "/Apr - Nov/155.txt"), "Later words")
+    {:ok, pieces} = Files.list(location)
+    later = Enum.find(pieces, &(&1.list_label == "155"))
+    {:ok, revised} = Files.save(location, later, %{body: "Later words revised"})
+
+    section = notebook.key <> "/Apr - Nov"
+
+    assert {:ok, _} =
+             Still.Writing.NotebookSections.order(notebook.key, [
+               notebook.key <> "/Jan - Mar",
+               section
+             ])
+
+    assert {:ok, _} =
+             Still.Writing.NotebookSections.rename(
+               notebook.key,
+               section,
+               "April through November"
+             )
+
+    assert Enum.map(Still.Writing.Notebooks.get(notebook.key).sections, & &1.label) == [
+             "Jan - Mar",
+             "April through November"
+           ]
+
+    assert {:ok, same} = Files.get(location, later.id)
+    assert same.relative_path == revised.relative_path
+    assert same.body == revised.body
+    assert {:ok, versions} = Files.revisions(location, later.id)
+    assert Enum.any?(versions, &(&1.body == "Later words"))
+    assert {:error, _} = Still.Writing.NotebookSections.rename(notebook.key, section, "  ")
+
+    assert {:error, _} =
+             Still.Writing.NotebookSections.choose(notebook.key, notebook.key <> "/../Other")
+  end
+
+  test "new Lists use the selected section, continue notebook numbering, and never redirect an edit",
+       %{folder: root, location: location} do
+    relative = "Current Notebooks/2026/Notebook 1"
+    File.mkdir_p!(Path.join(root, relative <> "/Jan - Mar"))
+    File.mkdir_p!(Path.join(root, relative <> "/Apr - Nov"))
+    {:ok, notebook} = Files.register_folder(location, relative, %{label: "Notebook 1"})
+    File.write!(Path.join(root, relative <> "/Jan - Mar/10.txt"), "Earlier")
+    File.write!(Path.join(root, relative <> "/Apr - Nov/155.txt"), "Later")
+    assert {:ok, _} = Files.list(location)
+
+    assert {:ok, _} =
+             Still.Writing.NotebookSections.choose(notebook.key, notebook.key <> "/Apr - Nov")
+
+    assert Still.Writing.Notebooks.current().id == notebook.id
+    assert {:ok, saved} = Files.save(location, Files.new(location), %{body: "Next words"})
+    assert saved.list_label == "156"
+    assert saved.relative_path == relative <> "/Apr - Nov/156_Next_words.txt"
+
+    assert {:ok, _} =
+             Still.Writing.NotebookSections.choose(notebook.key, notebook.key <> "/Jan - Mar")
+
+    assert {:ok, edited} = Files.save(location, saved, %{body: "Next words revised"})
+    assert edited.relative_path == saved.relative_path
+
+    assert {:ok, explicit} =
+             Files.save(location, Files.new(location), %{
+               body: "Explicit",
+               notebook_id: notebook.id,
+               relative_path: relative <> "/Apr - Nov/160.txt"
+             })
+
+    assert explicit.relative_path == relative <> "/Apr - Nov/160.txt"
+    File.rm_rf!(Path.join(root, relative <> "/Jan - Mar"))
+
+    assert {:error, _} =
+             Files.save(location, Files.new(location), %{body: "Must not land elsewhere"})
+  end
+
+  test "Scratch keeps exact words unnumbered and leaves the current notebook sequence alone", %{
+    location: location,
+    folder: root
+  } do
+    {:ok, book} = Files.create_folder(location, "Notebook 9", %{label: "Notebook 9"})
+    {:ok, _} = Still.Writing.Notebooks.choose_current(book.id)
+    {:ok, first} = Files.save(location, Files.new(location), %{body: "Notebook words"})
+    assert first.list_label == "1"
+    body = "A scratch thought\n\n\t  with its spaces  \n"
+
+    assert {:ok, scratch} =
+             Files.save_to_scratch(location, Files.new(location), %{
+               body: body,
+               notebook_id: book.id,
+               list_label: "99",
+               relative_path: "Wrong.txt"
+             })
+
+    assert scratch.relative_path == "Scratch/A_scratch_thought.txt"
+    assert scratch.list_label == nil
+    assert File.read!(scratch.path) == body
+    assert Still.Writing.Notebooks.current().id == book.id
+    assert {:ok, edited} = Files.save(location, scratch, %{body: body <> "more"})
+    assert edited.relative_path == scratch.relative_path
+    assert {:error, _} = Files.save_to_scratch(location, edited, %{body: "No relocation"})
+    assert {:ok, next} = Files.save(location, Files.new(location), %{body: "Next notebook words"})
+    assert next.list_label == "2"
+    File.rm_rf!(Path.join(root, "Scratch"))
+
+    assert {:error, _} =
+             Files.save_to_scratch(location, Files.new(location), %{
+               body: "Keep this recovery copy"
+             })
+
+    refute File.exists?(Path.join(root, "Scratch"))
+  end
 end

@@ -14,6 +14,9 @@ defmodule Still.Writing.Geography do
         _ -> notebook
       end
 
+    section = Map.get(place, :corner)
+    label = if section, do: label <> ", " <> section, else: label
+
     if number in [nil, ""], do: label, else: label <> ", No. " <> to_string(number)
   end
 
@@ -45,7 +48,15 @@ defmodule Still.Writing.Geography do
         anchor_x: anchor_x,
         anchor_y: anchor_y,
         tone: rem(seed, 17) - 8,
-        corner: if(notebook != key, do: notebook |> String.split("/") |> List.last())
+        corner:
+          if(notebook != key,
+            do:
+              Still.Writing.NotebookSections.label(
+                key,
+                notebook,
+                notebook |> String.split("/") |> List.last()
+              )
+          )
       }
     end
   end

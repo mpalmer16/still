@@ -274,8 +274,13 @@ defmodule StillWeb.WritingLive do
          do: params["draft_key"],
          else: socket.assigns.draft_key
 
+    save =
+      if params["scratch"] in [true, "true"],
+        do: &Still.Writing.Files.save_to_scratch/3,
+        else: &Poems.save/3
+
     with :ok <- validate_position(draft.source_order),
-         {:ok, piece} <- Poems.save(location, socket.assigns.piece, save_attrs(draft)) do
+         {:ok, piece} <- save.(location, socket.assigns.piece, save_attrs(draft)) do
       target_key = draft_key(location, piece)
       problem = remember(location, piece, socket.assigns.beside)
 
@@ -816,6 +821,14 @@ defmodule StillWeb.WritingLive do
                 do: "Save new version",
                 else: "Save"}</button>
               <button id="new-file" type="button" class="quiet-link">New</button>
+              <button
+                :if={is_nil(@piece.token)}
+                id="save-scratch"
+                type="submit"
+                name="scratch"
+                value="true"
+                class="quiet-link"
+              >Save to scratch</button>
               <.link id="open-saved-writing" navigate={~p"/writing"} class="quiet-link">Saved writing</.link>
               <button
                 :if={@piece.token}

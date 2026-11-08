@@ -23,7 +23,11 @@ defmodule Still.Writing.Notebooks do
 
           notebook ->
             Repo.update_all(Notebook, set: [current: false])
-            Repo.update!(Notebook.changeset(notebook, %{current: true}))
+
+            notebook
+            |> Notebook.changeset(%{current: true})
+            |> Ecto.Changeset.force_change(:current, true)
+            |> Repo.update!()
         end
       else
         Repo.update_all(Notebook, set: [current: false])
@@ -252,18 +256,22 @@ defmodule Still.Writing.Notebooks do
     place = Geography.for_entry(representative)
     place = Map.merge(place, %{x: place.anchor_x, y: place.anchor_y, corner: nil})
 
+    settings = Still.Writing.NotebookSections.settings(place.key)
+    labels = settings["labels"] || %{}
+
     sections =
       entries
       |> Enum.group_by(& &1.notebook)
-      |> Enum.sort_by(fn {key, _entries} ->
-        {if(key == place.key, do: 0, else: 1), natural_key(key)}
+      |> Enum.sort_by(fn {key, _section_entries} ->
+        {Enum.find_index(settings["order"] || [], &(&1 == key)) || 100_000,
+         if(key == place.key, do: 0, else: 1), natural_key(key)}
       end)
       |> Enum.map(fn {key, section_entries} ->
         section_place = Geography.for_entry(hd(section_entries))
 
         section = %{
           key: key,
-          label: section_place.corner || place.label,
+          label: labels[key] || section_place.corner || place.label,
           count: length(section_entries)
         }
 
@@ -279,6 +287,7 @@ defmodule Still.Writing.Notebooks do
       count: length(entries),
       place: place,
       section_count: length(sections),
+      current_section: settings["current"] || place.key,
       sections: sections
     }
 

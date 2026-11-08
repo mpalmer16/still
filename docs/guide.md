@@ -15,6 +15,15 @@ The [ordinary-text storage model](storage-model.md) describes the current format
 
 ## Write and return
 
+For new writing, **Save to scratch** keeps the page in an unnumbered Scratch folder
+without changing the current notebook or using its next List number. Open Scratch
+from Notebooks or find its pages in Saved writing. Later edits use the usual Save.
+
+In notebook contents, **Section details** lets you edit a section's displayed name.
+**New Lists here** chooses that section and notebook for new writing. Numbers continue
+across the whole notebook; changing the destination never moves an already saved page.
+Section names are display labels; the ordinary folders keep their existing names.
+
 Open Still into **Write**. Begin anywhere; a title is optional. Line breaks,
 blank stanzas, tabs, indentation and trailing spaces are not interpreted or
 reformatted. New input uses LF; an unchanged body or title-only edit retains

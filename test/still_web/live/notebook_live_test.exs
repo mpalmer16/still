@@ -16,6 +16,40 @@ defmodule StillWeb.NotebookLiveTest do
     assert Writing.current_notebook() == nil
   end
 
+  @tag :tmp_dir
+  test "section names and the new-List destination can be changed in the notebook", %{
+    conn: conn,
+    tmp_dir: root
+  } do
+    folder = Path.join(root, "writing")
+    File.mkdir_p!(Path.join(folder, "Notebook 1/Jan - Mar"))
+    File.write!(Path.join(folder, "Notebook 1/Jan - Mar/10.txt"), "Early")
+    File.write!(Path.join(folder, "Notebook 1/155.txt"), "Later")
+    assert {:ok, _} = Still.Storage.set_folder(folder)
+
+    assert {:ok, book} =
+             Still.Writing.Files.register_folder(
+               Still.Storage.collection_location(),
+               "Notebook 1",
+               %{label: "Notebook 1"}
+             )
+
+    {:ok, view, _} = live(conn, ~p"/notebooks?notebook=#{book.key}")
+    view |> form("#rename-section-0", %{label: "Apr - Nov"}) |> render_submit()
+    assert has_element?(view, "h2", "Apr - Nov")
+
+    view
+    |> element("button[phx-click=choose_section][phx-value-section='#{book.key}']")
+    |> render_click()
+
+    assert Writing.current_notebook().id == book.id
+    assert has_element?(view, "#notebook-section-0", "New Lists go here")
+    view |> form("#rename-section-0", %{label: ""}) |> render_submit()
+    assert has_element?(view, "h2", "Apr - Nov")
+    {:ok, reopened, _} = live(conn, ~p"/notebooks?notebook=#{book.key}")
+    assert has_element?(reopened, "h2", "Apr - Nov")
+  end
+
   test "the notebook room can add an empty notebook and choose it as current", %{conn: conn} do
     folder =
       Path.join(System.tmp_dir!(), "still-notebook-room-#{System.unique_integer([:positive])}")

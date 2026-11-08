@@ -50,6 +50,18 @@ defmodule StillWeb.NotebookLive do
     end
   end
 
+  def handle_event("rename_section", %{"section" => key, "label" => label}, socket) do
+    update_section(socket, fn notebook ->
+      Still.Writing.NotebookSections.rename(notebook.key, key, label)
+    end)
+  end
+
+  def handle_event("choose_section", %{"section" => key}, socket) do
+    update_section(socket, fn notebook ->
+      Still.Writing.NotebookSections.choose(notebook.key, key)
+    end)
+  end
+
   def handle_event("request_delete_list", %{"id" => id}, socket) do
     if notebook_contains?(socket.assigns.notebook, id) do
       case Poems.get(Storage.collection_location(), id) do
@@ -78,6 +90,19 @@ defmodule StillWeb.NotebookLive do
   end
 
   def handle_event("confirm_delete_list", _, socket), do: {:noreply, socket}
+
+  defp update_section(socket, action) do
+    case socket.assigns.notebook && action.(socket.assigns.notebook) do
+      {:ok, _} ->
+        {:noreply, socket |> assign(:notebook, Writing.notebook(socket.assigns.notebook.key))}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
 
   defp permanently_delete_list(socket, piece, notebook) do
     case Poems.permanently_delete(Storage.collection_location(), piece, true) do
@@ -281,7 +306,40 @@ defmodule StillWeb.NotebookLive do
             aria-label={section.label}
           >
             <div class="notebook-section-heading">
-              <h2 :if={length(@notebook.sections) > 1}>{section.label}</h2>
+              <div>
+                <h2>{section.label}</h2>
+                <p
+                  :if={
+                    Map.get(@notebook, :managed, false) &&
+                      section.key == Map.get(@notebook, :current_section)
+                  }
+                  class="section-whisper"
+                >
+                  New Lists go here
+                </p>
+                <details class="notebook-section-details">
+                  <summary>Section details</summary>
+                  <form
+                    phx-submit="rename_section"
+                    id={"rename-section-#{index}"}
+                    class="still-form-panel"
+                  >
+                    <input type="hidden" name="section" value={section.key} />
+                    <label>
+                      Section name
+                      <input name="label" value={section.label} required maxlength="200" />
+                    </label>
+                    <button type="submit" class="quiet-link">Save name</button>
+                  </form>
+                  <button
+                    :if={Map.get(@notebook, :managed, false)}
+                    type="button"
+                    phx-click="choose_section"
+                    phx-value-section={section.key}
+                    class="quiet-link"
+                  >New Lists here</button>
+                </details>
+              </div>
               <nav class="notebook-ends" aria-label={"Move through #{section.label}"}>
                 <a href={"#section-#{index}-beginning"}>Beginning</a>
                 <span aria-hidden="true">·</span>

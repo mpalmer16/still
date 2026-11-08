@@ -345,6 +345,58 @@ defmodule Still.Writing.Files do
 
   def save(_, _, _), do: {:error, "The writing data is invalid."}
 
+  def save_to_scratch(location, %{token: nil} = existing, attrs) do
+    with_location(location, fn active ->
+      with {:ok, notebook} <- scratch_notebook(active) do
+        attrs =
+          Map.merge(attrs, %{
+            notebook_id: notebook.id,
+            relative_path: nil,
+            list_label: nil,
+            source_order: nil
+          })
+
+        save(active, existing, attrs)
+      end
+    end)
+  end
+
+  def save_to_scratch(_, _, _),
+    do: {:error, "This page is already saved. Start a new page to save to Scratch."}
+
+  defp scratch_notebook(active) do
+    record =
+      Repo.get_by(Still.LocalRecord, scope: active.scope, kind: "scratch", record_key: "notebook")
+
+    notebook = if record, do: Repo.get(Notebook, record.data["notebook_id"])
+
+    cond do
+      notebook && notebook.collection_scope == active.scope && not notebook.numbered ->
+        with {:ok, _} <- safe_directory(active.folder, notebook.relative_path),
+             true <- File.dir?(Path.join(active.folder, notebook.relative_path)) do
+          {:ok, notebook}
+        else
+          _ -> {:error, "The Scratch folder is unavailable. Reconnect it before saving."}
+        end
+
+      record ->
+        {:error, "The Scratch folder is unavailable. Reconnect it before saving."}
+
+      true ->
+        with {:ok, notebook} <-
+               create_folder(active, "Scratch", %{label: "Scratch", numbered: false}),
+             {:ok, _} <-
+               Repo.insert(%Still.LocalRecord{
+                 scope: active.scope,
+                 kind: "scratch",
+                 record_key: "notebook",
+                 data: %{"notebook_id" => notebook.id}
+               }) do
+          {:ok, notebook}
+        end
+    end
+  end
+
   def set_title_role(location, existing, line),
     do: save(location, existing, %{body: existing.body, title_line: line})
 
@@ -671,10 +723,17 @@ defmodule Still.Writing.Files do
 
         base =
           cond do
-            notebook && notebook.collection_scope == active.scope -> notebook.relative_path
-            notebook && is_nil(notebook.collection_scope) -> nil
-            notebook_id -> :unavailable
-            true -> nil
+            notebook && notebook.collection_scope == active.scope ->
+              Still.Writing.NotebookSections.destination(notebook)
+
+            notebook && is_nil(notebook.collection_scope) ->
+              nil
+
+            notebook_id ->
+              :unavailable
+
+            true ->
+              nil
           end
 
         if base == :unavailable do
