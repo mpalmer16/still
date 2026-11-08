@@ -38,9 +38,7 @@ defmodule StillWeb.UnifiedEchoTest do
     assert Writing.get_entry!(historical.id) == historical
     assert Writing.list_versions(historical) == []
 
-    view
-    |> form("#file-writing-form", writing: %{body: body, title_line: "2"})
-    |> render_submit()
+    render_submit(view, "save_file", %{"writing" => %{body: body, title_line: "2"}})
 
     {:ok, [saved]} = Poems.list(Storage.collection_location())
     {:ok, read, _} = live(conn, ~p"/w/#{historical.id}?read=1&approach=left")
@@ -63,9 +61,9 @@ defmodule StillWeb.UnifiedEchoTest do
        %{conn: conn} do
     {:ok, first, _} = live(conn, ~p"/?new=1")
 
-    first
-    |> form("#file-writing-form", writing: %{body: "First\nold new writing", title_line: "1"})
-    |> render_submit()
+    render_submit(first, "save_file", %{
+      "writing" => %{body: "First\nold new writing", title_line: "1"}
+    })
 
     {:ok, [previous]} = Poems.list(Storage.collection_location())
     {:ok, blank, _} = live(conn, ~p"/?new=1")

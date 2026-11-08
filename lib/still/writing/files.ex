@@ -345,6 +345,63 @@ defmodule Still.Writing.Files do
 
   def save(_, _, _), do: {:error, "The writing data is invalid."}
 
+  def save_location(location, relative \\ nil) do
+    explicit? = is_binary(relative) and relative != ""
+
+    notebook =
+      if location.available do
+        if explicit?,
+          do: closest_notebook(location.scope, relative),
+          else: Still.Writing.Notebooks.current()
+      end
+
+    folder =
+      cond do
+        explicit? -> Path.dirname(relative)
+        notebook -> Still.Writing.NotebookSections.destination(notebook)
+        true -> "."
+      end
+
+    folder = if is_binary(folder), do: folder, else: "."
+
+    section =
+      if notebook do
+        key = file_section_key(notebook, Path.join(folder, "page.txt"))
+
+        Still.Writing.NotebookSections.label(
+          notebook.key,
+          key,
+          if(folder == notebook.relative_path, do: notebook.label, else: Path.basename(folder))
+        )
+      end
+
+    path_number =
+      if explicit? && notebook && notebook.numbered,
+        do: elem(filename_order(Path.basename(relative)), 0)
+
+    %{
+      folder: folder,
+      notebook: notebook && notebook.label,
+      section: section,
+      number:
+        if(notebook && notebook.numbered, do: path_number || next_label(location.scope, notebook))
+    }
+  end
+
+  def proposed_path(location, body) do
+    filename = filename_from_label(first_filename_line(body))
+    filename = if location.number, do: location.number <> "_" <> filename, else: filename
+    if location.folder == ".", do: filename, else: Path.join(location.folder, filename)
+  end
+
+  defp infer_path_notebook(active, nil, %{notebook_from_path: true, relative_path: path} = attrs)
+       when is_binary(path) and path != "" do
+    notebook = closest_notebook(active.scope, path)
+    Map.put(attrs, :notebook_id, notebook && notebook.id)
+  end
+
+  defp infer_path_notebook(_, _, attrs), do: attrs
+
   def save_to_scratch(location, %{token: nil} = existing, attrs) do
     with_location(location, fn active ->
       with {:ok, notebook} <- scratch_notebook(active) do
@@ -608,6 +665,7 @@ defmodule Still.Writing.Files do
 
   defp number_new_list(active, nil, existing, attrs) do
     with {:ok, _} <- synchronize(active) do
+      attrs = infer_path_notebook(active, nil, attrs)
       relative = attrs[:relative_path] || existing[:relative_path]
 
       nearest =

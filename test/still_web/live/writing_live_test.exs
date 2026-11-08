@@ -13,6 +13,53 @@ defmodule StillWeb.WritingLiveTest do
     %{folder: folder, root: root}
   end
 
+  test "save details show the section and next number, and a different file path chooses its notebook",
+       %{conn: conn, folder: folder} do
+    {:ok, _} = Storage.set_folder(folder)
+    location = Storage.collection_location()
+    alias Still.Writing.{Files, NotebookSections}
+    {:ok, first} = Files.create_folder(location, "Notebook 1", %{label: "Notebook 1"})
+    File.mkdir_p!(Path.join(folder, "Notebook 1/Apr - Nov"))
+    File.write!(Path.join(folder, "Notebook 1/Apr - Nov/37.txt"), "Earlier words")
+    {:ok, _} = Files.list(location)
+    {:ok, _} = NotebookSections.choose(first.key, first.key <> "/Apr - Nov")
+    {:ok, second} = Files.create_folder(location, "Notebook 2", %{label: "Notebook 2"})
+    {:ok, view, _} = live(conn, ~p"/?new=1")
+    assert has_element?(view, "#next-list-destination", "Next List 38")
+    assert has_element?(view, "#next-list-destination", "Apr - Nov")
+
+    assert has_element?(
+             view,
+             "#file-relative-path[placeholder='Notebook 1/Apr - Nov/38_Untitled.txt']"
+           )
+
+    refute has_element?(view, "select[name='writing[notebook_id]']")
+    refute has_element?(view, "#file-title-line:not([type=hidden])")
+    refute has_element?(view, "#file-source-order")
+
+    view
+    |> form("#file-writing-form",
+      writing: %{body: "Fresh words", relative_path: "Notebook 2/50_Fresh.txt"}
+    )
+    |> render_change()
+
+    assert has_element?(view, "#next-list-destination", "Notebook 2")
+    assert has_element?(view, "#next-list-destination", "Next List 50")
+
+    view
+    |> form("#file-writing-form",
+      writing: %{body: "Fresh words", relative_path: "Notebook 2/50_Fresh.txt"}
+    )
+    |> render_submit()
+
+    {:ok, pieces} = Files.list(location)
+    saved = Enum.find(pieces, &(&1.body == "Fresh words"))
+    assert saved.notebook_id == second.id
+    assert saved.list_label == "50"
+    assert saved.relative_path == "Notebook 2/50_Fresh.txt"
+    assert Writing.current_notebook().id == first.id
+  end
+
   test "new writing has a separate Scratch save and later edits stay there", %{
     conn: conn,
     folder: folder
@@ -126,7 +173,7 @@ defmodule StillWeb.WritingLiveTest do
     assert has_element?(view, "#file-writing-title[value='']")
     assert has_element?(view, "#copy-file-edit button[aria-label='Copy text'][title='Copy text']")
     body = "  First words\n\n" <> String.duplicate("long line ", 80)
-    view |> form("#file-writing-form", writing: %{body: body, title_line: "1"}) |> render_submit()
+    render_submit(view, "save_file", %{"writing" => %{body: body, title_line: "1"}})
     {:ok, [saved]} = Poems.list(Storage.collection_location())
     assert saved.title_line == 1
     assert Poems.display_title(saved) == "First words"
@@ -208,9 +255,7 @@ defmodule StillWeb.WritingLiveTest do
     {:ok, view, _} = live(conn, ~p"/?new=1")
     text = "\n\n  cobalt <script>fixture</script>  \n\tsecond line\n\nlast stanza\n"
 
-    view
-    |> form("#file-writing-form", writing: %{body: text, title_line: "3"})
-    |> render_submit()
+    render_submit(view, "save_file", %{"writing" => %{body: text, title_line: "3"}})
 
     {:ok, [saved]} = Poems.list(Storage.collection_location())
     assert_patch(view, ~p"/writing/#{saved.id}/edit")
@@ -251,9 +296,7 @@ defmodule StillWeb.WritingLiveTest do
     {:ok, [saved]} = Poems.list(Storage.collection_location())
     assert saved.body == "" and saved.title_line == nil
 
-    view
-    |> form("#file-writing-form", writing: %{body: "Synthetic title\n", title_line: "1"})
-    |> render_submit()
+    render_submit(view, "save_file", %{"writing" => %{body: "Synthetic title\n", title_line: "1"}})
 
     {:ok, renamed} = Poems.get(Storage.collection_location(), saved.id)
     assert renamed.id == saved.id
@@ -282,11 +325,9 @@ defmodule StillWeb.WritingLiveTest do
     {:ok, saved} = Poems.save(location, Poems.new(location), %{body: text, title_line: nil})
     {:ok, edit, _} = live(conn, ~p"/writing/#{saved.id}/edit")
 
-    edit
-    |> form("#file-writing-form",
-      writing: %{title_line: "2", body: String.replace(text, "\r\n", "\n")}
-    )
-    |> render_submit()
+    render_submit(edit, "save_file", %{
+      "writing" => %{title_line: "2", body: String.replace(text, "\r\n", "\n")}
+    })
 
     {:ok, renamed} = Poems.get(location, saved.id)
     assert File.read!(renamed.path) == text
@@ -311,7 +352,7 @@ defmodule StillWeb.WritingLiveTest do
     assert refreshed.title_needs_review
     {:ok, edit, _html} = live(conn, ~p"/writing/#{saved.id}/edit")
     assert has_element?(edit, "#file-title-line[value='']")
-    assert has_element?(edit, "#file-writing-form", "Choose a line again")
+    refute has_element?(edit, "#save-title-meaning")
 
     edit
     |> form("#file-writing-form", writing: %{body: "New heading\n\ntext", title_line: ""})

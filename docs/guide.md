@@ -138,9 +138,10 @@ characters are replaced; the text stays exact.
 In a notebook, a new List gets the next number after its highest numbered List,
 including Lists in sections. Existing gaps and suffixes are retained; `0042b`
 is followed by `0043`. An empty notebook starts at `1`. The number prefixes the
-filename, for example `0043_this_is_the_title_.txt`. Leave **Page details → List
-number** empty for automatic numbering, or enter your own. Changing a saved
-List number updates its filename and notebook order. When adding a collection such as Poems, turn off **Number new Lists automatically**
+filename, for example `0043_this_is_the_title_.txt`. **Save location & file name**
+shows the notebook, section, next List number, and proposed file path. Leave the
+path blank for that default, or enter a path in another notebook folder. Notebook
+placement follows the file path. When adding a collection such as Poems, turn off **Number new Lists automatically**
 in its notebook details. Existing filenames stay intact and future writing uses
 the title alone; the collection is shown by filename within each section.
 Writing without a notebook can also remain unnumbered. An empty opening falls back to Untitled.txt. To correct an existing name, read

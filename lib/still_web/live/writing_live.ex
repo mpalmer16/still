@@ -60,6 +60,7 @@ defmodule StillWeb.WritingLive do
            submitted: MapSet.member?(status.submitted, piece.id),
            draft: words(piece),
            location: location,
+           save_location: Still.Writing.Files.save_location(location, piece.relative_path),
            editing: editing,
            wander_return:
              if(
@@ -180,6 +181,18 @@ defmodule StillWeb.WritingLive do
   def handle_event("writing_changed", %{"writing" => attrs}, socket) do
     draft = draft_words(attrs, socket.assigns.piece)
 
+    socket =
+      if is_nil(socket.assigns.piece.token) &&
+           draft.relative_path != socket.assigns.draft.relative_path do
+        assign(
+          socket,
+          :save_location,
+          Still.Writing.Files.save_location(socket.assigns.location, draft.relative_path)
+        )
+      else
+        socket
+      end
+
     {:noreply,
      socket
      |> assign(draft: draft, dirty: draft != words(socket.assigns.piece), notice: nil)
@@ -280,7 +293,12 @@ defmodule StillWeb.WritingLive do
         else: &Poems.save/3
 
     with :ok <- validate_position(draft.source_order),
-         {:ok, piece} <- save.(location, socket.assigns.piece, save_attrs(draft)) do
+         {:ok, piece} <-
+           save.(
+             location,
+             socket.assigns.piece,
+             Map.put(save_attrs(draft), :notebook_from_path, is_nil(socket.assigns.piece.token))
+           ) do
       target_key = draft_key(location, piece)
       problem = remember(location, piece, socket.assigns.beside)
 
@@ -342,6 +360,8 @@ defmodule StillWeb.WritingLive do
     {:noreply,
      assign(socket,
        location: location,
+       save_location:
+         Still.Writing.Files.save_location(location, socket.assigns.draft.relative_path),
        piece: piece,
        problem: location.error || remember(location, piece, socket.assigns.beside),
        notice: nil
@@ -707,89 +727,53 @@ defmodule StillWeb.WritingLive do
             class="file-location file-writing-details"
             phx-mounted={JS.ignore_attributes(["open"])}
           >
-            <summary>Page details</summary>
-            <p :if={@piece.title_needs_review} class="file-note" role="alert">
-              The text at the old title line changed outside Still. Choose a line again if you want one marked as the title.
+            <summary>Save location &amp; file name</summary>
+            <p :if={is_nil(@piece.token)} id="next-list-destination" class="file-note">
+              <%= if @save_location.notebook do %>
+                <strong>{@save_location.notebook}</strong> → {@save_location.section}
+                <span :if={@save_location.number}> · Next List <strong>{@save_location.number}</strong></span>
+                <span :if={!@save_location.number}> · Unnumbered</span>
+              <% else %>
+                No notebook · Unnumbered
+              <% end %>
             </p>
-            <div class="still-form-grid">
-              <div class="still-field still-field-wide">
-                <label for="file-relative-path">File name or relative path</label>
-                <input
-                  id="file-relative-path"
-                  name="writing[relative_path]"
-                  value={@draft.relative_path}
-                  placeholder="Uses the title or first nonblank line"
-                  autocomplete="off"
-                  readonly={not is_nil(@piece.token)}
-                />
-                <p :if={@piece.token}>
-                  To correct the file name, save your words and choose Read, then open Text file and title meaning.
-                </p>
-              </div>
-              <div class="still-field still-field-wide">
-                <label for="file-title-line">Title meaning</label>
-                <p>Mark a line already in your writing as the title. The words stay in the text.</p>
-                <input
-                  id="file-title-line"
-                  name="writing[title_line]"
-                  type="number"
-                  min="1"
-                  value={@draft.title_line}
-                  placeholder="No title line"
-                />
-                <button
-                  id="save-title-meaning"
-                  type="submit"
-                  name="record_title_meaning"
-                  value="true"
-                  class="quiet-link"
-                >Save title meaning</button>
-              </div>
-              <div class="still-field still-field-wide">
-                <label for="file-notebook">Notebook</label>
-                <select
-                  id="file-notebook"
-                  name="writing[notebook_id]"
-                  disabled={not is_nil(@piece.token)}
-                >
-                  <option value="">No notebook</option>
-                  <option
-                    :for={book <- Enum.filter(@notebooks, &Map.get(&1, :managed, false))}
-                    value={book.id}
-                    selected={to_string(@draft.notebook_id) == to_string(book.id)}
-                  >
-                    {book.label}
-                  </option>
-                </select>
-                <p :if={@piece.token} class="section-whisper">
-                  To change notebooks, move this file into another notebook folder in Finder, then refresh Saved writing.
-                </p>
-              </div>
-              <div class="still-field">
-                <label for="file-list-label">List number</label>
-                <input
-                  id="file-list-label"
-                  name="writing[list_label]"
-                  value={@draft.list_label}
-                  placeholder="Next number on Save"
-                />
-              </div>
-              <p class="file-note">
-                Leave the List number empty to follow the notebook’s numbering choice. Numbered notebooks use the next number; unnumbered collections keep the title alone. You can enter a different number, including a suffix such as 12a. Changing a saved List number also updates its filename.
-              </p>
-              <div class="still-field">
-                <label for="file-source-order">Position in notebook</label>
-                <input
-                  id="file-source-order"
-                  name="writing[source_order]"
-                  inputmode="numeric"
-                  pattern="[0-9]*"
-                  phx-debounce="blur"
-                  value={@draft.source_order}
-                  placeholder="Optional"
-                />
-              </div>
-            </div>
+            <p id="file-save-destination" class="file-note">
+              Inside <code>{@location.folder || "No writing folder chosen"}</code>
+            </p>
+            <label for="file-relative-path">File path</label>
+            <input
+              id="file-relative-path"
+              name="writing[relative_path]"
+              value={@draft.relative_path}
+              placeholder={Still.Writing.Files.proposed_path(@save_location, @draft.body)}
+              autocomplete="off"
+              phx-debounce="400"
+              readonly={not is_nil(@piece.token)}
+            />
+            <p :if={is_nil(@piece.token)} class="file-note">
+              Leave blank to use the proposed name above. Change the path to save in another folder.
+              The next List number is confirmed when you save.
+            </p>
+            <p :if={@piece.token} class="file-note">
+              Move this file in Finder to change its notebook, then reopen it in Still.
+            </p>
+            <input
+              id="file-title-line"
+              type="hidden"
+              name="writing[title_line]"
+              value={@draft.title_line}
+            />
+            <input type="hidden" name="writing[notebook_id]" value={@draft.notebook_id} />
+            <input type="hidden" name="writing[list_label]" value={@draft.list_label} />
+            <input type="hidden" name="writing[source_order]" value={@draft.source_order} />
+            <.link navigate={~p"/storage"} class="quiet-link">Storage &amp; Backups</.link>
+            <button
+              :if={is_nil(@piece.token)}
+              id="refresh-file-folder"
+              type="button"
+              phx-click="refresh_file_folder"
+              class="quiet-link"
+            >Refresh folder choice</button>
           </details>
           <p id="file-keyboard-hint" class="sr-only">
             Tab indents. Shift+Tab removes an indent. Escape leaves the editor for the page controls. Command or Control+S saves; Command or Control+Enter saves and reads.
@@ -855,26 +839,7 @@ defmodule StillWeb.WritingLive do
         <p :if={@location.error && @location.error != @problem} class="file-note" role="alert">
           {@location.error}
         </p>
-        <details class="file-location" id="file-save-destination">
-          <summary>Save location</summary>
-          <p :if={@location.configured}>
-            <code :if={@piece.path}>{@piece.path}</code><span :if={!@piece.path}>The writing will be saved in <code>{@location.folder}</code>{if @draft.relative_path !=
-                                                                                                                                                   "",
-                                                                                                                                                 do:
-                                                                                                                                                   " as " <>
-                                                                                                                                                     @draft.relative_path,
-                                                                                                                                                 else:
-                                                                                                                                                   " with a name chosen on Save"}.</span>
-          </p>
-          <p :if={!@location.configured}>No collection folder is chosen.</p>
-          <.link navigate={~p"/storage"} class="quiet-link">Storage &amp; Backups</.link>
-          <button
-            :if={is_nil(@piece.token)}
-            id="refresh-file-folder"
-            phx-click="refresh_file_folder"
-            class="quiet-link"
-          >Refresh folder choice</button>
-        </details>
+
         <aside :if={@beside} class="beside-room">
           <p class="section-whisper">Written beside</p><.link
             navigate={~p"/w/#{@beside.id}?read=1"}
