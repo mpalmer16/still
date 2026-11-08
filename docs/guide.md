@@ -135,8 +135,9 @@ marked title line or the first nonblank line, with a number added if the name
 is already used. Spaces and colons become underscores, including a final colon:
 `this:is:the:title:` becomes `this_is_the_title_.txt`. Other unsafe filename
 characters are replaced; the text stays exact.
-In a notebook, a new List gets the next number after its highest numbered List,
-including Lists in sections. Existing gaps and suffixes are retained; `0042b`
+Numbering belongs to the whole notebook; sections never restart it. A new List
+gets the next number after the notebook's highest numbered List, across all its
+sections. Existing gaps and suffixes are retained; `0042b`
 is followed by `0043`. An empty notebook starts at `1`. The number prefixes the
 filename, for example `0043_this_is_the_title_.txt`. **Save location & file name**
 shows the notebook, section, next List number, and proposed file path. Leave the
