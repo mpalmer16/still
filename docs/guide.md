@@ -15,6 +15,15 @@ The [ordinary-text storage model](storage-model.md) describes the current format
 
 ## Write and return
 
+**Page width**, beside Letters, adjusts the writing surface independently of type
+size. Still remembers the preferred width and limits it to leave room for echoes
+on the current screen. **Reset** returns to the original width.
+
+Enter carries the current line's tabs and spaces onto the next line. After two
+consecutive indented lines, Enter returns to the left margin. **Shift+Enter**
+continues the indent even then; Tab, Shift+Tab and Backspace remain available for
+manual changes. Pasting existing writing does not apply these keyboard defaults.
+
 For new writing, **Save to scratch** keeps the page in an unnumbered Scratch folder
 without changing the current notebook or using its next List number. Open Scratch
 from Notebooks or find its pages in Saved writing. Later edits use the usual Save.

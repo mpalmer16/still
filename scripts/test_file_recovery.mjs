@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {test} from 'node:test'
 const source = await readFile(new URL('../assets/js/file_recovery.js', import.meta.url), 'utf8')
-const {readCopies, holdArrival, captureCopy, acknowledgeCopies, shouldBlockNavigation, restoreCopy, captureAfterArrival, resumableCopy, migratePosition, positionKey} = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
+const indentation = await readFile(new URL('../assets/js/indentation.js', import.meta.url), 'utf8')
+const combined = source.replace('import {insertEnter, replaceSelection} from "./indentation"\n', '') + '\n' + indentation.replace(/^export /gm, '')
+const {readCopies, holdArrival, captureCopy, acknowledgeCopies, shouldBlockNavigation, restoreCopy, captureAfterArrival, resumableCopy, migratePosition, positionKey} = await import(`data:text/javascript;base64,${Buffer.from(combined).toString('base64')}`)
 const memory = () => {const map = new Map(); return {getItem: k => map.get(k) ?? null, setItem: (k,v) => map.set(k,v), removeItem: k => map.delete(k)}}
 const blank = {body: '', title: ''}
 
@@ -120,7 +122,7 @@ test('purging saved files from another tab cannot erase an active unsaved recove
   globalThis.window={addEventListener:(type,listener)=>listeners.set(type,listener)}
   globalThis.localStorage=store
   try {
-    await import(`data:text/javascript;base64,${Buffer.from(source+'\n// separate tab event registration').toString('base64')}`)
+    await import(`data:text/javascript;base64,${Buffer.from(combined+'\n// separate tab event registration').toString('base64')}`)
     listeners.get('phx:file-purged')?.({detail:{key}})
     assert.equal(store.getItem(key),original)
   } finally { delete globalThis.window; delete globalThis.localStorage }

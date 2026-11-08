@@ -9,6 +9,9 @@ defmodule StillWeb.Layouts do
   attr :light_open, :boolean, default: false
   attr :room_letters, :integer, default: 50
   attr :letters_open, :boolean, default: false
+  attr :writing_controls, :boolean, default: false
+  attr :room_width, :integer, default: 0
+  attr :width_open, :boolean, default: false
   attr :landscape_open, :boolean, default: false
   attr :places, :list, default: []
 
@@ -33,7 +36,7 @@ defmodule StillWeb.Layouts do
     ~H"""
     <div
       class={"site-frame #{if @landscape_open, do: "landscape-revealed"}"}
-      style={"--light: #{@room_light}; --letters: #{@room_letters / 100}; --place-x: #{@place.x}%; --place-y: #{@place.y}%; --place-tone: #{@place.tone};"}
+      style={"--light: #{@room_light}; --letters: #{@room_letters / 100}; --place-x: #{@place.x}%; --place-y: #{@place.y}%; --place-tone: #{@place.tone};#{if @room_width > 0, do: " --page-width: #{@room_width}px;"}"}
     >
       <a href="#page-content" class="skip-link">Skip to the page</a>
       <div class="room-light" aria-hidden="true"></div>
@@ -98,6 +101,43 @@ defmodule StillWeb.Layouts do
           aria-controls="room-letters-form"
           class="room-control"
         >Letters</button>
+        <button
+          :if={@writing_controls}
+          id="page-width-toggle"
+          type="button"
+          phx-click="toggle_width"
+          aria-expanded={to_string(@width_open)}
+          aria-controls="room-page-form"
+          class="room-control"
+        >Page width</button>
+        <form
+          :if={@writing_controls && @width_open}
+          id="room-page-form"
+          phx-change="change_width"
+          phx-submit="change_width"
+          class="letters-adjustment page-width-adjustment"
+        >
+          <label for="room-page-width" class="sr-only">Writing page width</label>
+          <input
+            id="room-page-width"
+            name="page[width]"
+            type="range"
+            min="560"
+            max="1600"
+            step="20"
+            value={if @room_width == 0, do: 740, else: @room_width}
+            phx-debounce="100"
+            aria-valuetext={
+              if @room_width == 0,
+                do: "Default width",
+                else: "Up to #{@room_width} pixels, leaving space for echoes"
+            }
+          />
+          <span class="page-width-value">{if @room_width == 0, do: "Default", else: "#{@room_width}px"}</span>
+          <button type="button" phx-click="reset_width" class="room-control">Reset</button>
+          <button id="room-close" type="button" phx-click="close_room" class="room-control">Done</button>
+          <small>The screen limits the width to leave room for echoes.</small>
+        </form>
         <form
           :if={@light_open}
           id="room-light-form"

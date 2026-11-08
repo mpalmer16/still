@@ -28,13 +28,28 @@ test('only body typing fades controls; words and caret are untouched', () => {
   assert.equal(r.body.value, '  words\n\n'); assert.equal(r.body.selectionStart, 4)
   r.focus.destroy()
 })
-test('pointer movement, keyboard navigation, control focus and save reveal controls', () => {
+test('pointer movement, Escape, control focus and save reveal controls', () => {
   const r = room()
-  for (const [surface, event, detail] of [[r.doc,'pointermove',{}], [r.doc,'keydown',{key:'Escape'}], [r.doc,'keydown',{key:'Tab'}], [r.doc,'focusin',{target:{}}], [r.clock,'still:file-saved',{}]]) {
+  for (const [surface, event, detail] of [[r.doc,'pointermove',{}], [r.doc,'keydown',{key:'Escape'}], [r.doc,'focusin',{target:{}}], [r.clock,'still:file-saved',{}], [r.doc,'keydown',{key:'s',metaKey:true}]]) {
     r.type(); r.tick(); assert.equal(r.quiet(), true)
     surface.fire(event, detail); assert.equal(r.quiet(), false)
     r.tick(); assert.equal(r.quiet(), false)
   }
+  r.focus.destroy()
+})
+
+test('Tab and Shift Tab editing in the body keep the quiet writing view', () => {
+  const r = room()
+  for (const shiftKey of [false, true]) {
+    r.type(); r.tick(); assert.equal(r.quiet(), true)
+    r.doc.fire('keydown', {key: 'Tab', shiftKey, target: r.body})
+    assert.equal(r.quiet(), true)
+  }
+  r.doc.fire('keydown', {key: 'Tab', target: {}})
+  assert.equal(r.quiet(), false)
+  r.type(); r.tick(); assert.equal(r.quiet(), true)
+  r.doc.fire('keydown', {key: 'Tab', target: r.body, ctrlKey: true})
+  assert.equal(r.quiet(), false)
   r.focus.destroy()
 })
 test('disconnect and navigation cancel pending fades; destroy removes all listeners', () => {

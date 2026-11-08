@@ -1,3 +1,5 @@
+import {insertEnter, replaceSelection} from "./indentation"
+
 const fields = ["title_line", "relative_path", "notebook_id", "list_label", "source_order"]
 const equal = (a, b) => a?.body === b?.body && String(a?.title ?? "") === String(b?.title ?? "") &&
   fields.every(field => String(a?.[field] ?? "") === String(b?.[field] ?? ""))
@@ -101,6 +103,7 @@ export const FileRecovery = {
     this.baseToken = this.el.dataset.baseToken || null
     this.failed = false
     this.arrivalPending = true
+    this.composing = false
     this.words = () => {
       const body = this.el.value
       if (this.title) this.title.value = ""
@@ -174,16 +177,22 @@ export const FileRecovery = {
       }
       if (event.key === "Escape" && !document.querySelector("#room-close")) { event.preventDefault(); this.form.querySelector("#save-file")?.focus() }
       if (event.key === "Tab" && event.target === this.el) {
+        if (event.isComposing || this.composing || event.metaKey || event.ctrlKey || event.altKey) return
         event.preventDefault()
         const start = this.el.selectionStart, end = this.el.selectionEnd
         if (event.shiftKey) {
           const lineStart = this.el.value.lastIndexOf("\n", start - 1) + 1
           const selected = this.el.value.slice(lineStart, end)
-          this.el.setRangeText(selected.split("\n").map(line => line.replace(/^(\t| {1,4})/, "")).join("\n"), lineStart, end, "select")
-        } else this.el.setRangeText("\t", start, end, "end")
-        this.el.dispatchEvent(new Event("input", {bubbles: true}))
+          const changed = selected.split("\n").map(line => line.replace(/^(\t| {1,4})/, "")).join("\n")
+          replaceSelection(this.el, changed, lineStart, end, "select")
+        } else replaceSelection(this.el, "\t", start, end, "end")
+      }
+      if (event.target === this.el && event.key === "Enter") {
+        insertEnter(this.el, event, {composing: this.composing})
       }
     }
+    this.onCompositionStart = () => { this.composing = true }
+    this.onCompositionEnd = () => { this.composing = false }
     this.onSaved = ({detail}) => {
       if (![detail.source_key, detail.target_key].includes(this.key)) return
       this.baseline = currentWords(detail)
@@ -228,6 +237,8 @@ export const FileRecovery = {
     this.form.addEventListener("input", this.onInput)
     this.form.addEventListener("submit", this.onSubmit)
     this.form.addEventListener("keydown", this.onKey)
+    this.el.addEventListener("compositionstart", this.onCompositionStart)
+    this.el.addEventListener("compositionend", this.onCompositionEnd)
     window.addEventListener("still:save", this.save)
     window.addEventListener("still:prepare-to-leave", this.onPrepare)
     window.addEventListener("pagehide", this.onPrepare)
@@ -238,6 +249,13 @@ export const FileRecovery = {
     window.addEventListener("scroll", this.keepPosition, {passive: true})
     window.addEventListener("phx:page-loading-start", this.onNavigation)
     this.handleEvent("letters-changed", () => requestAnimationFrame(() => { this.fit(); this.keepPosition() }))
+    this.handleEvent("writing-width-changed", () => requestAnimationFrame(() => {
+      const {selectionStart, selectionEnd, selectionDirection} = this.el
+      this.capture(false)
+      this.fit()
+      this.el.setSelectionRange(selectionStart, selectionEnd, selectionDirection)
+      this.keepPosition()
+    }))
     this.handleEvent("file-restore-local", () => {
       if (!this.offered) return
       try {
@@ -306,6 +324,8 @@ export const FileRecovery = {
     this.form.removeEventListener("input", this.onInput)
     this.form.removeEventListener("submit", this.onSubmit)
     this.form.removeEventListener("keydown", this.onKey)
+    this.el.removeEventListener("compositionstart", this.onCompositionStart)
+    this.el.removeEventListener("compositionend", this.onCompositionEnd)
     window.removeEventListener("still:save", this.save)
     window.removeEventListener("still:prepare-to-leave", this.onPrepare)
     window.removeEventListener("pagehide", this.onPrepare)

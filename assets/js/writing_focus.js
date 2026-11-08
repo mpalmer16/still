@@ -15,6 +15,8 @@ export function writingFocus(page, doc = document, clock = window) {
   }
   const focus = event => { if (event.target !== body) reveal() }
   const key = event => {
+    if (event.key === "Tab" && event.target === body && !event.isComposing &&
+        !event.metaKey && !event.ctrlKey && !event.altKey) return
     if (["Escape", "Tab"].includes(event.key) || event.metaKey || event.ctrlKey || event.altKey) reveal()
   }
   const listeners = [

@@ -13,6 +13,8 @@ defmodule StillWeb.Room do
      |> assign(:light_open, false)
      |> assign(:room_letters, Writing.room_letters())
      |> assign(:letters_open, false)
+     |> assign(:room_width, Still.Writing.Appearance.width())
+     |> assign(:width_open, false)
      |> assign(:landscape_open, false)
      |> assign(:places, [])
      |> assign(:place, Writing.geography(nil))
@@ -29,6 +31,7 @@ defmodule StillWeb.Room do
      socket
      |> assign(:light_open, opening)
      |> assign(:letters_open, false)
+     |> assign(:width_open, false)
      |> assign(:landscape_open, false)
      |> maybe_focus(opening, "room-light-angle")}
   end
@@ -40,6 +43,7 @@ defmodule StillWeb.Room do
      socket
      |> assign(:letters_open, opening)
      |> assign(:light_open, false)
+     |> assign(:width_open, false)
      |> assign(:landscape_open, false)
      |> maybe_focus(opening, "room-letters-size")}
   end
@@ -52,6 +56,7 @@ defmodule StillWeb.Room do
      |> assign(:landscape_open, opening)
      |> assign(:light_open, false)
      |> assign(:letters_open, false)
+     |> assign(:width_open, false)
      |> assign(:places, if(opening, do: Writing.places(), else: socket.assigns.places))
      |> assign(:return_writing, Writing.current_writing())
      |> assign(:return_beside, Writing.current_beside())
@@ -63,6 +68,7 @@ defmodule StillWeb.Room do
      socket
      |> assign(:light_open, false)
      |> assign(:letters_open, false)
+     |> assign(:width_open, false)
      |> assign(:landscape_open, false)
      |> push_event("room-focus", %{})}
   end
@@ -91,6 +97,44 @@ defmodule StillWeb.Room do
   end
 
   defp handle_event("change_letters", _params, socket), do: {:halt, socket}
+
+  defp handle_event("toggle_width", _, socket) do
+    opening = not socket.assigns.width_open
+
+    {:halt,
+     socket
+     |> assign(:width_open, opening)
+     |> assign(:light_open, false)
+     |> assign(:letters_open, false)
+     |> assign(:landscape_open, false)
+     |> maybe_focus(opening, "room-page-width")}
+  end
+
+  defp handle_event("change_width", %{"page" => %{"width" => value}}, socket) do
+    with {width, ""} <- parse_integer(value),
+         {:ok, saved} <- Still.Writing.Appearance.set_width(width) do
+      {:halt,
+       socket
+       |> assign(:room_width, saved)
+       |> push_event("writing-width-changed", %{width: saved})}
+    else
+      _ -> {:halt, socket}
+    end
+  end
+
+  defp handle_event("change_width", _, socket), do: {:halt, socket}
+
+  defp handle_event("reset_width", _, socket) do
+    case Still.Writing.Appearance.set_width(0) do
+      {:ok, _} ->
+        {:halt,
+         socket |> assign(:room_width, 0) |> push_event("writing-width-changed", %{width: 0})}
+
+      _ ->
+        {:halt, socket}
+    end
+  end
+
   defp handle_event(_event, _params, socket), do: {:cont, socket}
 
   defp parse_integer(value) when is_binary(value), do: Integer.parse(value)

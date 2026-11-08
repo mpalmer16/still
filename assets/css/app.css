@@ -536,11 +536,15 @@ mark { background: hsl(var(--hue, 218) 18% 25%); color: var(--ink); text-decorat
 .file-history .file-lines { margin: 25px 0; font-size: 20px; }
 @media (max-width: 600px) { .file-shelf { grid-template-columns: 1fr; gap: 15px; } }
 
-/* Keep the editable text as wide as reading; the page adds its own quiet inset. */
+/* Remember the preferred page width, reserving echo columns on desktop screens. */
 .site-frame:has(.file-now) {
   --file-page-inset: clamp(20px, 2.5vw, 38px);
-  --writing-measure: calc(var(--reading-measure) + var(--file-page-inset) + var(--file-page-inset) + 2px);
+  --writing-measure: min(var(--page-width, calc(var(--reading-measure) + var(--file-page-inset) + var(--file-page-inset) + 2px)), calc(100vw - 480px));
 }
+.page-width-adjustment { flex-wrap: wrap; width: min(440px, calc(100vw - 48px)); gap: 8px 16px; }
+.page-width-adjustment small { flex-basis: 100%; color: var(--muted); font-size: 11px; }
+.page-width-adjustment input[type=range] { width: 160px; }
+.page-width-value { color: var(--soft); font-size: 12px; }
 .writing-room.file-now { padding-top: clamp(24px, 4vh, 60px); }
 .file-now .editor-form { margin-top: 24px; }
 .file-page { padding: var(--file-page-inset); border: 1px solid rgb(177 195 221 / .09); background: rgb(177 195 221 / .018); }
@@ -557,6 +561,9 @@ mark { background: hsl(var(--hue, 218) 18% 25%); color: var(--ink); text-decorat
 html[data-still-writing-focus] .site-frame:has(.file-now):not(:has([role="alert"], #file-recovery)) :is(.site-header, .room-intro, .title-input, .file-writing-footer, .file-location, .room-light-control, .place-whisper) { opacity: 0; }
 @media (max-width: 1279px), (max-height: 620px) {
   .site-frame:has(.file-now) .gravity-presence { position: relative; left: auto; right: auto; width: min(100%, var(--writing-measure)); }
+}
+@media (max-width: 1279px) {
+  .site-frame:has(.file-now) { --writing-measure: var(--page-width, calc(var(--reading-measure) + var(--file-page-inset) + var(--file-page-inset) + 2px)); }
 }
 @media (max-width: 650px) {
   .writing-room.file-now { padding-top: 20px; }

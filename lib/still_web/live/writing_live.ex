@@ -641,6 +641,9 @@ defmodule StillWeb.WritingLive do
       light_open={@light_open}
       room_letters={@room_letters}
       letters_open={@letters_open}
+      writing_controls={@editing}
+      room_width={@room_width}
+      width_open={@width_open}
       landscape_open={@landscape_open}
       places={@places}
       place={@place}
@@ -776,7 +779,7 @@ defmodule StillWeb.WritingLive do
             >Refresh folder choice</button>
           </details>
           <p id="file-keyboard-hint" class="sr-only">
-            Tab indents. Shift+Tab removes an indent. Escape leaves the editor for the page controls. Command or Control+S saves; Command or Control+Enter saves and reads.
+            Tab indents. Shift+Tab removes an indent. Enter continues indentation, returning to the margin after two indented lines. Shift+Enter keeps the indentation. Escape leaves the editor for the page controls. Command or Control+S saves; Command or Control+Enter saves and reads.
           </p>
           <footer class="writing-footer file-writing-footer">
             <StillWeb.CopyText.copy_text

@@ -5,6 +5,46 @@ defmodule StillWeb.RoomLiveTest do
   alias Still.{Repo, Writing}
   alias Still.Writing.Entry
 
+  @tag :tmp_dir
+  test "page width is remembered without changing words and remains separate from Letters", %{
+    conn: conn,
+    tmp_dir: root
+  } do
+    folder = Path.join(root, "writing")
+    File.mkdir_p!(folder)
+    {:ok, _} = Still.Storage.set_folder(folder)
+    location = Still.Storage.collection_location()
+    body = "An opening\n\tand its branch\n"
+
+    {:ok, piece} =
+      Still.Writing.Files.save(location, Still.Writing.Files.new(location), %{body: body})
+
+    {:ok, view, _} = live(conn, ~p"/writing/#{piece.id}/edit")
+    view |> element("#page-width-toggle") |> render_click()
+    assert has_element?(view, "#room-page-width[min='560'][max='1600']")
+    view |> form("#room-page-form", page: %{width: "1400"}) |> render_change()
+    assert Still.Writing.Appearance.width() == 1400
+    assert has_element?(view, ".site-frame[style*='--page-width: 1400px']")
+    assert File.read!(piece.path) == body
+    view |> element("#letters-toggle") |> render_click()
+    refute has_element?(view, "#room-page-form")
+    assert Still.Writing.Appearance.width() == 1400
+    assert Writing.room_letters() == 50
+    {:ok, reopened, _} = live(conn, ~p"/writing/#{piece.id}/edit")
+    assert has_element?(reopened, ".site-frame[style*='--page-width: 1400px']")
+
+    for invalid <- ["bad", "0.2", "-1", "559", "1601"] do
+      render_change(reopened, "change_width", %{"page" => %{"width" => invalid}})
+      assert Still.Writing.Appearance.width() == 1400
+    end
+
+    render_click(reopened, "reset_width", %{})
+    assert Still.Writing.Appearance.width() == 0
+    refute has_element?(reopened, ".site-frame[style*='--page-width:']")
+    assert File.read!(piece.path) == body
+    assert {:ok, []} = Still.Writing.Files.revisions(location, piece.id)
+  end
+
   test "changing the light persists across pages without changing writing", %{conn: conn} do
     body = "A line / another line\n\tand its branch"
     {:ok, entry} = Writing.save_entry(nil, body)
