@@ -20,6 +20,9 @@ without changing the current notebook or using its next List number. Open Scratc
 from Notebooks or find its pages in Saved writing. Later edits use the usual Save.
 
 In notebook contents, **Section details** lets you edit a section's displayed name.
+Click a section heading to collapse or expand its Lists. In the current notebook,
+older sections start closed; the section receiving new Lists starts open. Returning
+to a particular List opens its section automatically.
 **New Lists here** chooses that section and notebook for new writing. Numbers continue
 across the whole notebook; changing the destination never moves an already saved page.
 Section names are display labels; the ordinary folders keep their existing names.

@@ -44,10 +44,15 @@ defmodule StillWeb.NotebookLiveTest do
 
     assert Writing.current_notebook().id == book.id
     assert has_element?(view, "#notebook-section-0", "New Lists go here")
+    assert has_element?(view, "#notebook-lists-0[open]")
+    refute has_element?(view, "#notebook-lists-1[open]")
     view |> form("#rename-section-0", %{label: ""}) |> render_submit()
     assert has_element?(view, "h2", "Apr - Nov")
     {:ok, reopened, _} = live(conn, ~p"/notebooks?notebook=#{book.key}")
     assert has_element?(reopened, "h2", "Apr - Nov")
+    early = Writing.notebook(book.key).entries |> Enum.find(&(&1.list_label == "10"))
+    {:ok, returned, _} = live(conn, ~p"/notebooks?notebook=#{book.key}&at=#{early.id}")
+    assert has_element?(returned, "#notebook-lists-1[open]")
   end
 
   test "the notebook room can add an empty notebook and choose it as current", %{conn: conn} do

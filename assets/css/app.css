@@ -365,6 +365,13 @@ html[data-native-fullscreen="true"] .writing-input { min-height: 42vh; }
 .notebook-count { flex-shrink: 0; color: var(--muted); font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11px; letter-spacing: .02em; }
 .notebook-section { margin-top: 52px; }
 .notebook-section + .notebook-section { margin-top: 72px; }
+.notebook-section-toggle { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; min-height: 44px; cursor: pointer; color: var(--soft); }
+.notebook-section-toggle::-webkit-details-marker { display: none; }
+.notebook-section-toggle::before { content: "▸"; color: var(--muted); font-size: 14px; }
+.notebook-section-fold[open] > .notebook-section-toggle::before { content: "▾"; }
+.notebook-section-toggle h2 { display: inline; margin: 0; font: 400 23px/1.4 var(--serif); }
+.notebook-section-toggle:focus-visible { outline: 1px solid var(--muted); outline-offset: 5px; }
+.notebook-section-fold[open] > .notebook-section-toggle { margin-bottom: 14px; }
 .notebook-section-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
 .notebook-section-heading h2 { margin: 0; color: var(--soft); font-family: var(--serif); font-size: 23px; font-weight: 400; line-height: 1.4; }
 .notebook-section-details { margin-top: 8px; color: var(--muted); font-size: 12px; }

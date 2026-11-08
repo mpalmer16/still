@@ -305,117 +305,130 @@ defmodule StillWeb.NotebookLive do
             class="notebook-section"
             aria-label={section.label}
           >
-            <div class="notebook-section-heading">
-              <div>
+            <details
+              id={"notebook-lists-#{index}"}
+              class="notebook-section-fold"
+              open={section_open?(@notebook, section, @selected_id)}
+            >
+              <summary class="notebook-section-toggle">
                 <h2>{section.label}</h2>
-                <p
+                <span class="notebook-count">{section.count} {if section.count == 1,
+                  do: "List",
+                  else: "Lists"}</span>
+                <span
                   :if={
                     Map.get(@notebook, :managed, false) &&
                       section.key == Map.get(@notebook, :current_section)
                   }
                   class="section-whisper"
-                >
-                  New Lists go here
-                </p>
-                <details class="notebook-section-details">
-                  <summary>Section details</summary>
-                  <form
-                    phx-submit="rename_section"
-                    id={"rename-section-#{index}"}
-                    class="still-form-panel"
-                  >
-                    <input type="hidden" name="section" value={section.key} />
-                    <label>
-                      Section name
-                      <input name="label" value={section.label} required maxlength="200" />
-                    </label>
-                    <button type="submit" class="quiet-link">Save name</button>
-                  </form>
-                  <button
-                    :if={Map.get(@notebook, :managed, false)}
-                    type="button"
-                    phx-click="choose_section"
-                    phx-value-section={section.key}
-                    class="quiet-link"
-                  >New Lists here</button>
-                </details>
+                >New Lists go here</span>
+              </summary>
+              <div class="notebook-section-heading">
+                <div>
+                  <details class="notebook-section-details">
+                    <summary>Section details</summary>
+                    <form
+                      phx-submit="rename_section"
+                      id={"rename-section-#{index}"}
+                      class="still-form-panel"
+                    >
+                      <input type="hidden" name="section" value={section.key} />
+                      <label>
+                        Section name
+                        <input name="label" value={section.label} required maxlength="200" />
+                      </label>
+                      <button type="submit" class="quiet-link">Save name</button>
+                    </form>
+                    <button
+                      :if={Map.get(@notebook, :managed, false)}
+                      type="button"
+                      phx-click="choose_section"
+                      phx-value-section={section.key}
+                      class="quiet-link"
+                    >New Lists here</button>
+                  </details>
+                </div>
+                <nav class="notebook-ends" aria-label={"Move through #{section.label}"}>
+                  <a href={"#section-#{index}-beginning"}>Beginning</a>
+                  <span aria-hidden="true">·</span>
+                  <a href={"#section-#{index}-end"}>End</a>
+                </nav>
               </div>
-              <nav class="notebook-ends" aria-label={"Move through #{section.label}"}>
-                <a href={"#section-#{index}-beginning"}>Beginning</a>
-                <span aria-hidden="true">·</span>
-                <a href={"#section-#{index}-end"}>End</a>
-              </nav>
-            </div>
-            <div id={"section-#{index}-beginning"} class="notebook-boundary">
-              <span class="section-whisper">Beginning</span>
-            </div>
-            <ol class="notebook-list">
-              <li
-                :for={entry <- section.entries}
-                id={"list-#{entry.id}"}
-                class={if(@selected_id == entry.id, do: "notebook-current")}
-              >
-                <span :if={entry.list_label not in [nil, ""]} class="notebook-list-number">
-                  {entry.list_label}
-                </span>
-                <.link
-                  navigate={
-                    ReadingLinks.reader(entry, %{"from" => "notebook", "notebook" => @notebook.key})
-                  }
-                  class="notebook-list-link"
-                  aria-current={if(@selected_id == entry.id, do: "location")}
-                  phx-mounted={if @selected_id == entry.id, do: JS.focus(to: "#list-#{entry.id} a")}
-                ><.list_title text={Writing.opening(entry)} /></.link>
-                <nav
-                  class="notebook-list-actions"
-                  aria-label={"Actions for #{Writing.opening(entry)}"}
+              <div id={"section-#{index}-beginning"} class="notebook-boundary">
+                <span class="section-whisper">Beginning</span>
+              </div>
+              <ol class="notebook-list">
+                <li
+                  :for={entry <- section.entries}
+                  id={"list-#{entry.id}"}
+                  class={if(@selected_id == entry.id, do: "notebook-current")}
                 >
+                  <span :if={entry.list_label not in [nil, ""]} class="notebook-list-number">
+                    {entry.list_label}
+                  </span>
                   <.link
                     navigate={
                       ReadingLinks.reader(entry, %{"from" => "notebook", "notebook" => @notebook.key})
                     }
-                    class="quiet-link"
-                  >Read</.link>
-                  <.link navigate={ReadingLinks.wander(entry)} class="quiet-link">Wander</.link>
-                  <button
-                    :if={entry.file_id}
-                    id={"delete-list-#{entry.file_id}"}
-                    type="button"
-                    phx-click="request_delete_list"
-                    phx-value-id={entry.file_id}
-                    class="quiet-link"
-                    aria-label={"Delete #{Writing.opening(entry)}"}
-                  >Delete</button>
-                </nav>
-                <div
-                  :if={@delete_list && @delete_list.id == entry.file_id}
-                  id="delete-list-confirmation"
-                  role="alertdialog"
-                  aria-label="Permanently delete List?"
-                  aria-describedby="delete-list-confirmation-description"
-                  phx-mounted={JS.focus(to: "#cancel-delete-list")}
-                >
-                  <p id="delete-list-confirmation-description">
-                    Permanently remove <strong>{Poems.display_title(@delete_list)}</strong>
-                    and its file and earlier words?
-                    Submitted correspondence keeps its exact submitted text.
-                  </p>
-                  <button type="button" phx-click="confirm_delete_list" class="quiet-link">Permanently delete</button>
-                  <button
-                    id="cancel-delete-list"
-                    type="button"
-                    phx-click={
-                      JS.push("cancel_delete_list") |> JS.focus(to: "#delete-list-#{@delete_list.id}")
-                    }
-                    class="quiet-link"
-                  >Cancel</button>
-                </div>
-              </li>
-            </ol>
-            <div id={"section-#{index}-end"} class="notebook-boundary notebook-end">
-              <span class="section-whisper">End</span>
-              <a href={"#section-#{index}-beginning"} class="quiet-link">Back to the beginning</a>
-            </div>
+                    class="notebook-list-link"
+                    aria-current={if(@selected_id == entry.id, do: "location")}
+                    phx-mounted={if @selected_id == entry.id, do: JS.focus(to: "#list-#{entry.id} a")}
+                  ><.list_title text={Writing.opening(entry)} /></.link>
+                  <nav
+                    class="notebook-list-actions"
+                    aria-label={"Actions for #{Writing.opening(entry)}"}
+                  >
+                    <.link
+                      navigate={
+                        ReadingLinks.reader(entry, %{
+                          "from" => "notebook",
+                          "notebook" => @notebook.key
+                        })
+                      }
+                      class="quiet-link"
+                    >Read</.link>
+                    <.link navigate={ReadingLinks.wander(entry)} class="quiet-link">Wander</.link>
+                    <button
+                      :if={entry.file_id}
+                      id={"delete-list-#{entry.file_id}"}
+                      type="button"
+                      phx-click="request_delete_list"
+                      phx-value-id={entry.file_id}
+                      class="quiet-link"
+                      aria-label={"Delete #{Writing.opening(entry)}"}
+                    >Delete</button>
+                  </nav>
+                  <div
+                    :if={@delete_list && @delete_list.id == entry.file_id}
+                    id="delete-list-confirmation"
+                    role="alertdialog"
+                    aria-label="Permanently delete List?"
+                    aria-describedby="delete-list-confirmation-description"
+                    phx-mounted={JS.focus(to: "#cancel-delete-list")}
+                  >
+                    <p id="delete-list-confirmation-description">
+                      Permanently remove <strong>{Poems.display_title(@delete_list)}</strong>
+                      and its file and earlier words?
+                      Submitted correspondence keeps its exact submitted text.
+                    </p>
+                    <button type="button" phx-click="confirm_delete_list" class="quiet-link">Permanently delete</button>
+                    <button
+                      id="cancel-delete-list"
+                      type="button"
+                      phx-click={
+                        JS.push("cancel_delete_list")
+                        |> JS.focus(to: "#delete-list-#{@delete_list.id}")
+                      }
+                      class="quiet-link"
+                    >Cancel</button>
+                  </div>
+                </li>
+              </ol>
+              <div id={"section-#{index}-end"} class="notebook-boundary notebook-end">
+                <span class="section-whisper">End</span>
+                <a href={"#section-#{index}-beginning"} class="quiet-link">Back to the beginning</a>
+              </div>
+            </details>
           </section>
         </div>
       </div>
@@ -425,6 +438,12 @@ defmodule StillWeb.NotebookLive do
 
   defp regions,
     do: [early: "Early notebooks", current: "Current notebooks", elsewhere: "Other notebooks"]
+
+  defp section_open?(notebook, section, selected_id) do
+    length(notebook.sections) == 1 or not Map.get(notebook, :current, false) or
+      section.key == Map.get(notebook, :current_section) or
+      Enum.any?(section.entries, &(&1.id == selected_id))
+  end
 
   defp region_label(region), do: Keyword.fetch!(regions(), region)
 
