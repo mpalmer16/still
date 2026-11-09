@@ -932,6 +932,16 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let redo = NSMenuItem(title: "Redo", action: NSSelectorFromString("redo:"), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         edit.insertItem(redo, at: 1)
+        edit.addItem(.separator())
+        let spellingItem = edit.addItem(withTitle: "Spelling", action: nil, keyEquivalent: "")
+        let spelling = NSMenu(title: "Spelling")
+        spellingItem.submenu = spelling
+        // Standard responder-chain actions let WebKit own the selected word,
+        // suggestions, document ignores, and the Mac's learned dictionary.
+        spelling.addItem(withTitle: "Show Spelling…", action: #selector(NSTextView.showGuessPanel(_:)), keyEquivalent: "")
+        spelling.addItem(withTitle: "Check Spelling", action: #selector(NSTextView.checkSpelling(_:)), keyEquivalent: ";")
+        spelling.addItem(.separator())
+        spelling.addItem(withTitle: "Check Spelling While Typing", action: #selector(NSTextView.toggleContinuousSpellChecking(_:)), keyEquivalent: "")
         let viewItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
         bar.addItem(viewItem)
         let view = NSMenu(title: "Window")
@@ -967,6 +977,14 @@ struct StillMain {
             }
             dispatchMain()
         }
+        // WebKit reads these app-scoped defaults when its text checker starts.
+        // Register defaults so later choices in its native menu are remembered;
+        // never change the user's global macOS spelling or grammar preferences.
+        UserDefaults.standard.register(defaults: [
+            "WebContinuousSpellCheckingEnabled": true,
+            "WebGrammarCheckingEnabled": false,
+            "WebAutomaticSpellingCorrectionEnabled": false,
+        ])
         let application = NSApplication.shared
         let delegate = StillApplication()
         application.setActivationPolicy(.regular)

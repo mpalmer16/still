@@ -1,5 +1,14 @@
 # A native body for Still
 
+The shell registers app-scoped WebKit text-checker defaults before creating the
+application: continuous spelling enabled, grammar and automatic correction off.
+The names match [WebKit's Mac text checker](https://github.com/WebKit/WebKit/blob/main/Source/WebKit/UIProcess/mac/TextCheckerMac.mm).
+Standard responder-chain Edit → Spelling actions and WebKit's context menu own
+suggestions, temporary ignores and the system learned dictionary. HTML opts out
+of spellcheck at the room boundary and opts in only for the writing textarea.
+No custom dictionary, grammar service, automatic text rewriting or browser hook
+is introduced. Learned words belong to macOS and may be shared with other apps.
+
 `native/build.sh` assembles `dist/Still.app`. An optional installed copy lives at `/Applications/Still.app` and can be opened from the Dock, Applications, or Spotlight. After rebuilding, quit Still and use `rsync -a --delete dist/Still.app/ /Applications/Still.app/` to update that copy, then run `codesign --verify --deep --strict /Applications/Still.app`. Synchronizing the complete bundle removes obsolete generated assets that an overlay copy would leave behind. Installation does not move the writing folder. The normal bundle retains `local.still.room`, port 4040, and its existing WebKit recovery storage.
 The local build needs Elixir/Erlang, the Xcode command-line tools, and Python 3. Launching the built app needs none of those tools and does not use Docker.
 `native/build.sh --shell-only` rebuilds just the native window around an already assembled backend during shell development. Use the full build to include Phoenix changes.

@@ -13,6 +13,26 @@ defmodule StillWeb.WritingLiveTest do
     %{folder: folder, root: root}
   end
 
+  test "spelling is enabled only in the writing body, with automatic correction off", %{
+    conn: conn,
+    folder: folder
+  } do
+    {:ok, _} = Storage.set_folder(folder)
+    {:ok, writer, _} = live(conn, ~p"/?new=1")
+
+    assert has_element?(
+             writer,
+             ".site-frame[spellcheck='false'] #file-writing-body[spellcheck='true'][autocorrect='off'][autocapitalize='off']"
+           )
+
+    location = Storage.collection_location()
+    {:ok, piece} = Poems.save(location, Poems.new(location), %{body: "Synthetic missspellling"})
+    {:ok, reader, _} = live(conn, ~p"/writing/#{piece.id}")
+    assert has_element?(reader, ".site-frame[spellcheck='false'] .file-reading")
+    refute has_element?(reader, "[spellcheck='true']")
+    refute has_element?(reader, "textarea")
+  end
+
   test "save details show the section and next number, and a different file path chooses its notebook",
        %{conn: conn, folder: folder} do
     {:ok, _} = Storage.set_folder(folder)

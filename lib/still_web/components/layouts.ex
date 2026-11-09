@@ -36,6 +36,7 @@ defmodule StillWeb.Layouts do
     ~H"""
     <div
       class={"site-frame #{if @landscape_open, do: "landscape-revealed"}"}
+      spellcheck="false"
       style={"--light: #{@room_light}; --letters: #{@room_letters / 100}; --place-x: #{@place.x}%; --place-y: #{@place.y}%; --place-tone: #{@place.tone};#{if @room_width > 0, do: " --page-width: #{@room_width}px;"}"}
     >
       <a href="#page-content" class="skip-link">Skip to the page</a>

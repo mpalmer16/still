@@ -15,6 +15,12 @@ The [ordinary-text storage model](storage-model.md) describes the current format
 
 ## Write and return
 
+The Mac writing field underlines spelling mistakes. Control-click or right-click
+an underlined word for suggestions, **Ignore Spelling** (for now), or **Learn
+Spelling** (remember it in your Mac's dictionary, which other Mac apps can also
+use). **Edit → Spelling** includes checking while typing. Grammar checking and
+automatic spelling replacement start off; reading views do not mark spelling.
+
 **Page width**, beside Letters, adjusts the writing surface independently of type
 size. Still remembers the preferred width and limits it to leave room for echoes
 on the current screen. **Reset** returns to the original width.
