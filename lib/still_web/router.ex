@@ -60,5 +60,7 @@ defmodule StillWeb.Router do
     put "/storage", NativeStorageController, :update
     delete "/storage", NativeStorageController, :delete
     post "/backup", NativeStorageController, :backup
+    post "/exports/pdf", NativeStorageController, :export_pdf
+    post "/exports/pdf/input", NativeStorageController, :pdf_input
   end
 end

@@ -3,6 +3,7 @@ defmodule StillWeb.WritingLive do
   alias Still.{Correspondence, Desk, Poems, Storage, Writing}
   alias Still.Writing.Attention
   alias Still.Writing.PoemReferences
+  alias Still.Writing.Exports
   alias StillWeb.ReadingLinks
 
   @impl true
@@ -28,7 +29,14 @@ defmodule StillWeb.WritingLive do
        picker_results: [],
        picker_selected: nil,
        picker_problem: nil,
-       reference_return: nil
+       reference_return: nil,
+       native_exports?:
+         System.get_env("STILL_NATIVE") == "true" ||
+           Application.get_env(:still, :native_controls, false),
+       export_notice: nil,
+       last_export: nil,
+       pdf_exporting?: false,
+       pdf_request: nil
      )}
   end
 
@@ -82,9 +90,11 @@ defmodule StillWeb.WritingLive do
            notebooks: Writing.notebooks(),
            draft_key: draft_key(location, piece),
            dirty: false,
-           problem: problem || cursor_problem || discovery_problem,
+           problem:
+             problem || cursor_problem || discovery_problem ||
+               if(same_editor?, do: socket.assigns.problem),
            revisions: revisions,
-           notice: nil,
+           notice: if(same_editor?, do: socket.assigns.notice),
            recovery_waiting: false,
            resume_active: resume?,
            reading_echo: reading_echo,
@@ -96,6 +106,8 @@ defmodule StillWeb.WritingLive do
          )
          |> assign(
            reference_timer: nil,
+           export_notice: if(same_editor?, do: socket.assigns.export_notice),
+           last_export: if(same_editor?, do: socket.assigns.last_export),
            reference_return:
              reference_return(params["reference_return"]) ||
                if(same_editor?, do: socket.assigns.reference_return)
@@ -413,8 +425,10 @@ defmodule StillWeb.WritingLive do
              socket.assigns.piece,
              Map.put(save_attrs(draft), :notebook_from_path, is_nil(socket.assigns.piece.token))
            ) do
+      {socket, piece, action_problem, notice} = finish_file_action(socket, piece, params)
       target_key = draft_key(location, piece)
-      problem = remember(location, piece, socket.assigns.beside)
+      cursor_problem = remember(location, piece, socket.assigns.beside)
+      problem = action_problem || cursor_problem
 
       {:noreply,
        socket
@@ -423,7 +437,7 @@ defmodule StillWeb.WritingLive do
          draft: words(piece),
          dirty: false,
          problem: problem,
-         notice: "Saved on this Mac",
+         notice: notice,
          draft_key: target_key
        )
        |> put_references(piece.body)
@@ -451,6 +465,63 @@ defmodule StillWeb.WritingLive do
            notice: nil
          )}
     end
+  end
+
+  def handle_event("pdf_export_finished", %{"path" => path, "request_id" => request_id}, socket)
+      when is_binary(path) do
+    # Native completion is informative; only the authenticated endpoint publishes files.
+    case socket.assigns.pdf_request do
+      %{id: ^request_id, piece_id: id} when id == socket.assigns.piece.id ->
+        {:noreply,
+         assign(socket,
+           export_notice: "PDF saved: #{path}",
+           last_export: path,
+           pdf_exporting?: false,
+           pdf_request: nil
+         )}
+
+      %{id: ^request_id} ->
+        {:noreply,
+         socket
+         |> assign(pdf_exporting?: false, pdf_request: nil)
+         |> put_flash(:info, "PDF saved: #{path}")}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event(
+        "pdf_export_failed",
+        %{"message" => message, "request_id" => request_id},
+        socket
+      )
+      when is_binary(message) do
+    case socket.assigns.pdf_request do
+      %{id: ^request_id, piece_id: id} when id == socket.assigns.piece.id ->
+        {:noreply,
+         assign(socket,
+           export_notice: nil,
+           problem: message,
+           pdf_exporting?: false,
+           pdf_request: nil
+         )}
+
+      %{id: ^request_id} ->
+        {:noreply,
+         socket |> assign(pdf_exporting?: false, pdf_request: nil) |> put_flash(:error, message)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event(event, _, socket) when event in ["pdf_export_finished", "pdf_export_failed"],
+    do: {:noreply, socket}
+
+  def handle_event("reveal_export", _, %{assigns: %{last_export: path}} = socket)
+      when is_binary(path) do
+    {:noreply, push_event(socket, "reveal-writing-export", %{path: path})}
   end
 
   def handle_event("new_file", %{"writing" => attrs}, socket) do
@@ -556,6 +627,77 @@ defmodule StillWeb.WritingLive do
 
   defp finish_save(socket, piece, false),
     do: push_patch(socket, to: ~p"/writing/#{piece.id}/edit", replace: true)
+
+  defp finish_file_action(socket, piece, %{"file_action" => "rename", "name" => name}) do
+    filename = rename_filename(name, piece.relative_path)
+
+    case Poems.rename(socket.assigns.location, piece, filename) do
+      {:ok, renamed} -> {socket, renamed, nil, "File renamed"}
+      {:error, message} -> {socket, piece, message, "Saved on this Mac"}
+    end
+  end
+
+  defp finish_file_action(socket, piece, %{"file_action" => "markdown"}) do
+    case Exports.markdown(socket.assigns.location, piece) do
+      {:ok, path} ->
+        {assign(socket, export_notice: "Markdown saved: #{path}", last_export: path), piece, nil,
+         "Saved on this Mac"}
+
+      {:error, message} ->
+        {socket, piece, message, "Saved on this Mac"}
+    end
+  end
+
+  defp finish_file_action(
+         %{assigns: %{native_exports?: true, pdf_exporting?: false}} = socket,
+         piece,
+         %{
+           "file_action" => "pdf"
+         }
+       ) do
+    case Exports.prepare(socket.assigns.location, piece, :pdf) do
+      {:ok, prepared} ->
+        request_id = Ecto.UUID.generate()
+
+        ticket =
+          Phoenix.Token.sign(StillWeb.Endpoint, "writing-pdf-export", %{
+            scope: socket.assigns.location.scope,
+            id: piece.id,
+            source_token: prepared.source_token,
+            request_id: request_id
+          })
+
+        socket =
+          socket
+          |> assign(
+            export_notice: "Preparing PDF…",
+            pdf_exporting?: true,
+            pdf_request: %{id: request_id, piece_id: piece.id}
+          )
+          |> push_event("writing-pdf-request", %{
+            ticket: ticket,
+            request_id: request_id
+          })
+
+        {socket, piece, nil, "Saved on this Mac"}
+
+      {:error, message} ->
+        {socket, piece, message, "Saved on this Mac"}
+    end
+  end
+
+  defp finish_file_action(socket, piece, _), do: {socket, piece, nil, "Saved on this Mac"}
+
+  defp rename_filename(name, relative) when is_binary(name) do
+    name = String.trim(name)
+    extension = Path.extname(relative)
+
+    if name != "" && Path.extname(name) == "" && extension != "",
+      do: name <> extension,
+      else: name
+  end
+
+  defp rename_filename(_, _), do: ""
 
   @impl true
   def handle_info({:refresh_linked_poems, id}, socket) do
@@ -872,6 +1014,7 @@ defmodule StillWeb.WritingLive do
       writing_controls={@editing}
       writing_menu_open={@writing_menu_open}
       writing_picker_open={@picker_open}
+      file_exports
       room_width={@room_width}
       width_open={@width_open}
       landscape_open={@landscape_open}
@@ -933,6 +1076,65 @@ defmodule StillWeb.WritingLive do
             >{if @wander_return, do: "Save & return to Wander", else: "Read"}</button>
           </div>
         </footer>
+        <section class="writing-file-actions" aria-label="File name and exports">
+          <.form
+            for={%{}}
+            id="rename-menu-form"
+            phx-submit={
+              JS.dispatch("still:file-action", to: "#file-writing-body", detail: %{action: "rename"})
+            }
+          >
+            <label for="rename-menu-name">File name</label>
+            <div class="writing-rename-row">
+              <input
+                id="rename-menu-name"
+                name="file_name"
+                value={menu_filename(@piece, @save_location, @draft.body)}
+                autocomplete="off"
+                required
+              />
+              <button id="rename-menu-file" type="submit" class="quiet-link">Save &amp; rename</button>
+            </div>
+          </.form>
+          <p class="file-note">
+            The file stays in its current folder. Its earlier words and links stay with it.
+          </p>
+          <div class="writing-export-actions">
+            <button
+              id="export-writing-markdown"
+              type="button"
+              class="quiet-link"
+              phx-click={
+                JS.dispatch("still:file-action",
+                  to: "#file-writing-body",
+                  detail: %{action: "markdown"}
+                )
+              }
+            >Save as Markdown</button>
+            <button
+              :if={@native_exports?}
+              id="export-writing-pdf"
+              type="button"
+              disabled={@pdf_exporting?}
+              class="quiet-link"
+              phx-click={
+                JS.dispatch("still:file-action", to: "#file-writing-body", detail: %{action: "pdf"})
+              }
+            >Save as PDF</button>
+          </div>
+          <p class="file-note">
+            Saves your text file, then exports the full words to a separate folder beside your writing collection.
+          </p>
+          <p :if={@export_notice} id="writing-export-notice" role="status" class="file-note">
+            {@export_notice}
+          </p>
+          <button
+            :if={@last_export && @native_exports?}
+            type="button"
+            phx-click="reveal_export"
+            class="quiet-link"
+          >Show export in Finder</button>
+        </section>
         <button id="insert-poem" type="button" data-insert-poem class="quiet-link">Insert poem…</button>
         <button
           :if={reference_markers(@linked_segments) != []}
@@ -1379,4 +1581,10 @@ defmodule StillWeb.WritingLive do
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" · ")
   end
+
+  defp menu_filename(%{relative_path: relative}, _, _)
+       when is_binary(relative) and relative != "", do: Path.basename(relative)
+
+  defp menu_filename(_, destination, body),
+    do: destination |> Still.Writing.Files.proposed_path(body) |> Path.basename()
 end

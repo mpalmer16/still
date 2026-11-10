@@ -21,6 +21,26 @@ and **Explore the room**. The controls stay tucked away until you open it. Close
 the menu or press Escape to return to the same place in your writing. Cmd/Ctrl+S
 still saves directly without opening the menu.
 
+**File name**, in Menu, shows the current file's name. Change it and choose
+**Save & rename** to keep the latest words under that name in the same folder.
+Its identity, earlier words, notebook number and existing poem links remain.
+An occupied name is refused without replacing the other file.
+
+**Save as Markdown** and the Mac app's **Save as PDF** first save the current
+text file, then export its full words with linked poems expanded. The original
+text keeps its references. Exports live in a separate folder beside the chosen
+collection: a collection named `Still Writing` uses `Still Writing Exports`.
+Notebook folders are mirrored there, and `Essay.txt` produces `Essay.md` or
+`Essay.pdf`. These copies do not appear in notebooks or the editor.
+**Show export in Finder** reveals the last saved copy in the Mac app.
+
+Export again to refresh a copy after edits. Still replaces only an unchanged
+export it previously created; unrelated files and externally edited copies
+are left alone. Markdown escapes prose punctuation and preserves linked poems
+as literal text blocks. PDF uses quiet serif text, inset poems and ordinary
+pages, without editor controls or an extra title. If a linked source is missing
+or changes during PDF preparation, export stops and the text file stays saved.
+
 **Insert poem…** in Menu (or the Mac's right-click menu) finds a saved text file
 by its name, path or words. Read the preview, then choose **Insert this poem**.
 Cmd/Ctrl+Shift+I opens the same picker. The inserted passage is read-only;

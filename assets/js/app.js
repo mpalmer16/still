@@ -1,6 +1,7 @@
 import {WritingFocus} from "./writing_focus"
 import {FileRecovery} from "./file_recovery"
 import {LinkedWriting} from "./linked_writing"
+import {WritingExports} from "./writing_exports"
 import {CopyText} from "./copy_text"
 import {echoAttention, passageAttention} from "./echo_attention"
 import "phoenix_html"
@@ -443,7 +444,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, FileRecovery: AttentiveFileRecovery, LinkedWriting, WritingFocus, CopyText, PassageAttention},
+  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, FileRecovery: AttentiveFileRecovery, LinkedWriting, WritingExports, WritingFocus, CopyText, PassageAttention},
 })
 
 liveSocket.connect()

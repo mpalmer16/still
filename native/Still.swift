@@ -39,6 +39,26 @@ private final class WritingEditorPresenceHandler: NSObject, WKScriptMessageHandl
     }
 }
 
+private final class WritingExportMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var application: StillApplication?
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame,
+              let payload = message.body as? [String: Any],
+              let origin = message.frameInfo.request.url else { return }
+        let name = message.name
+        Task { @MainActor [weak application] in
+            guard let application, let backend = application.backend,
+                  CorrespondenceNavigationPolicy.isLocalRoom(origin, port: backend.port) else { return }
+            if name == "stillPDFExport" {
+                await application.exportWritingPDF(payload)
+            } else if name == "stillRevealExport" {
+                await application.revealWritingExport(payload)
+            }
+        }
+    }
+}
+
 enum StillError: LocalizedError {
     case message(String)
     var errorDescription: String? {
@@ -231,6 +251,7 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private var choosingFolder = false
     private var closeInProgress = false
     private var backingUp = false
+    private var exportingPDF = false
     private struct PendingManuscriptDownload {
         let destination: URL
         let staging: URL
@@ -329,6 +350,10 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let editorPresenceHandler = WritingEditorPresenceHandler()
         editorPresenceHandler.webView = view
         userContentController.add(editorPresenceHandler, name: "stillWritingEditor")
+        let exportHandler = WritingExportMessageHandler()
+        exportHandler.application = self
+        userContentController.add(exportHandler, name: "stillPDFExport")
+        userContentController.add(exportHandler, name: "stillRevealExport")
         view.underPageBackgroundColor = window.backgroundColor
         view.allowsBackForwardNavigationGestures = false
         view.allowsMagnification = false
@@ -337,6 +362,78 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         view.uiDelegate = self
         window.contentView = view
         return view
+    }
+
+    fileprivate func exportWritingPDF(_ payload: [String: Any]) async {
+        let requestID = payload["request_id"] as? String ?? ""
+        let complete: ([String: String]) -> Void = { [weak self] detail in
+            self?.writingExportResult(detail.merging(["request_id": requestID]) { _, new in new })
+        }
+        guard !exportingPDF else {
+            complete(["error": "A PDF is already being prepared. Wait for it to finish."])
+            return
+        }
+        guard let backend, let ticket = payload["ticket"] as? String, !requestID.isEmpty else {
+            complete(["error": "The PDF request is incomplete. Export it again."])
+            return
+        }
+        exportingPDF = true
+        defer { exportingPDF = false }
+        do {
+            // Fetch verified words directly; page scripts supply only the signed request.
+            let input = try await backend.storageRequest("POST", path: "/native/exports/pdf/input", body: ["ticket": ticket])
+            guard let prepared = try JSONSerialization.jsonObject(with: input) as? [String: Any],
+                  let title = prepared["title"] as? String,
+                  let rawSegments = prepared["segments"] as? [[String: Any]], rawSegments.count <= 2000 else {
+                throw StillError.message("The PDF content is incomplete. Export it again.")
+            }
+            var segments: [WritingPDF.Segment] = []
+            var size = 0
+            for raw in rawSegments {
+                guard let body = raw["body"] as? String,
+                      let kind = raw["kind"] as? String, ["text", "poem"].contains(kind) else {
+                    throw StillError.message("The PDF passage is incomplete. Export it again.")
+                }
+                size += body.utf8.count
+                guard size <= 10_000_000 else {
+                    throw StillError.message("This writing is too large for PDF export. Markdown export remains available.")
+                }
+                segments.append(WritingPDF.Segment(body: body, inset: kind == "poem"))
+            }
+            let renderSegments = segments
+            let data = try await Task.detached(priority: .userInitiated) {
+                try WritingPDF.render(title: title, segments: renderSegments)
+            }.value
+            let response = try await backend.storageRequest("POST", path: "/native/exports/pdf", body: [
+                "ticket": ticket, "pdf": data.base64EncodedString()
+            ])
+            guard let result = try JSONSerialization.jsonObject(with: response) as? [String: String],
+                  let path = result["path"] else {
+                throw StillError.message("Still could not confirm the PDF was saved.")
+            }
+            complete(["path": path])
+        } catch {
+            complete(["error": error.localizedDescription])
+        }
+    }
+
+    private func writingExportResult(_ detail: [String: String]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: detail),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('still:pdf-export-result', {detail: \(json)}))", completionHandler: nil)
+    }
+
+    fileprivate func revealWritingExport(_ payload: [String: Any]) async {
+        guard let path = payload["path"] as? String,
+              let status = try? await backend?.storageStatus(), let folder = status.folder else { return }
+        let root = URL(fileURLWithPath: folder, isDirectory: true)
+        let exports = root.deletingLastPathComponent().appendingPathComponent(root.lastPathComponent + " Exports", isDirectory: true).standardizedFileURL
+        let file = URL(fileURLWithPath: path).standardizedFileURL
+        guard file.path.hasPrefix(exports.path + "/"),
+              ["md", "pdf"].contains(file.pathExtension.lowercased()),
+              file.resolvingSymlinksInPath().path == file.path,
+              FileManager.default.fileExists(atPath: file.path) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([file])
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

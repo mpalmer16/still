@@ -42,6 +42,7 @@ defmodule StillWeb.Endpoint do
 
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
+    length: 30_000_000,
     pass: ["*/*"],
     json_decoder: Phoenix.json_library()
 

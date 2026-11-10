@@ -169,6 +169,21 @@ defmodule Still.Writing.Files do
     end
   end
 
+  @doc "Run an export against a verified saved source while holding the collection lock."
+  def with_export_source(location, existing, fun) when is_function(fun, 2) do
+    with_location(location, fn active ->
+      with :ok <- recover_pending(active, true),
+           {:ok, %Entry{} = entry} <- open_snapshot(active, existing),
+           {:ok, path} <- safe_path(active.folder, entry.relative_path),
+           :ok <- fresh_disk(entry, path) do
+        fun.(active, piece(entry, active))
+      else
+        {:ok, nil} -> {:error, "Save this writing before exporting it."}
+        error -> error
+      end
+    end)
+  end
+
   @doc "Read only the linked sources, reconciling moved files when requested. Never writes a text file."
   def reference_sources(location, references, opts \\ []) do
     with_location(location, fn active ->

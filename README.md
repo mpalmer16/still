@@ -17,6 +17,9 @@ with earlier versions to return to.
 passage. Its original file keeps the words; the surrounding text file keeps a
 readable reference. Copy includes the displayed poem.
 
+Menu also lets you rename the current file and export its full words as Markdown
+or PDF. Exported copies stay in a separate folder beside the writing collection.
+
 ### Let the past come near
 
 Echoes gather at the edges when your language meets words you have written before.

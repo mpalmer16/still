@@ -12,6 +12,7 @@ defmodule StillWeb.Layouts do
   attr :writing_controls, :boolean, default: false
   attr :writing_menu_open, :boolean, default: false
   attr :writing_picker_open, :boolean, default: false
+  attr :file_exports, :boolean, default: false
   attr :room_width, :integer, default: 0
   attr :width_open, :boolean, default: false
   attr :landscape_open, :boolean, default: false
@@ -39,6 +40,8 @@ defmodule StillWeb.Layouts do
   def app(assigns) do
     ~H"""
     <div
+      id={if @file_exports, do: "writing-export-status"}
+      phx-hook={if @file_exports, do: "WritingExports"}
       class={"site-frame #{if @landscape_open, do: "landscape-revealed"}"}
       spellcheck="false"
       style={"--light: #{@room_light}; --letters: #{@room_letters / 100}; --place-x: #{@place.x}%; --place-y: #{@place.y}%; --place-tone: #{@place.tone};#{if @room_width > 0, do: " --page-width: #{@room_width}px;"}"}

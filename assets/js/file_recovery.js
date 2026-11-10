@@ -166,6 +166,14 @@ export const FileRecovery = {
       this.pushEvent("save_file", {writing: this.words(), draft_key: this.key, read, scratch})
     }
     this.save = () => this.submitWriting(false)
+    this.onFileAction = ({detail}) => {
+      this.capture(); this.keepPosition()
+      this.pushEvent("save_file", {
+        writing: this.words(), draft_key: this.key,
+        file_action: detail.action,
+        name: detail.action === "rename" ? document.getElementById("rename-menu-name")?.value : undefined,
+      })
+    }
     this.newButton = [...document.querySelectorAll("#new-file")].find(button => button.form === this.form)
     this.saveButton = [...document.querySelectorAll("#save-file")].find(button => button.form === this.form)
     this.onNew = () => { this.capture(); this.keepPosition(); this.pushEvent("new_file", {writing: this.words()}) }
@@ -253,6 +261,7 @@ export const FileRecovery = {
     this.form.addEventListener("compositionstart", this.onCompositionStart)
     this.form.addEventListener("compositionend", this.onCompositionEnd)
     window.addEventListener("still:save", this.save)
+    this.el.addEventListener("still:file-action", this.onFileAction)
     window.addEventListener("still:prepare-to-leave", this.onPrepare)
     window.addEventListener("pagehide", this.onPrepare)
     window.addEventListener("resize", this.fit)
@@ -342,6 +351,7 @@ export const FileRecovery = {
     this.form.removeEventListener("compositionstart", this.onCompositionStart)
     this.form.removeEventListener("compositionend", this.onCompositionEnd)
     window.removeEventListener("still:save", this.save)
+    this.el.removeEventListener("still:file-action", this.onFileAction)
     window.removeEventListener("still:prepare-to-leave", this.onPrepare)
     window.removeEventListener("pagehide", this.onPrepare)
     window.removeEventListener("resize", this.fit)

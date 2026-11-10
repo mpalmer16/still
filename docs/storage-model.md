@@ -70,6 +70,16 @@ Copy expands one level of available source words, while unavailable references
 remain readable. Correspondence requires all linked sources and freezes expanded
 submitted words and dependency tokens in its existing database records.
 
+Markdown and PDF exports are separate snapshots under a sibling
+`<collection name> Exports` folder, mirroring source directories and basenames.
+They are outside the selected writing root, so they neither become notebooks
+nor duplicate editable pieces. The source text keeps its references. Export
+ownership and content hashes live in existing local database records; replacing
+a generated copy requires its recorded bytes to remain unchanged. A PDF request
+binds the saved source and linked-source snapshot and is checked again before
+publication. Neither exported files nor their bytes replace earlier words or
+submitted manuscripts in the database.
+
 ## Notebook and List metadata
 
 Notebook and List numbering supplies sequence when writing dates are unknown.

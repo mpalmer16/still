@@ -16,6 +16,26 @@ script reports editor presence after document load and LiveView navigation;
 the native menu action dispatches the same explicit editor event as the writing
 Menu and Cmd/Ctrl+Shift+I. It adds no renderer or file-access path in the shell.
 
+**Save as PDF** uses `WritingPDF.swift` to paginate a verified saved snapshot
+with CoreText, preserving authored line breaks and using a serif font with inset
+poem passages. The title is PDF metadata rather than an added heading. The native
+bridge sends bytes back to the authenticated local backend with a signed export
+request; the writing context rechecks the source and linked-source snapshot
+before publishing. The renderer fetches the verified words directly from that
+backend rather than taking rendered text from page scripts. Completion stays
+associated with the initiating request even if the writer changes pages.
+No editor capture, print panel, online service or external
+PDF dependency is used. Export copies stay in a sibling `<collection> Exports`
+folder and **Show export in Finder** only reveals files within that folder.
+
+The renderer's Foundation/AppKit/PDFKit tests can run without a window:
+
+```sh
+swiftc -swift-version 5 -warnings-as-errors -parse-as-library native/WritingPDF.swift native/tests/WritingPDFTests.swift -o /tmp/still-pdf-tests
+/tmp/still-pdf-tests
+rm /tmp/still-pdf-tests
+```
+
 `native/build.sh` assembles `dist/Still.app`. An optional installed copy lives at `/Applications/Still.app` and can be opened from the Dock, Applications, or Spotlight. After rebuilding, quit Still and use `rsync -a --delete dist/Still.app/ /Applications/Still.app/` to update that copy, then run `codesign --verify --deep --strict /Applications/Still.app`. Synchronizing the complete bundle removes obsolete generated assets that an overlay copy would leave behind. Installation does not move the writing folder. The normal bundle retains `local.still.room`, port 4040, and its existing WebKit recovery storage.
 The local build needs Elixir/Erlang, the Xcode command-line tools, and Python 3. Launching the built app needs none of those tools and does not use Docker.
 `native/build.sh --shell-only` rebuilds just the native window around an already assembled backend during shell development. Use the full build to include Phoenix changes.

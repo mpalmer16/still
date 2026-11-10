@@ -598,6 +598,14 @@ html:has(#writing-menu:not([hidden])) { overflow: hidden; }
 .writing-menu-room-controls input[type=range] { flex: 1 1 140px; width: 140px; min-width: 0; }
 .writing-menu-room-link { margin-top: 10px; color: var(--muted); font-size: 13px; }
 .writing-menu .submission-focus { margin: 16px 0; }
+.writing-file-actions { margin: 12px 0 22px; padding: 18px 0; border-block: 1px solid rgb(177 195 221 / .12); }
+.writing-file-actions label { display: block; margin-bottom: 8px; font-size: 12px; color: var(--soft); }
+.writing-rename-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
+.writing-rename-row input { flex: 1 1 220px; min-width: 0; width: 100%; min-height: 40px; padding: 9px 12px; border: 1px solid rgb(177 195 221 / .24); border-radius: 4px; background: rgb(0 0 0 / .18); color: var(--ink); font-size: 13px; }
+.writing-rename-row .quiet-link { font-size: 12px; }
+.writing-export-actions { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 16px; }
+.writing-file-actions .file-note { margin: 10px 0; overflow-wrap: anywhere; }
+.writing-export-actions button:disabled { opacity: .5; cursor: wait; }
 .file-writing-footer #save-file { color: var(--soft); font-size: 13px; }
 .file-writing-footer #save-file:is(:hover, :focus-visible) { color: var(--ink); }
 .site-frame:has(.file-now) .gravity-presence { width: clamp(140px, calc((100vw - var(--writing-measure)) / 2 - 90px), 230px); }
