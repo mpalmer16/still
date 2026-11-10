@@ -11,6 +11,7 @@ defmodule StillWeb.Layouts do
   attr :letters_open, :boolean, default: false
   attr :writing_controls, :boolean, default: false
   attr :writing_menu_open, :boolean, default: false
+  attr :writing_picker_open, :boolean, default: false
   attr :room_width, :integer, default: 0
   attr :width_open, :boolean, default: false
   attr :landscape_open, :boolean, default: false
@@ -33,6 +34,7 @@ defmodule StillWeb.Layouts do
   attr :return_list, :boolean, default: false
   slot :inner_block, required: true
   slot :writing_menu
+  slot :writing_overlay
 
   def app(assigns) do
     ~H"""
@@ -45,8 +47,11 @@ defmodule StillWeb.Layouts do
       <div class="room-light" aria-hidden="true"></div>
       <div
         id="room-content"
-        inert={@landscape_open || (@writing_controls && @writing_menu_open)}
-        aria-hidden={if @landscape_open || (@writing_controls && @writing_menu_open), do: "true"}
+        inert={@landscape_open || @writing_picker_open || (@writing_controls && @writing_menu_open)}
+        aria-hidden={
+          if @landscape_open || @writing_picker_open || (@writing_controls && @writing_menu_open),
+            do: "true"
+        }
       >
         <header class="site-header">
           <.link navigate={~p"/?new=1"} class="wordmark" aria-label="Still, a new page">still<span class="wordmark-stop">.</span></.link>
@@ -100,7 +105,7 @@ defmodule StillWeb.Layouts do
           aria-haspopup="dialog"
           aria-controls="writing-menu"
           aria-expanded={to_string(@writing_menu_open)}
-          hidden={@writing_menu_open || @landscape_open}
+          hidden={@writing_menu_open || @writing_picker_open || @landscape_open}
         >Menu</button>
         <div
           :if={@writing_menu_open}
@@ -135,6 +140,8 @@ defmodule StillWeb.Layouts do
       <% else %>
         <.room_tools {assigns} />
       <% end %>
+
+      {render_slot(@writing_overlay)}
 
       <section
         :if={@landscape_open}

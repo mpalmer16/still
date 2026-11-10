@@ -169,6 +169,76 @@ defmodule Still.Writing.Files do
     end
   end
 
+  @doc "Read only the linked sources, reconciling moved files when requested. Never writes a text file."
+  def reference_sources(location, references, opts \\ []) do
+    with_location(location, fn active ->
+      references = Enum.uniq_by(references, &reference_key/1)
+      results = read_reference_sources(active, references)
+
+      if Keyword.get(opts, :reconcile, true) &&
+           Enum.any?(results, fn {_, result} -> match?({:error, _}, result) end) do
+        case refresh_projection(active, false) do
+          {:ok, _} -> {:ok, read_reference_sources(active, references)}
+          {:error, _} -> {:ok, results}
+        end
+      else
+        {:ok, results}
+      end
+    end)
+  end
+
+  defp reference_key(%{id: id}) when is_binary(id), do: {:id, id}
+  defp reference_key(%{path: path}), do: {:path, path}
+
+  defp read_reference_sources(active, references) do
+    Map.new(references, fn reference ->
+      {reference_key(reference), read_reference_source(active, reference)}
+    end)
+  end
+
+  defp read_reference_source(active, %{path: relative} = reference) do
+    components = String.split(relative, "/")
+
+    if Path.type(relative) != :relative ||
+         Enum.any?(components, &(&1 in ["", ".", ".."])) do
+      {:error, "The poem reference must stay inside the writing folder."}
+    else
+      query = from(e in Entry, where: e.collection_scope == ^active.scope and not e.trashed)
+
+      entry =
+        if reference[:id],
+          do: Repo.one(from(e in query, where: e.file_id == ^reference.id)),
+          else: Repo.one(from(e in query, where: e.relative_path == ^relative))
+
+      with %Entry{pending: nil} <- entry,
+           {:ok, path} <- safe_path(active.folder, entry.relative_path),
+           {:ok, document} <- TextFile.read(path),
+           identity <- file_identity(path),
+           true <-
+             is_nil(entry.source["file_identity"]) || entry.source["file_identity"] == identity,
+           {:ok, refreshed} <-
+             refresh_reference_entry(entry, document, identity) do
+        {:ok, piece(refreshed, active)}
+      else
+        _ -> {:error, "Source unavailable. Reopen Saved writing to reconnect a moved poem."}
+      end
+    end
+  end
+
+  defp refresh_reference_entry(entry, document, identity) do
+    if entry.file_token == document.token && not entry.file_missing do
+      {:ok, entry}
+    else
+      Repo.transaction(fn ->
+        refresh_entry(entry, %{
+          relative: entry.relative_path,
+          document: document,
+          identity: identity
+        })
+      end)
+    end
+  end
+
   defp snapshot_pieces(location, opts) do
     active = Storage.collection_location()
     recover? = Keyword.get(opts, :recover, false)
@@ -817,7 +887,13 @@ defmodule Still.Writing.Files do
   end
 
   defp first_filename_line(body) do
-    body |> String.split(~r/\r\n|\r|\n/) |> Enum.find("", &(String.trim(&1) != ""))
+    body
+    |> String.split(~r/\r\n|\r|\n/)
+    |> Enum.find("", fn line ->
+      String.trim(line) != "" &&
+        not (String.starts_with?(line, "[[poem: ") &&
+               Enum.any?(Still.Writing.PoemReferences.parse(line), &(&1.kind == :reference)))
+    end)
   end
 
   defp filename_from_label(label) do

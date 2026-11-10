@@ -54,6 +54,22 @@ preserves earlier text in SQLite. A clearly established title in an original
 archive document may be marked during its separately authorized conversion.
 Ambiguous originals retain all text and no explicit title role.
 
+## Linked poem passages
+
+An optional own-line `[[poem: relative/path.txt | UUID]]` reference displays a
+read-only passage from another ordinary file in the same selected root. The
+identifier is authoritative when present; path-only references follow the path.
+The source file remains the only editable copy of the included words. Moving
+the whole collection retains relative paths and restored database identities;
+without the database, path-only lookup is available for references without IDs,
+and identified references require restoring/reconnecting their identities.
+Still does not silently substitute a new file at an identified reference's old
+path. Source refresh reads only linked files; missing/changed identities trigger
+a reconciliation rather than guessing. No host text is rewritten by refresh.
+Copy expands one level of available source words, while unavailable references
+remain readable. Correspondence requires all linked sources and freezes expanded
+submitted words and dependency tokens in its existing database records.
+
 ## Notebook and List metadata
 
 Notebook and List numbering supplies sequence when writing dates are unknown.

@@ -5,6 +5,40 @@ import Security
 import CryptoKit
 import Darwin
 
+private final class StillWebView: WKWebView {
+    var hasWritingEditor = false
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        for item in menu.items where item.action == #selector(insertPoem) {
+            if let previous = menu.item(at: max(0, menu.index(of: item) - 1)), previous.isSeparatorItem {
+                menu.removeItem(previous)
+            }
+            menu.removeItem(item)
+        }
+        guard hasWritingEditor else { return }
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
+        let item = NSMenuItem(title: "Insert poem…", action: #selector(insertPoem), keyEquivalent: "")
+        item.target = self
+        menu.addItem(item)
+    }
+
+    @objc private func insertPoem() {
+        evaluateJavaScript("window.dispatchEvent(new Event('still:insert-poem'))", completionHandler: nil)
+    }
+}
+
+private final class WritingEditorPresenceHandler: NSObject, WKScriptMessageHandler {
+    weak var webView: StillWebView?
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "stillWritingEditor",
+              message.frameInfo.isMainFrame,
+              let exists = message.body as? Bool else { return }
+        webView?.hasWritingEditor = exists
+    }
+}
+
 enum StillError: LocalizedError {
     case message(String)
     var errorDescription: String? {
@@ -272,7 +306,29 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private func makeWebView(profile: UUID) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: profile)
-        let view = WKWebView(frame: .zero, configuration: configuration)
+        let userContentController = WKUserContentController()
+        let editorPresenceScript = WKUserScript(source: """
+        (() => {
+          const selector = 'textarea[data-writing-segment], #file-writing-body, #writing-body';
+          let previous;
+          const report = () => {
+            const exists = Boolean(document.querySelector(selector));
+            if (exists !== previous) {
+              previous = exists;
+              window.webkit.messageHandlers.stillWritingEditor.postMessage(exists);
+            }
+          };
+          document.addEventListener('DOMContentLoaded', report);
+          window.addEventListener('phx:page-loading-stop', report);
+          report();
+        })();
+        """, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        userContentController.addUserScript(editorPresenceScript)
+        configuration.userContentController = userContentController
+        let view = StillWebView(frame: .zero, configuration: configuration)
+        let editorPresenceHandler = WritingEditorPresenceHandler()
+        editorPresenceHandler.webView = view
+        userContentController.add(editorPresenceHandler, name: "stillWritingEditor")
         view.underPageBackgroundColor = window.backgroundColor
         view.allowsBackForwardNavigationGestures = false
         view.allowsMagnification = false
@@ -653,8 +709,15 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         window.makeFirstResponder(webView)
         webView.evaluateJavaScript("""
         (() => { const editor = document.getElementById('writing-body') || document.getElementById('file-writing-body');
-          if (editor && document.activeElement !== editor) editor.focus({preventScroll: true}); })()
+          if (editor && document.activeElement !== editor && !editor.linkedEditor?.owns(document.activeElement)) {
+            if (editor.linkedEditor) editor.linkedEditor.focus();
+            else editor.focus({preventScroll: true});
+          } })()
         """, completionHandler: nil)
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        (webView as? StillWebView)?.hasWritingEditor = false
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,

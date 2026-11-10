@@ -9,6 +9,7 @@ defmodule StillWeb.CopyText do
   attr :editing, :boolean, default: false
   attr :body_selector, :string, default: nil
   attr :title_selector, :string, default: nil
+  attr :reference_sources, :map, default: %{}
 
   def copy_text(assigns) do
     assigns =
@@ -31,6 +32,7 @@ defmodule StillWeb.CopyText do
       data-persisted={@payload}
       data-body-selector={if @editing, do: @body_selector}
       data-title-selector={if @editing, do: @title_selector}
+      data-reference-sources={Jason.encode!(@reference_sources)}
     >
       <button type="button" class="copy-text-button" aria-label="Copy text" title="Copy text">
         <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">

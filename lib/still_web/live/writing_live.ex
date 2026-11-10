@@ -2,6 +2,7 @@ defmodule StillWeb.WritingLive do
   use StillWeb, :live_view
   alias Still.{Correspondence, Desk, Poems, Storage, Writing}
   alias Still.Writing.Attention
+  alias Still.Writing.PoemReferences
   alias StillWeb.ReadingLinks
 
   @impl true
@@ -17,7 +18,17 @@ defmodule StillWeb.WritingLive do
        resume_active: false,
        reading_echo: nil,
        echo_attention: nil,
-       listening_line: nil
+       listening_line: nil,
+       linked_segments: [],
+       reference_generation: 0,
+       reference_timer: nil,
+       picker_open: false,
+       picker_query: "",
+       picker_pieces: [],
+       picker_results: [],
+       picker_selected: nil,
+       picker_problem: nil,
+       reference_return: nil
      )}
   end
 
@@ -31,6 +42,7 @@ defmodule StillWeb.WritingLive do
     discovery_problem = Still.Writing.Discovery.problem(location)
     {result, resume?, beside} = opening(socket.assigns.live_action, params, location)
     if socket.assigns.gravity_timer, do: Process.cancel_timer(socket.assigns.gravity_timer)
+    if socket.assigns.reference_timer, do: Process.cancel_timer(socket.assigns.reference_timer)
 
     case result do
       {:ok, piece} ->
@@ -82,6 +94,13 @@ defmodule StillWeb.WritingLive do
            page_title: if(editing, do: "Write", else: Poems.display_title(piece)),
            delete_confirm: false
          )
+         |> assign(
+           reference_timer: nil,
+           reference_return:
+             reference_return(params["reference_return"]) ||
+               if(same_editor?, do: socket.assigns.reference_return)
+         )
+         |> put_references(piece.body, refresh: !same_editor?)
          |> maybe_reset_field(same_editor?)
          |> settle(piece.body)}
 
@@ -101,6 +120,9 @@ defmodule StillWeb.WritingLive do
 
   defp opening(:now, %{"new" => "1"} = params, location),
     do: {{:ok, Poems.new(location)}, false, historical_beside(params["beside"])}
+
+  defp opening(:now, %{"resume_new" => "1"}, location),
+    do: {{:ok, Poems.new(location)}, true, nil}
 
   defp opening(:new, params, location),
     do: {{:ok, Poems.new(location)}, false, historical_beside(params["beside"])}
@@ -196,9 +218,101 @@ defmodule StillWeb.WritingLive do
     {:noreply,
      socket
      |> assign(draft: draft, dirty: draft != words(socket.assigns.piece), notice: nil)
+     |> put_references(draft.body)
      |> then(fn updated ->
        if draft.body != socket.assigns.draft.body, do: settle(updated, draft.body), else: updated
      end)}
+  end
+
+  def handle_event("poem_structure_changed", %{"body" => body}, socket) when is_binary(body) do
+    attrs = Map.new(socket.assigns.draft, fn {key, value} -> {to_string(key), value} end)
+    handle_event("writing_changed", %{"writing" => Map.put(attrs, "body", body)}, socket)
+  end
+
+  def handle_event("open_poem_picker", _, %{assigns: %{editing: true}} = socket) do
+    {pieces, problem} =
+      case Poems.list_read_only(socket.assigns.location) do
+        {:ok, pieces} -> {pieces, nil}
+        {:error, message} -> {[], message}
+      end
+
+    {:noreply,
+     socket
+     |> assign(
+       picker_open: true,
+       picker_query: "",
+       picker_pieces: pieces,
+       picker_results: PoemReferences.search(pieces, "", current_id: socket.assigns.piece.id),
+       picker_selected: nil,
+       picker_problem: problem,
+       writing_menu_open: false
+     )
+     |> push_event("room-focus", %{id: "poem-picker-query", clear_return: true})}
+  end
+
+  def handle_event("search_poems", %{"poem" => %{"query" => query}}, socket) do
+    {:noreply,
+     assign(socket,
+       picker_query: query,
+       picker_results:
+         PoemReferences.search(socket.assigns.picker_pieces, query,
+           current_id: socket.assigns.piece.id
+         )
+     )}
+  end
+
+  def handle_event("preview_poem", %{"id" => id}, socket) do
+    selected = Enum.find(socket.assigns.picker_pieces, &(&1.id == id))
+
+    with %{relative_path: path} <- selected,
+         {:ok, sources} <-
+           Still.Writing.Files.reference_sources(socket.assigns.location, [%{id: id, path: path}]),
+         {:ok, current} <- sources[{:id, id}] do
+      {:noreply, assign(socket, picker_selected: current, picker_problem: nil)}
+    else
+      _ ->
+        {:noreply,
+         assign(socket,
+           picker_selected: nil,
+           picker_problem:
+             "This poem is unavailable. Close and reopen the picker to refresh its files."
+         )}
+    end
+  end
+
+  def handle_event("insert_poem", _, %{assigns: %{picker_selected: selected}} = socket)
+      when not is_nil(selected) do
+    reference = %{id: selected.id, path: selected.relative_path}
+
+    with false <- selected.id == socket.assigns.piece.id,
+         {:ok, sources} <-
+           Still.Writing.Files.reference_sources(socket.assigns.location, [reference]),
+         {:ok, source} <- sources[{:id, selected.id}] do
+      {:noreply,
+       socket
+       |> assign(picker_open: false, picker_pieces: [], picker_selected: nil)
+       |> push_event("insert-poem-reference", %{marker: PoemReferences.marker(source)})}
+    else
+      _ ->
+        {:noreply,
+         assign(socket,
+           picker_problem: "This poem is unavailable. Refresh the picker and try again."
+         )}
+    end
+  end
+
+  def handle_event("close_poem_picker", _, socket) do
+    {:noreply,
+     socket
+     |> assign(picker_open: false, picker_pieces: [], picker_selected: nil)
+     |> push_event("room-focus", %{id: "file-writing-body", clear_return: true})}
+  end
+
+  def handle_event("refresh_linked_poems", _, socket) do
+    body =
+      if socket.assigns.editing, do: socket.assigns.draft.body, else: socket.assigns.piece.body
+
+    {:noreply, put_references(socket, body, refresh: true, reconcile: true)}
   end
 
   def handle_event(
@@ -243,7 +357,7 @@ defmodule StillWeb.WritingLive do
          true <- line != socket.assigns.listening_line,
          passage when not is_nil(passage) <-
            Enum.find(
-             Attention.passages(piece.body),
+             reading_passages(socket.assigns.linked_segments),
              &(&1.kind == :passage && &1.first_line == line)
            ) do
       previous = Enum.reject(socket.assigns.gravity_field, & &1.departing)
@@ -312,6 +426,7 @@ defmodule StillWeb.WritingLive do
          notice: "Saved on this Mac",
          draft_key: target_key
        )
+       |> put_references(piece.body)
        |> push_event("file-saved", %{
          id: piece.id,
          token: piece.token,
@@ -443,6 +558,30 @@ defmodule StillWeb.WritingLive do
     do: push_patch(socket, to: ~p"/writing/#{piece.id}/edit", replace: true)
 
   @impl true
+  def handle_info({:refresh_linked_poems, id}, socket) do
+    if socket.assigns.piece && socket.assigns.piece.id == id do
+      body =
+        if socket.assigns.editing, do: socket.assigns.draft.body, else: socket.assigns.piece.body
+
+      previous = Map.new(reference_markers(socket.assigns.linked_segments), &{&1.raw, &1.status})
+
+      updated =
+        socket
+        |> assign(:reference_timer, nil)
+        |> put_references(body, refresh: true, reconcile: false)
+
+      newly_missing =
+        Enum.any?(reference_markers(updated.assigns.linked_segments), fn ref ->
+          ref.status == :unavailable && previous[ref.raw] == :available
+        end)
+
+      {:noreply,
+       if(newly_missing, do: put_references(updated, body, refresh: true), else: updated)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_info({:settle_before, id, body}, socket) do
     if socket.assigns.editing && socket.assigns.piece.id == id &&
          socket.assigns.draft.body == body do
@@ -488,6 +627,95 @@ defmodule StillWeb.WritingLive do
       {:noreply, socket}
     end
   end
+
+  defp put_references(socket, body, opts \\ []) do
+    parsed = PoemReferences.parse(body)
+    markers = reference_markers(parsed)
+    previous = reference_markers(socket.assigns.linked_segments)
+    changed = Enum.map(markers, & &1.raw) != Enum.map(previous, & &1.raw)
+    cached = Map.new(previous, &{&1.raw, &1})
+
+    segments =
+      cond do
+        markers == [] ->
+          parsed
+
+        changed || Keyword.get(opts, :refresh, false) ->
+          PoemReferences.resolve(socket.assigns.location, body,
+            current_id: socket.assigns.piece.id,
+            reconcile: Keyword.get(opts, :reconcile, true)
+          )
+
+        true ->
+          Enum.map(parsed, fn
+            %{kind: :reference} = part -> Map.merge(cached[part.raw], part)
+            part -> part
+          end)
+      end
+
+    timer = socket.assigns.reference_timer
+    if markers == [] && timer, do: Process.cancel_timer(timer)
+
+    timer =
+      cond do
+        markers == [] ->
+          nil
+
+        timer ->
+          timer
+
+        connected?(socket) ->
+          Process.send_after(self(), {:refresh_linked_poems, socket.assigns.piece.id}, 3000)
+
+        true ->
+          nil
+      end
+
+    assign(socket,
+      linked_segments: segments,
+      reference_generation: socket.assigns.reference_generation + if(changed, do: 1, else: 0),
+      reference_timer: timer
+    )
+  end
+
+  defp reference_markers(segments), do: Enum.filter(segments, &(&1.kind == :reference))
+
+  defp reading_segments(segments) do
+    {values, _} =
+      Enum.map_reduce(segments, 1, fn segment, line ->
+        {Map.put(segment, :start_line, line),
+         line + length(Regex.scan(~r/\r\n|\r|\n/, segment.raw))}
+      end)
+
+    values
+  end
+
+  defp reading_passages(segments) do
+    for %{kind: :text} = segment <- reading_segments(segments),
+        passage <- Attention.passages(segment.raw) do
+      Map.update!(passage, :first_line, &(&1 + segment.start_line - 1))
+    end
+  end
+
+  defp reference_sources(segments) do
+    for %{kind: :reference, status: :available, raw: raw, source: source} <- segments,
+        into: %{},
+        do: {raw, source.body}
+  end
+
+  defp reference_return("/?resume_new=1" = path), do: path
+
+  defp reference_return(path) when is_binary(path) do
+    case Regex.run(~r|\A/writing/([0-9a-f-]{36})/edit\z|, path) do
+      [_, id] -> if Ecto.UUID.cast(id) != :error, do: path
+      _ -> nil
+    end
+  end
+
+  defp reference_return(_), do: nil
+
+  defp surrounding_path(%{token: nil}), do: "/?resume_new=1"
+  defp surrounding_path(piece), do: ~p"/writing/#{piece.id}/edit"
 
   defp settle(socket, body) do
     if socket.assigns.gravity_timer, do: Process.cancel_timer(socket.assigns.gravity_timer)
@@ -643,6 +871,7 @@ defmodule StillWeb.WritingLive do
       letters_open={@letters_open}
       writing_controls={@editing}
       writing_menu_open={@writing_menu_open}
+      writing_picker_open={@picker_open}
       room_width={@room_width}
       width_open={@width_open}
       landscape_open={@landscape_open}
@@ -660,6 +889,7 @@ defmodule StillWeb.WritingLive do
             title_in_body
             editing
             body_selector="#file-writing-body"
+            reference_sources={reference_sources(@linked_segments)}
           />
           <span id="file-save-status" role="status" class="save-message">{cond do
             @notice -> @notice
@@ -668,6 +898,7 @@ defmodule StillWeb.WritingLive do
             true -> "Local draft · not saved as a file"
           end}</span>
           <div class="footer-actions">
+            <.link :if={@reference_return} navigate={@reference_return} class="quiet-link">Back to surrounding writing</.link>
             <.link
               :if={@wander_return}
               id="back-to-wander"
@@ -702,6 +933,13 @@ defmodule StillWeb.WritingLive do
             >{if @wander_return, do: "Save & return to Wander", else: "Read"}</button>
           </div>
         </footer>
+        <button id="insert-poem" type="button" data-insert-poem class="quiet-link">Insert poem…</button>
+        <button
+          :if={reference_markers(@linked_segments) != []}
+          type="button"
+          phx-click="refresh_linked_poems"
+          class="quiet-link"
+        >Refresh linked poems</button>
         <details
           id="file-page-details"
           class="file-location file-writing-details"
@@ -788,6 +1026,85 @@ defmodule StillWeb.WritingLive do
           {@location.error}
         </p>
       </:writing_menu>
+      <:writing_overlay>
+        <div
+          :if={@picker_open}
+          class="poem-picker-backdrop"
+          phx-click="close_poem_picker"
+          aria-hidden="true"
+        >
+        </div>
+        <.focus_wrap
+          :if={@picker_open}
+          id="poem-picker"
+          class="poem-picker"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="poem-picker-heading"
+          phx-window-keydown="close_poem_picker"
+          phx-key="Escape"
+        >
+          <header class="writing-menu-heading">
+            <h2 id="poem-picker-heading">Insert poem</h2>
+            <button type="button" phx-click="close_poem_picker" class="quiet-link">Cancel</button>
+          </header>
+          <p class="file-note">
+            A live passage from its original text file. Your surrounding writing keeps a reference.
+          </p>
+          <.form
+            for={%{}}
+            as={:poem}
+            id="poem-picker-search"
+            phx-change="search_poems"
+            phx-submit="search_poems"
+          >
+            <label for="poem-picker-query" class="sr-only">Find a poem by words, name, or file path</label>
+            <input
+              id="poem-picker-query"
+              type="search"
+              name="poem[query]"
+              value={@picker_query}
+              placeholder="Find a poem by words, name, or file path"
+              phx-debounce="150"
+              autocomplete="off"
+            />
+          </.form>
+          <p :if={@picker_problem} role="alert" class="file-note">{@picker_problem}</p>
+          <div class="poem-picker-columns">
+            <div class="poem-picker-results" aria-label="Matching poems">
+              <p :if={@picker_results == []} class="file-note">
+                No matching poems in this writing folder.
+              </p>
+              <button
+                :for={result <- @picker_results}
+                id={"poem-choice-#{result.id}"}
+                type="button"
+                class={"poem-choice #{if @picker_selected && @picker_selected.id == result.id, do: "poem-choice-selected"}"}
+                phx-click="preview_poem"
+                phx-value-id={result.id}
+                aria-pressed={to_string(@picker_selected != nil && @picker_selected.id == result.id)}
+              >
+                <span class="poem-choice-title">{result.title}</span>
+                <span class="poem-choice-path">{result.path}</span>
+                <span class="poem-choice-preview">{result.preview}</span>
+              </button>
+            </div>
+            <section class="poem-picker-preview" aria-label="Poem preview">
+              <%= if @picker_selected do %>
+                <div class="poem-insert-words">{@picker_selected.body}</div>
+                <button
+                  id="confirm-insert-poem"
+                  type="button"
+                  phx-click="insert_poem"
+                  class="quiet-link"
+                >Insert this poem</button>
+              <% else %>
+                <p class="file-note">Choose a poem to read it here before inserting.</p>
+              <% end %>
+            </section>
+          </div>
+        </.focus_wrap>
+      </:writing_overlay>
       <div :if={is_nil(@piece)} class="writing-room">
         <p id="file-problem" role="alert" class="file-note">{@problem}</p>
         <p class="file-note">Your files and recovery copies have been left in place.</p>
@@ -837,33 +1154,79 @@ defmodule StillWeb.WritingLive do
           data-recovery-safe="false"
           phx-mounted={JS.ignore_attributes(["data-unsaved", "data-recovery-safe"])}
         >
-          <div
-            id={"file-fields-#{@piece.id}"}
-            phx-update="ignore"
-            phx-hook="WritingFocus"
-            class="file-page"
-          >
-            <input id="file-writing-title" name="writing[title]" type="hidden" value="" />
-            <label for="file-writing-body" class="sr-only">Writing</label>
-            <textarea
-              id="file-writing-body"
-              name="writing[body]"
-              class="writing-input file-editor"
-              aria-describedby="file-keyboard-hint"
-              phx-hook="FileRecovery"
-              data-draft-key={@draft_key}
-              data-persisted={Jason.encode!(words(@piece))}
-              data-base-token={@piece.token || ""}
-              data-resume-active={to_string(@resume_active)}
-              data-document-id={@piece.id}
-              spellcheck="true"
-              autocapitalize="off"
-              autocorrect="off"
-              wrap="soft"
-              placeholder="Begin anywhere."
-              autofocus
-              phx-debounce="700"
-            >{"\n" <> @draft.body}</textarea>
+          <div id={"file-writing-focus-#{@piece.id}"} phx-hook="WritingFocus">
+            <div
+              id={"file-fields-#{@piece.id}"}
+              phx-hook="LinkedWriting"
+              class="file-page"
+              phx-mounted={JS.ignore_attributes(["data-linked-ready"])}
+            >
+              <div
+                id={"file-canonical-#{@piece.id}"}
+                phx-update="ignore"
+                class="file-canonical-fields"
+              >
+                <input id="file-writing-title" name="writing[title]" type="hidden" value="" />
+                <label for="file-writing-body" class="sr-only">Writing</label>
+                <textarea
+                  id="file-writing-body"
+                  name="writing[body]"
+                  class="writing-input file-editor"
+                  aria-describedby="file-keyboard-hint"
+                  phx-hook="FileRecovery"
+                  data-draft-key={@draft_key}
+                  data-persisted={Jason.encode!(words(@piece))}
+                  data-base-token={@piece.token || ""}
+                  data-resume-active={to_string(@resume_active)}
+                  data-document-id={@piece.id}
+                  spellcheck="true"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  wrap="soft"
+                  placeholder="Begin anywhere."
+                  autofocus
+                  phx-debounce="700"
+                >{"\n" <> @draft.body}</textarea>
+              </div>
+              <div
+                data-linked-passages
+                data-markers={Jason.encode!(Enum.map(reference_markers(@linked_segments), & &1.raw))}
+                data-generation={@reference_generation}
+                hidden
+              >
+                <%= for {segment, index} <- Enum.with_index(@linked_segments) do %>
+                  <%= if segment.kind == :text do %>
+                    <div
+                      id={"writing-stretch-#{@piece.id}-#{@reference_generation}-#{index}"}
+                      data-writing-part="text"
+                      phx-update="ignore"
+                    >
+                      <label for={"writing-stretch-input-#{index}"} class="sr-only">Writing passage {div(
+                        index,
+                        2
+                      ) + 1}</label>
+                      <textarea
+                        id={"writing-stretch-input-#{index}"}
+                        class="writing-input file-editor writing-stretch"
+                        data-writing-segment
+                        spellcheck="true"
+                        autocorrect="off"
+                        autocapitalize="off"
+                        wrap="soft"
+                        aria-describedby="file-keyboard-hint"
+                        placeholder={if index == 0, do: "Begin anywhere.", else: "Continue writing…"}
+                      >{"\n" <> segment.raw}</textarea>
+                    </div>
+                  <% else %>
+                    <StillWeb.PoemReference.passage
+                      segment={segment}
+                      editing
+                      return_to={surrounding_path(@piece)}
+                    />
+                  <% end %>
+                <% end %>
+              </div>
+            </div>
           </div>
 
           <p id="file-keyboard-hint" class="sr-only">
@@ -883,11 +1246,30 @@ defmodule StillWeb.WritingLive do
         <h1 class="sr-only">Saved writing</h1>
         <div id="file-text" class="file-lines">
           <StillWeb.Echoes.reading
+            :if={reference_markers(@linked_segments) == []}
             body={@piece.body}
             document_id={@piece.id}
             id_prefix="file-passage"
             active_line={@listening_line}
           />
+          <div :if={reference_markers(@linked_segments) != []} class="linked-reading">
+            <%= for {segment, index} <- Enum.with_index(reading_segments(@linked_segments)) do %>
+              <%= if segment.kind == :text do %>
+                <StillWeb.Echoes.reading
+                  body={segment.raw}
+                  document_id={@piece.id}
+                  id_prefix={"linked-passage-#{index}"}
+                  active_line={@listening_line}
+                  start_line={segment.start_line}
+                />
+              <% else %>
+                <StillWeb.PoemReference.passage
+                  segment={segment}
+                  return_to={surrounding_path(@piece)}
+                />
+              <% end %>
+            <% end %>
+          </div>
         </div>
         <StillWeb.Echoes.field :if={@listening_line} fragments={@gravity_field} responsive />
         <p :if={@piece.body == ""} id="file-empty" class="file-note">An empty page, kept here.</p>
@@ -899,6 +1281,7 @@ defmodule StillWeb.WritingLive do
             title={@piece.title}
             title_source={Map.get(@piece, :title_source) || "first_line"}
             title_in_body
+            reference_sources={reference_sources(@linked_segments)}
           />
           <.link id="edit-file" navigate={~p"/writing/#{@piece.id}/edit"} class="quiet-link">Change these words</.link>
           <.link navigate={~p"/writing"} class="quiet-link">Saved writing</.link>

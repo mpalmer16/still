@@ -21,6 +21,28 @@ and **Explore the room**. The controls stay tucked away until you open it. Close
 the menu or press Escape to return to the same place in your writing. Cmd/Ctrl+S
 still saves directly without opening the menu.
 
+**Insert poem…** in Menu (or the Mac's right-click menu) finds a saved text file
+by its name, path or words. Read the preview, then choose **Insert this poem**.
+Cmd/Ctrl+Shift+I opens the same picker. The inserted passage is read-only;
+**Open original** lets you change its source, with **Back to surrounding writing**
+in that editor's Menu. Unsaved surrounding words remain in local recovery.
+**Remove link** removes the passage from this writing without deleting the poem.
+
+The surrounding `.txt` file keeps an own-line reference, for example
+`[[poem: Poems/Rain.txt | 00000000-0000-4000-8000-000000000001]]`, rather than
+a second copy of the poem. The path is relative to the chosen writing folder;
+the identifier keeps a reliably recognized move connected. A path-only
+`[[poem: Poems/Rain.txt]]` also works, but follows that path. Still refreshes linked
+sources while the page is open; Menu also offers **Refresh linked poems**.
+Missing or unavailable sources show a notice and retain their reference.
+References never read outside the selected collection or through symbolic links.
+
+**Copy text** includes the displayed poem words. A submitted Correspondence
+packet freezes those expanded words; a source edit after preparation requires
+reviewing the packet again. Linked passages expand one level: references inside
+a source remain literal text. In another text editor, the surrounding file shows
+the readable reference line. There is no Markdown edition or metadata sidecar.
+
 The Mac writing field underlines spelling mistakes. Control-click or right-click
 an underlined word for suggestions, **Ignore Spelling** (for now), or **Learn
 Spelling** (remember it in your Mac's dictionary, which other Mac apps can also
@@ -56,7 +78,7 @@ existing CRLF bytes. Editing text in a browser uses its LF newline convention.
 **Save** or Cmd/Ctrl+S explicitly saves a file in the chosen collection. Typing
 keeps a local recovery copy, but does not save the authoritative file. **Read**
 or Cmd/Ctrl+Enter saves the latest words before opening their reading view.
-**Saved writing**, beneath the editor, opens the pages you have kept. Open a
+**Saved writing**, in Menu, opens the pages you have kept. Open a
 page to read it and choose **Change these words** to edit its words or title.
 The overlapping-squares **Copy text** button copies the exact body and an
 explicit title once, with a brief **Copied** response. Automatic first-line
@@ -65,7 +87,7 @@ changes that have not reached Save.
 Earlier versions appear beneath the reading view. The wordmark opens a new
 blank page; **Write** returns to the current piece.
 
-While you type, the title and room controls fade. Move the pointer, press
+While you type, the heading and navigation fade; Menu stays available. Move the pointer, press
 Escape, or focus a control to bring them back. Escape moves focus to the page
 controls; Tab within the body indents. Warnings and recovery notices stay
 visible, and reduced-motion preferences remove the fade animation.

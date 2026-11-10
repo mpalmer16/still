@@ -67,9 +67,14 @@ defmodule StillWeb.Echoes do
   attr :active_line, :integer, default: nil
   attr :listening, :boolean, default: true
   attr :document_id, :any, default: nil
+  attr :start_line, :integer, default: 1
 
   def reading(assigns) do
-    passages = Attention.passages(assigns.body)
+    passages =
+      Enum.map(
+        Attention.passages(assigns.body),
+        &Map.update!(&1, :first_line, fn line -> line + assigns.start_line - 1 end)
+      )
 
     assigns =
       assigns
@@ -105,7 +110,13 @@ defmodule StillWeb.Echoes do
         />
       </div>
       <.shaped_words :if={@passages == []} body={@body} id_prefix={@id_prefix} />
-      <div :if={@active_line} class="passage-focused-note">
+      <div
+        :if={
+          @active_line &&
+            Enum.any?(@passages, fn {passage, _} -> passage.first_line == @active_line end)
+        }
+        class="passage-focused-note"
+      >
         <span>Beside this passage</span><button
           id="whole-page-echoes"
           data-clear-passage-focus

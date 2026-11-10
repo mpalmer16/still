@@ -1,3 +1,5 @@
+import {expandedCopy} from "./linked_writing"
+
 export function copyPayload({body, title, title_source, title_in_body = false}, currentBody = body, currentTitle = title) {
   // Textareas normalize saved CRLF and CR to LF. Keep persisted bytes when
   // that normalization is the only apparent body change, independent of title edits.
@@ -26,7 +28,8 @@ export const CopyText = {
         const body = bodyField ? bodyField.value : persisted.body
         const title = titleField ? titleField.value : persisted.title
         if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable")
-        await navigator.clipboard.writeText(copyPayload(persisted, body, title))
+        const text = copyPayload(persisted, body, title)
+        await navigator.clipboard.writeText(expandedCopy(text, JSON.parse(this.el.dataset.referenceSources || "{}")))
         this.status.textContent = "Copied"
       } catch {
         this.status.textContent = "Could not copy. Check clipboard access and try again."

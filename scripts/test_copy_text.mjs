@@ -3,7 +3,9 @@ import {readFile} from 'node:fs/promises'
 import {test} from 'node:test'
 
 const source = await readFile(new URL('../assets/js/copy_text.js', import.meta.url), 'utf8')
-const {copyPayload, CopyText} = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
+const linked = await readFile(new URL('../assets/js/linked_writing.js', import.meta.url), 'utf8')
+const combined = source.replace('import {expandedCopy} from "./linked_writing"', '') + '\n' + linked.replace(/^export /gm, '')
+const {copyPayload, CopyText} = await import(`data:text/javascript;base64,${Buffer.from(combined).toString('base64')}`)
 
 test('copies an explicit title followed by a blank line and the exact body', () => {
   assert.equal(copyPayload({body:'  line\n\nlast\n', title:'A title', title_source:'explicit'}), 'A title\n\n  line\n\nlast\n')

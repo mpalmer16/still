@@ -4,7 +4,7 @@ defmodule Still.Correspondence do
   immutable database snapshots; historical SQLite Lists are never candidates or modified.
   """
   alias Still.{LocalRecord, Poems, Repo, Storage}
-  alias Still.Writing.{Entry, Version}
+  alias Still.Writing.{Entry, PoemReferences, Version}
   import Ecto.Query
 
   @journal_fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted verified inactive keywords reach reach_note possible_piece_ids icon_url description)
@@ -781,10 +781,70 @@ defmodule Still.Correspondence do
       found = Map.new(all, &{&1.id, &1})
 
       if Enum.all?(ids, &Map.has_key?(found, &1)),
-        do: {:ok, Enum.map(ids, &Map.fetch!(found, &1))},
+        do:
+          ids
+          |> Enum.map(&Map.fetch!(found, &1))
+          |> expand_linked_pieces(loc),
         else:
           {:error,
            "One or more selected writings are missing from the active collection. Refresh before continuing."}
+    end
+  end
+
+  defp expand_linked_pieces(pieces, location) do
+    Enum.reduce_while(pieces, {:ok, []}, fn piece, {:ok, acc} ->
+      references = Enum.filter(PoemReferences.parse(piece.body), &(&1.kind == :reference))
+
+      if references == [] do
+        {:cont, {:ok, acc ++ [piece]}}
+      else
+        resolved =
+          PoemReferences.resolve(location, piece.body,
+            current_id: piece.id,
+            reconcile: true
+          )
+
+        case expand_segments(resolved) do
+          {:ok, expanded_body, dependencies} ->
+            body_digest = :crypto.hash(:sha256, expanded_body)
+
+            token =
+              :crypto.hash(
+                :sha256,
+                :erlang.term_to_binary({piece.token, body_digest, dependencies})
+              )
+              |> Base.encode16(case: :lower)
+
+            expanded = %{piece | body: expanded_body, token: token}
+            {:cont, {:ok, acc ++ [expanded]}}
+
+          {:error, message} ->
+            {:halt, {:error, message}}
+        end
+      end
+    end)
+  end
+
+  defp expand_segments(segments) do
+    Enum.reduce_while(segments, {:ok, [], []}, fn
+      %{kind: :text, raw: raw}, {:ok, body, dependencies} ->
+        {:cont, {:ok, [body, raw], dependencies}}
+
+      %{kind: :reference, status: :available, source: source}, {:ok, body, dependencies} ->
+        dependency = {source.id, source.token}
+        {:cont, {:ok, [body, source.body], dependencies ++ [dependency]}}
+
+      %{kind: :reference, message: message}, _acc ->
+        {:halt,
+         {:error,
+          "A linked poem is unavailable. #{message || "Reopen Saved writing to reconnect it."}"}}
+    end)
+    |> case do
+      {:ok, body_parts, dependencies} ->
+        {:ok, IO.iodata_to_binary(body_parts), dependencies}
+
+      error ->
+        error
     end
   end
 

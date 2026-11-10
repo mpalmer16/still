@@ -13,6 +13,10 @@ One blank page. As you write, the controls fall quiet. Your line breaks,
 indentation, and spaces stay yours. Save keeps your words as ordinary text files,
 with earlier versions to return to.
 
+**Insert poem…** brings another saved poem into the page as a live, read-only
+passage. Its original file keeps the words; the surrounding text file keeps a
+readable reference. Copy includes the displayed poem.
+
 ### Let the past come near
 
 Echoes gather at the edges when your language meets words you have written before.

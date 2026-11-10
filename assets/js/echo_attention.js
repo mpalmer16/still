@@ -8,7 +8,8 @@ export function echoAttention(el, send, {documentId, doc = document, clock = win
     if (!connected || composing || destroyed) return
     timer = clock.setTimeout(() => {
       timer = null
-      if (!connected || composing || destroyed || !el.isConnected || doc.activeElement !== el) return
+      if (!connected || composing || destroyed || !el.isConnected ||
+          (doc.activeElement !== el && !el.linkedEditor?.owns(doc.activeElement))) return
       const id = String(documentId()), body = el.value, start = el.selectionStart, end = el.selectionEnd
       if (!Number.isInteger(start) || !Number.isInteger(end)) return
       if (last && last.id === id && last.body === body && last.start === start && last.end === end) return

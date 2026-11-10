@@ -9,6 +9,13 @@ of spellcheck at the room boundary and opts in only for the writing textarea.
 No custom dictionary, grammar service, automatic text rewriting or browser hook
 is introduced. Learned words belong to macOS and may be shared with other apps.
 
+The native writing context menu appends **Insert poem…** to WebKit's existing
+items, preserving spelling suggestions and editing commands. The action opens
+the shared LiveView picker at the editor's remembered caret. A document-start
+script reports editor presence after document load and LiveView navigation;
+the native menu action dispatches the same explicit editor event as the writing
+Menu and Cmd/Ctrl+Shift+I. It adds no renderer or file-access path in the shell.
+
 `native/build.sh` assembles `dist/Still.app`. An optional installed copy lives at `/Applications/Still.app` and can be opened from the Dock, Applications, or Spotlight. After rebuilding, quit Still and use `rsync -a --delete dist/Still.app/ /Applications/Still.app/` to update that copy, then run `codesign --verify --deep --strict /Applications/Still.app`. Synchronizing the complete bundle removes obsolete generated assets that an overlay copy would leave behind. Installation does not move the writing folder. The normal bundle retains `local.still.room`, port 4040, and its existing WebKit recovery storage.
 The local build needs Elixir/Erlang, the Xcode command-line tools, and Python 3. Launching the built app needs none of those tools and does not use Docker.
 `native/build.sh --shell-only` rebuilds just the native window around an already assembled backend during shell development. Use the full build to include Phoenix changes.

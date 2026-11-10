@@ -550,6 +550,30 @@ mark { background: hsl(var(--hue, 218) 18% 25%); color: var(--ink); text-decorat
 .file-page { padding: var(--file-page-inset); border: 1px solid rgb(177 195 221 / .09); background: rgb(177 195 221 / .018); }
 .file-now .file-editor { min-height: 57vh; white-space: pre-wrap; overflow-x: hidden; overflow-wrap: anywhere; }
 .file-now .file-editor:focus-visible, .file-now .title-input:focus-visible { box-shadow: none; }
+.file-page[data-linked-ready="true"] .file-canonical-fields { display: none; }
+.file-now .file-editor.writing-stretch { min-height: 1.85em; padding: 0; }
+.poem-insert { margin: 0 0 0 clamp(16px, 2.5vw, 38px); padding: 12px 0 12px clamp(16px, 2vw, 28px); border-left: 1px solid rgb(177 195 221 / .18); }
+.poem-insert-words { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--serif); font-size: inherit; line-height: 1.85; color: var(--ink); tab-size: 4; }
+.file-page .poem-insert-words, .poem-picker-preview .poem-insert-words { font-size: calc(19px + var(--letters, .5) * 8px); }
+.poem-insert-caption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; margin-top: 12px; color: var(--muted); font: 12px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; white-space: normal; }
+.poem-insert-caption > span { overflow-wrap: anywhere; }
+.poem-insert-caption .quiet-link { font-size: 12px; }
+.poem-insert-unavailable { border-left-style: dashed; }
+.linked-reading { white-space: normal; }
+.poem-picker-backdrop { position: fixed; inset: 0; z-index: 10; background: rgb(0 0 0 / .45); }
+html:has(#poem-picker) { overflow: hidden; }
+.poem-picker { position: fixed; z-index: 11; inset: 5vh auto auto 50%; transform: translateX(-50%); width: min(980px, calc(100vw - 64px)); max-height: 90dvh; overflow-y: auto; overscroll-behavior: contain; padding: 28px 32px; background: var(--night); border: 1px solid rgb(177 195 221 / .2); border-radius: 5px; box-shadow: 0 16px 60px rgb(0 0 0 / .3); }
+.poem-picker input { width: 100%; margin: 10px 0 24px; }
+.poem-picker-columns { display: grid; grid-template-columns: minmax(240px, .85fr) minmax(280px, 1.15fr); gap: 32px; }
+.poem-picker-results, .poem-picker-preview { max-height: 56vh; overflow-y: auto; overscroll-behavior: contain; }
+.poem-picker-preview { padding: 8px 12px 12px 24px; border-left: 1px solid rgb(177 195 221 / .12); }
+.poem-choice { display: block; width: 100%; padding: 14px 12px; border: 0; border-bottom: 1px solid rgb(177 195 221 / .1); color: var(--soft); background: transparent; text-align: left; }
+.poem-choice:hover, .poem-choice-selected { background: rgb(177 195 221 / .055); }
+.poem-choice span { display: block; }
+.poem-choice-title { font: 20px/1.4 var(--serif); }
+.poem-choice-path { margin: 5px 0; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.poem-choice-preview { font: 15px/1.6 var(--serif); color: var(--muted); white-space: pre-wrap; }
+.poem-picker-preview #confirm-insert-poem { margin-top: 24px; }
 .file-now .file-writing-footer { margin-top: 24px; }
 .writing-menu-toggle { position: fixed; right: clamp(25px, 5.2vw, 84px); bottom: 25px; z-index: 5; padding: 0; border: 0; background: transparent; color: var(--muted); font: 17px var(--serif); }
 .writing-menu-toggle:hover, .writing-menu-toggle:focus-visible { color: var(--ink); }

@@ -1,5 +1,6 @@
 import {WritingFocus} from "./writing_focus"
 import {FileRecovery} from "./file_recovery"
+import {LinkedWriting} from "./linked_writing"
 import {CopyText} from "./copy_text"
 import {echoAttention, passageAttention} from "./echo_attention"
 import "phoenix_html"
@@ -384,7 +385,11 @@ window.addEventListener("phx:room-focus", ({detail}) => {
   if (detail.id) {
     if (detail.clear_return) roomFocusReturn = null
     else if (!roomFocusReturn?.isConnected) roomFocusReturn = document.activeElement
-    requestAnimationFrame(() => document.getElementById(detail.id)?.focus({preventScroll: true}))
+    requestAnimationFrame(() => {
+      const target = document.getElementById(detail.id)
+      if (target?.linkedEditor) target.linkedEditor.focus()
+      else target?.focus({preventScroll: true})
+    })
   } else if (roomFocusReturn?.isConnected) {
     const returning = roomFocusReturn
     requestAnimationFrame(() => returning.focus({preventScroll: true}))
@@ -438,7 +443,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, FileRecovery: AttentiveFileRecovery, WritingFocus, CopyText, PassageAttention},
+  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, FileRecovery: AttentiveFileRecovery, LinkedWriting, WritingFocus, CopyText, PassageAttention},
 })
 
 liveSocket.connect()

@@ -146,6 +146,7 @@ export const FileRecovery = {
       this.el.style.height = "auto"
       this.el.style.height = `${Math.max(this.el.scrollHeight, Number.parseFloat(getComputedStyle(this.el).minHeight) || 320)}px`
       if (window.scrollY !== scroll) window.scrollTo({top: scroll, behavior: "instant"})
+      this.el.linkedEditor?.fit()
     }
     this.capture = (resize = true) => {
       const wasFailed = this.failed
@@ -172,31 +173,32 @@ export const FileRecovery = {
     this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); this.submitWriting(event.submitter?.id === "read-file", event.submitter?.id === "save-scratch") }
     this.onKey = event => {
       if (event.target !== this.el && event.target?.form !== this.form) return
+      const editor = event.target === this.el || this.el.linkedEditor?.owns(event.target) ? event.target : null
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault(); this.save()
       }
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
         event.preventDefault(); this.submitWriting(true)
       }
-      if (event.target === this.el && event.key === "Escape" && !document.querySelector("#room-close")) {
+      if (editor && event.key === "Escape" && !document.querySelector("#room-close")) {
         event.preventDefault()
         const menuToggle = document.querySelector("#writing-menu-toggle")
         const focusTarget = menuToggle || this.saveButton
         focusTarget?.focus()
       }
-      if (event.key === "Tab" && event.target === this.el) {
+      if (event.key === "Tab" && editor) {
         if (event.isComposing || this.composing || event.metaKey || event.ctrlKey || event.altKey) return
         event.preventDefault()
-        const start = this.el.selectionStart, end = this.el.selectionEnd
+        const start = editor.selectionStart, end = editor.selectionEnd
         if (event.shiftKey) {
-          const lineStart = this.el.value.lastIndexOf("\n", start - 1) + 1
-          const selected = this.el.value.slice(lineStart, end)
+          const lineStart = editor.value.lastIndexOf("\n", start - 1) + 1
+          const selected = editor.value.slice(lineStart, end)
           const changed = selected.split("\n").map(line => line.replace(/^(\t| {1,4})/, "")).join("\n")
-          replaceSelection(this.el, changed, lineStart, end, "select")
-        } else replaceSelection(this.el, "\t", start, end, "end")
+          replaceSelection(editor, changed, lineStart, end, "select")
+        } else replaceSelection(editor, "\t", start, end, "end")
       }
-      if (event.target === this.el && event.key === "Enter") {
-        insertEnter(this.el, event, {composing: this.composing})
+      if (editor && event.key === "Enter") {
+        insertEnter(editor, event, {composing: this.composing})
       }
     }
     this.onCompositionStart = () => { this.composing = true }
@@ -248,8 +250,8 @@ export const FileRecovery = {
     this.form.addEventListener("submit", this.onSubmit)
     document.addEventListener("input", this.onInput)
     document.addEventListener("keydown", this.onKey)
-    this.el.addEventListener("compositionstart", this.onCompositionStart)
-    this.el.addEventListener("compositionend", this.onCompositionEnd)
+    this.form.addEventListener("compositionstart", this.onCompositionStart)
+    this.form.addEventListener("compositionend", this.onCompositionEnd)
     window.addEventListener("still:save", this.save)
     window.addEventListener("still:prepare-to-leave", this.onPrepare)
     window.addEventListener("pagehide", this.onPrepare)
@@ -282,7 +284,8 @@ export const FileRecovery = {
         this.keepPosition()
         this.pushEvent("writing_changed", {writing: this.words()})
         this.offer()
-        this.el.focus({preventScroll: true})
+        if (this.el.linkedEditor) this.el.linkedEditor.focus()
+        else this.el.focus({preventScroll: true})
       } catch { this.problem() }
     })
     this.handleEvent("file-keep-saved", () => {
@@ -325,6 +328,7 @@ export const FileRecovery = {
           }
         } catch { /* A missing position never replaces words. */ }
       }
+      this.el.linkedEditor?.focus()
     }
   },
   updated() { this.fit() },
@@ -335,8 +339,8 @@ export const FileRecovery = {
     this.form.removeEventListener("submit", this.onSubmit)
     document.removeEventListener("input", this.onInput)
     document.removeEventListener("keydown", this.onKey)
-    this.el.removeEventListener("compositionstart", this.onCompositionStart)
-    this.el.removeEventListener("compositionend", this.onCompositionEnd)
+    this.form.removeEventListener("compositionstart", this.onCompositionStart)
+    this.form.removeEventListener("compositionend", this.onCompositionEnd)
     window.removeEventListener("still:save", this.save)
     window.removeEventListener("still:prepare-to-leave", this.onPrepare)
     window.removeEventListener("pagehide", this.onPrepare)

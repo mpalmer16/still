@@ -1,19 +1,20 @@
 // Presentation only: never changes words, selection, recovery, or save behavior.
 export function writingFocus(page, doc = document, clock = window) {
   const body = page.querySelector("#file-writing-body")
+  const isWriting = target => target === body || body?.linkedEditor?.owns(target)
   let timer, connected = true, lastPointer = null
   const reveal = () => {
     clock.clearTimeout(timer)
     doc.documentElement.removeAttribute("data-still-writing-focus")
   }
   const typing = event => {
-    if (event.target !== body || doc.activeElement !== body || !connected) return
+    if (!isWriting(event.target) || !isWriting(doc.activeElement) || !connected) return
     clock.clearTimeout(timer)
     timer = clock.setTimeout(() => {
-      if (connected && doc.activeElement === body) doc.documentElement.setAttribute("data-still-writing-focus", "")
+      if (connected && isWriting(doc.activeElement)) doc.documentElement.setAttribute("data-still-writing-focus", "")
     }, 400)
   }
-  const focus = event => { if (event.target !== body) reveal() }
+  const focus = event => { if (!isWriting(event.target)) reveal() }
   const rememberPointer = event => {
     if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
       lastPointer = {x: event.clientX, y: event.clientY}
@@ -28,7 +29,7 @@ export function writingFocus(page, doc = document, clock = window) {
     if (moved) reveal()
   }
   const key = event => {
-    if (event.key === "Tab" && event.target === body && !event.isComposing &&
+    if (event.key === "Tab" && isWriting(event.target) && !event.isComposing &&
         !event.metaKey && !event.ctrlKey && !event.altKey) return
     if (["Escape", "Tab"].includes(event.key) || event.metaKey || event.ctrlKey || event.altKey) reveal()
   }
