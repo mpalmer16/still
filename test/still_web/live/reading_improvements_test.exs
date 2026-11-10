@@ -125,7 +125,7 @@ defmodule StillWeb.ReadingImprovementsTest do
     view |> element("#room-close") |> render_click()
     view |> element("#landscape-toggle") |> render_click()
     assert has_element?(view, "#room-landscape[role='dialog'][aria-modal='true']")
-    assert has_element?(view, ".room-light-control[inert]")
+    assert has_element?(view, "#writing-menu[hidden] .writing-menu-room-controls[inert]")
     assert has_element?(view, "#room-content[inert]")
     assert Writing.list_entries() == []
   end

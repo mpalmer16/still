@@ -96,7 +96,8 @@ export const shouldBlockNavigation = (current, baseline, recoverySafe) => !recov
 export const FileRecovery = {
   mounted() {
     this.form = this.el.form
-    this.title = this.form.querySelector("#file-writing-title")
+    this.field = name => this.form.elements.namedItem(`writing[${name}]`)
+    this.title = this.field("title")
     if (this.title) this.title.value = ""
     this.key = this.el.dataset.draftKey
     this.baseline = currentWords(JSON.parse(this.el.dataset.persisted))
@@ -107,7 +108,7 @@ export const FileRecovery = {
     this.words = () => {
       const body = this.el.value
       if (this.title) this.title.value = ""
-      const value = field => this.form.querySelector(`[name="writing[${field}]"]`)?.value ?? ""
+      const value = field => this.field(field)?.value ?? ""
       return {
         body: body === this.baseline.body.replace(/\r\n?/g, "\n") ? this.baseline.body : body,
         title: "",
@@ -164,18 +165,25 @@ export const FileRecovery = {
       this.pushEvent("save_file", {writing: this.words(), draft_key: this.key, read, scratch})
     }
     this.save = () => this.submitWriting(false)
-    this.newButton = this.form.querySelector("#new-file")
+    this.newButton = [...document.querySelectorAll("#new-file")].find(button => button.form === this.form)
+    this.saveButton = [...document.querySelectorAll("#save-file")].find(button => button.form === this.form)
     this.onNew = () => { this.capture(); this.keepPosition(); this.pushEvent("new_file", {writing: this.words()}) }
     this.newButton?.addEventListener("click", this.onNew)
     this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); this.submitWriting(event.submitter?.id === "read-file", event.submitter?.id === "save-scratch") }
     this.onKey = event => {
+      if (event.target !== this.el && event.target?.form !== this.form) return
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault(); this.save()
       }
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
         event.preventDefault(); this.submitWriting(true)
       }
-      if (event.key === "Escape" && !document.querySelector("#room-close")) { event.preventDefault(); this.form.querySelector("#save-file")?.focus() }
+      if (event.target === this.el && event.key === "Escape" && !document.querySelector("#room-close")) {
+        event.preventDefault()
+        const menuToggle = document.querySelector("#writing-menu-toggle")
+        const focusTarget = menuToggle || this.saveButton
+        focusTarget?.focus()
+      }
       if (event.key === "Tab" && event.target === this.el) {
         if (event.isComposing || this.composing || event.metaKey || event.ctrlKey || event.altKey) return
         event.preventDefault()
@@ -208,7 +216,10 @@ export const FileRecovery = {
         end: this.el.selectionEnd, direction: this.el.selectionDirection, scroll: window.scrollY})) }
       catch { /* Position is optional; words have their own verified recovery copy. */ }
     }
-    this.onInput = event => { this.capture(event.target === this.el); this.keepPosition() }
+    this.onInput = event => {
+      if (event.target !== this.el && event.target?.form !== this.form) return
+      this.capture(event.target === this.el); this.keepPosition()
+    }
     this.onPrepare = () => { this.capture(); this.keepPosition() }
     this.onNavigation = ({detail}) => {
       if (detail.kind === "redirect") { this.capture(); this.keepPosition(); this.leaving = true }
@@ -234,9 +245,9 @@ export const FileRecovery = {
     }
     window.addEventListener("click", this.onLeavingClick, true)
     window.addEventListener("beforeunload", this.onUnload)
-    this.form.addEventListener("input", this.onInput)
     this.form.addEventListener("submit", this.onSubmit)
-    this.form.addEventListener("keydown", this.onKey)
+    document.addEventListener("input", this.onInput)
+    document.addEventListener("keydown", this.onKey)
     this.el.addEventListener("compositionstart", this.onCompositionStart)
     this.el.addEventListener("compositionend", this.onCompositionEnd)
     window.addEventListener("still:save", this.save)
@@ -264,7 +275,7 @@ export const FileRecovery = {
         this.el.value = this.offered.body
         this.title.value = ""
         for (const field of fields) {
-          const input = this.form.querySelector(`[name="writing[${field}]"]`)
+          const input = this.field(field)
           if (input) input.value = this.offered[field] ?? ""
         }
         this.capture()
@@ -291,7 +302,7 @@ export const FileRecovery = {
         this.el.value = active.body
         this.title.value = ""
         for (const field of fields) {
-          const input = this.form.querySelector(`[name="writing[${field}]"]`)
+          const input = this.field(field)
           if (input) input.value = active[field] ?? ""
         }
         this.arrivalPending = false
@@ -321,9 +332,9 @@ export const FileRecovery = {
     window.removeEventListener("click", this.onLeavingClick, true)
     window.removeEventListener("beforeunload", this.onUnload)
     this.newButton?.removeEventListener("click", this.onNew)
-    this.form.removeEventListener("input", this.onInput)
     this.form.removeEventListener("submit", this.onSubmit)
-    this.form.removeEventListener("keydown", this.onKey)
+    document.removeEventListener("input", this.onInput)
+    document.removeEventListener("keydown", this.onKey)
     this.el.removeEventListener("compositionstart", this.onCompositionStart)
     this.el.removeEventListener("compositionend", this.onCompositionEnd)
     window.removeEventListener("still:save", this.save)

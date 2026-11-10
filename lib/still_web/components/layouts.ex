@@ -10,6 +10,7 @@ defmodule StillWeb.Layouts do
   attr :room_letters, :integer, default: 50
   attr :letters_open, :boolean, default: false
   attr :writing_controls, :boolean, default: false
+  attr :writing_menu_open, :boolean, default: false
   attr :room_width, :integer, default: 0
   attr :width_open, :boolean, default: false
   attr :landscape_open, :boolean, default: false
@@ -31,6 +32,7 @@ defmodule StillWeb.Layouts do
   attr :return_beside, :any, default: nil
   attr :return_list, :boolean, default: false
   slot :inner_block, required: true
+  slot :writing_menu
 
   def app(assigns) do
     ~H"""
@@ -41,7 +43,11 @@ defmodule StillWeb.Layouts do
     >
       <a href="#page-content" class="skip-link">Skip to the page</a>
       <div class="room-light" aria-hidden="true"></div>
-      <div id="room-content" inert={@landscape_open} aria-hidden={if @landscape_open, do: "true"}>
+      <div
+        id="room-content"
+        inert={@landscape_open || (@writing_controls && @writing_menu_open)}
+        aria-hidden={if @landscape_open || (@writing_controls && @writing_menu_open), do: "true"}
+      >
         <header class="site-header">
           <.link navigate={~p"/?new=1"} class="wordmark" aria-label="Still, a new page">still<span class="wordmark-stop">.</span></.link>
           <nav class="site-nav" aria-label="Main navigation">
@@ -85,126 +91,50 @@ defmodule StillWeb.Layouts do
         <main id="page-content" tabindex="-1">{render_slot(@inner_block)}</main>
       </div>
 
-      <div class="room-light-control" inert={@landscape_open}>
+      <%= if @writing_controls do %>
         <button
-          id="light-toggle"
+          id="writing-menu-toggle"
           type="button"
-          phx-click="toggle_light"
-          aria-expanded={to_string(@light_open)}
-          aria-controls="room-light-form"
-          class="room-control"
-        >Light</button>
-        <button
-          id="letters-toggle"
-          type="button"
-          phx-click="toggle_letters"
-          aria-expanded={to_string(@letters_open)}
-          aria-controls="room-letters-form"
-          class="room-control"
-        >Letters</button>
-        <button
-          :if={@writing_controls}
-          id="page-width-toggle"
-          type="button"
-          phx-click="toggle_width"
-          aria-expanded={to_string(@width_open)}
-          aria-controls="room-page-form"
-          class="room-control"
-        >Page width</button>
-        <form
-          :if={@writing_controls && @width_open}
-          id="room-page-form"
-          phx-change="change_width"
-          phx-submit="change_width"
-          class="letters-adjustment page-width-adjustment"
+          phx-click="toggle_writing_menu"
+          class="writing-menu-toggle room-control"
+          aria-haspopup="dialog"
+          aria-controls="writing-menu"
+          aria-expanded={to_string(@writing_menu_open)}
+          hidden={@writing_menu_open || @landscape_open}
+        >Menu</button>
+        <div
+          :if={@writing_menu_open}
+          class="writing-menu-backdrop"
+          phx-click="close_writing_menu"
+          aria-hidden="true"
         >
-          <label for="room-page-width" class="sr-only">Writing page width</label>
-          <input
-            id="room-page-width"
-            name="page[width]"
-            type="range"
-            min="560"
-            max="1600"
-            step="20"
-            value={if @room_width == 0, do: 740, else: @room_width}
-            phx-debounce="100"
-            aria-valuetext={
-              if @room_width == 0,
-                do: "Default width",
-                else: "Up to #{@room_width} pixels, leaving space for echoes"
-            }
-          />
-          <span class="page-width-value">{if @room_width == 0, do: "Default", else: "#{@room_width}px"}</span>
-          <button type="button" phx-click="reset_width" class="room-control">Reset</button>
-          <button id="room-close" type="button" phx-click="close_room" class="room-control">Done</button>
-          <small>The screen limits the width to leave room for echoes.</small>
-        </form>
-        <form
-          :if={@light_open}
-          id="room-light-form"
-          phx-change="change_light"
-          phx-submit="change_light"
-          class="light-adjustment"
+        </div>
+        <.focus_wrap
+          id="writing-menu"
+          class="writing-menu"
+          hidden={!@writing_menu_open}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="writing-menu-heading"
+          phx-window-keydown="close_writing_menu"
+          phx-key="Escape"
         >
-          <label for="room-light-angle" class="sr-only">Change the light</label>
-          <input
-            id="room-light-angle"
-            name="light[angle]"
-            type="range"
-            min="0"
-            max="360"
-            step="1"
-            value={@room_light}
-            phx-debounce="100"
-            aria-label="Change the light"
-            aria-valuetext={"Light position #{@room_light} of 360"}
-          />
-          <button id="room-close" type="button" phx-click="close_room" class="light-done room-control">Done</button>
-        </form>
-        <form
-          :if={@letters_open}
-          id="room-letters-form"
-          phx-change="change_letters"
-          phx-submit="change_letters"
-          class="letters-adjustment"
-        >
-          <label for="room-letters-size" class="sr-only">Change the size of the writing</label>
-          <input
-            id="room-letters-size"
-            name="letters[size]"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            value={@room_letters}
-            phx-debounce="100"
-            aria-label="Change the size of the writing"
-            aria-valuetext={"#{round(17 + @room_letters / 100 * 8 + max(0, @room_letters / 100 - 0.5) * 16)} pixels"}
-          />
-          <button id="room-close" type="button" phx-click="close_room" class="room-control">Done</button>
-        </form>
-      </div>
-
-      <button
-        id="landscape-toggle"
-        type="button"
-        phx-click="toggle_landscape"
-        class="place-whisper room-control"
-        title={region_label(@place.region)}
-        aria-label={"Reveal the room, #{Still.Writing.Geography.reference_label(@place, Map.get(@place, :source_number))}"}
-        aria-expanded={to_string(@landscape_open)}
-        aria-controls="room-landscape"
-        inert={@landscape_open}
-        aria-hidden={if @landscape_open, do: "true"}
-      >
-        <span class="place-name">{Still.Writing.Geography.reference_label(
-          @place,
-          Map.get(@place, :source_number)
-        )}</span>
-        <span :if={region_label(@place.region) != ""} class="place-region">{region_label(
-          @place.region
-        )}</span>
-      </button>
+          <header class="writing-menu-heading">
+            <h2 id="writing-menu-heading">Writing</h2>
+            <button
+              id="writing-menu-close"
+              type="button"
+              phx-click="close_writing_menu"
+              class="quiet-link"
+              aria-label="Close menu and return to writing"
+            >Close</button>
+          </header>
+          {render_slot(@writing_menu)}
+          <.room_tools {assigns} />
+        </.focus_wrap>
+      <% else %>
+        <.room_tools {assigns} />
+      <% end %>
 
       <section
         :if={@landscape_open}
@@ -275,6 +205,139 @@ defmodule StillWeb.Layouts do
         Connection lost. This browser keeps a copy while you write.
       </p>
     </div>
+    """
+  end
+
+  defp room_tools(assigns) do
+    ~H"""
+    <div
+      class={if @writing_controls, do: "writing-menu-room-controls", else: "room-light-control"}
+      inert={@landscape_open}
+    >
+      <button
+        id="light-toggle"
+        type="button"
+        phx-click="toggle_light"
+        aria-expanded={to_string(@light_open)}
+        aria-controls="room-light-form"
+        class="room-control"
+      >Light</button>
+      <button
+        id="letters-toggle"
+        type="button"
+        phx-click="toggle_letters"
+        aria-expanded={to_string(@letters_open)}
+        aria-controls="room-letters-form"
+        class="room-control"
+      >Letters</button>
+      <button
+        :if={@writing_controls}
+        id="page-width-toggle"
+        type="button"
+        phx-click="toggle_width"
+        aria-expanded={to_string(@width_open)}
+        aria-controls="room-page-form"
+        class="room-control"
+      >Page width</button>
+      <form
+        :if={@writing_controls && @width_open}
+        id="room-page-form"
+        phx-change="change_width"
+        phx-submit="change_width"
+        class="letters-adjustment page-width-adjustment"
+      >
+        <label for="room-page-width" class="sr-only">Writing page width</label>
+        <input
+          id="room-page-width"
+          name="page[width]"
+          type="range"
+          min="560"
+          max="1600"
+          step="20"
+          value={if @room_width == 0, do: 740, else: @room_width}
+          phx-debounce="100"
+          aria-valuetext={
+            if @room_width == 0,
+              do: "Default width",
+              else: "Up to #{@room_width} pixels, leaving space for echoes"
+          }
+        />
+        <span class="page-width-value">{if @room_width == 0, do: "Default", else: "#{@room_width}px"}</span>
+        <button type="button" phx-click="reset_width" class="room-control">Reset</button>
+        <button id="room-close" type="button" phx-click="close_room" class="room-control">Done</button>
+        <small>The screen limits the width to leave room for echoes.</small>
+      </form>
+      <form
+        :if={@light_open}
+        id="room-light-form"
+        phx-change="change_light"
+        phx-submit="change_light"
+        class="light-adjustment"
+      >
+        <label for="room-light-angle" class="sr-only">Change the light</label>
+        <input
+          id="room-light-angle"
+          name="light[angle]"
+          type="range"
+          min="0"
+          max="360"
+          step="1"
+          value={@room_light}
+          phx-debounce="100"
+          aria-label="Change the light"
+          aria-valuetext={"Light position #{@room_light} of 360"}
+        />
+        <button id="room-close" type="button" phx-click="close_room" class="light-done room-control">Done</button>
+      </form>
+      <form
+        :if={@letters_open}
+        id="room-letters-form"
+        phx-change="change_letters"
+        phx-submit="change_letters"
+        class="letters-adjustment"
+      >
+        <label for="room-letters-size" class="sr-only">Change the size of the writing</label>
+        <input
+          id="room-letters-size"
+          name="letters[size]"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value={@room_letters}
+          phx-debounce="100"
+          aria-label="Change the size of the writing"
+          aria-valuetext={"#{round(17 + @room_letters / 100 * 8 + max(0, @room_letters / 100 - 0.5) * 16)} pixels"}
+        />
+        <button id="room-close" type="button" phx-click="close_room" class="room-control">Done</button>
+      </form>
+    </div>
+
+    <button
+      id="landscape-toggle"
+      type="button"
+      phx-click="toggle_landscape"
+      class={
+        if @writing_controls,
+          do: "quiet-link writing-menu-room-link",
+          else: "place-whisper room-control"
+      }
+      title={region_label(@place.region)}
+      aria-label={"Reveal the room, #{Still.Writing.Geography.reference_label(@place, Map.get(@place, :source_number))}"}
+      aria-expanded={to_string(@landscape_open)}
+      aria-controls="room-landscape"
+      inert={@landscape_open}
+      aria-hidden={if @landscape_open, do: "true"}
+    >
+      <span :if={!@writing_controls} class="place-name">{Still.Writing.Geography.reference_label(
+        @place,
+        Map.get(@place, :source_number)
+      )}</span>
+      <span :if={!@writing_controls && region_label(@place.region) != ""} class="place-region">{region_label(
+        @place.region
+      )}</span>
+      <span :if={@writing_controls}>Explore the room</span>
+    </button>
     """
   end
 end

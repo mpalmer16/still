@@ -6,6 +6,48 @@ defmodule StillWeb.RoomLiveTest do
   alias Still.Writing.Entry
 
   @tag :tmp_dir
+  test "the writing menu keeps controls off the page and returns focus without changing words", %{
+    conn: conn,
+    tmp_dir: root
+  } do
+    folder = Path.join(root, "writing")
+    File.mkdir_p!(folder)
+    {:ok, _} = Still.Storage.set_folder(folder)
+    location = Still.Storage.collection_location()
+    body = "Still here\n\tincluding these spaces  \n"
+
+    {:ok, piece} =
+      Still.Writing.Files.save(location, Still.Writing.Files.new(location), %{body: body})
+
+    {:ok, view, _} = live(conn, ~p"/writing/#{piece.id}/edit")
+    assert has_element?(view, "#writing-menu-toggle[aria-haspopup=dialog]", "Menu")
+    assert has_element?(view, "#writing-menu[hidden]")
+    refute has_element?(view, ".room-light-control")
+    refute has_element?(view, "#file-writing-form .file-writing-footer")
+    assert has_element?(view, "#writing-menu #save-file[form=file-writing-form]")
+    assert has_element?(view, "#writing-menu #file-relative-path[form=file-writing-form]")
+
+    assert has_element?(
+             view,
+             "#writing-menu #copy-file-edit[data-body-selector='#file-writing-body']"
+           )
+
+    view |> element("#writing-menu-toggle") |> render_click()
+    assert has_element?(view, "#writing-menu[role=dialog][aria-modal=true]:not([hidden])")
+    assert has_element?(view, "#room-content[inert][aria-hidden=true]")
+    assert_push_event(view, "room-focus", %{id: "writing-menu-close", clear_return: true})
+    view |> element("#light-toggle") |> render_click()
+    assert has_element?(view, "#room-light-form")
+    assert has_element?(view, "#writing-menu:not([hidden])")
+    view |> element("#writing-menu-close") |> render_click()
+    assert has_element?(view, "#writing-menu[hidden]")
+    refute has_element?(view, "#room-content[inert]")
+    assert_push_event(view, "room-focus", %{id: "file-writing-body", clear_return: true})
+    assert File.read!(piece.path) == body
+    assert {:ok, []} = Still.Writing.Files.revisions(location, piece.id)
+  end
+
+  @tag :tmp_dir
   test "page width is remembered without changing words and remains separate from Letters", %{
     conn: conn,
     tmp_dir: root

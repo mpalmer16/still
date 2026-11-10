@@ -382,7 +382,8 @@ const ReadRecovery = {
 let roomFocusReturn = null
 window.addEventListener("phx:room-focus", ({detail}) => {
   if (detail.id) {
-    if (!roomFocusReturn?.isConnected) roomFocusReturn = document.activeElement
+    if (detail.clear_return) roomFocusReturn = null
+    else if (!roomFocusReturn?.isConnected) roomFocusReturn = document.activeElement
     requestAnimationFrame(() => document.getElementById(detail.id)?.focus({preventScroll: true}))
   } else if (roomFocusReturn?.isConnected) {
     const returning = roomFocusReturn

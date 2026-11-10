@@ -28,13 +28,25 @@ test('only body typing fades controls; words and caret are untouched', () => {
   assert.equal(r.body.value, '  words\n\n'); assert.equal(r.body.selectionStart, 4)
   r.focus.destroy()
 })
-test('pointer movement, Escape, control focus and save reveal controls', () => {
+test('physical pointer movement, Escape, control focus and save reveal controls', () => {
   const r = room()
-  for (const [surface, event, detail] of [[r.doc,'pointermove',{}], [r.doc,'keydown',{key:'Escape'}], [r.doc,'focusin',{target:{}}], [r.clock,'still:file-saved',{}], [r.doc,'keydown',{key:'s',metaKey:true}]]) {
+  for (const [surface, event, detail] of [[r.doc,'pointermove',{movementX:1, clientX:10, clientY:20}], [r.doc,'keydown',{key:'Escape'}], [r.doc,'focusin',{target:{}}], [r.clock,'still:file-saved',{}], [r.doc,'keydown',{key:'s',metaKey:true}]]) {
     r.type(); r.tick(); assert.equal(r.quiet(), true)
     surface.fire(event, detail); assert.equal(r.quiet(), false)
     r.tick(); assert.equal(r.quiet(), false)
   }
+  r.focus.destroy()
+})
+
+test('stationary pointermove events from textarea reflow keep controls quiet', () => {
+  const r = room()
+  r.type(); r.tick(); assert.equal(r.quiet(), true)
+  r.doc.fire('pointermove', {clientX: 120, clientY: 240, movementX: 0, movementY: 0})
+  assert.equal(r.quiet(), true)
+  r.doc.fire('pointermove', {clientX: 120, clientY: 240, movementX: 0, movementY: 0})
+  assert.equal(r.quiet(), true)
+  r.doc.fire('pointermove', {clientX: 121, clientY: 240, movementX: 1, movementY: 0})
+  assert.equal(r.quiet(), false)
   r.focus.destroy()
 })
 

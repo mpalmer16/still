@@ -15,6 +15,12 @@ The [ordinary-text storage model](storage-model.md) describes the current format
 
 ## Write and return
 
+**Menu**, at the bottom right while writing, keeps Save, New, Scratch, Copy,
+Saved writing, Read and the file details together with Light, Letters, Page width
+and **Explore the room**. The controls stay tucked away until you open it. Close
+the menu or press Escape to return to the same place in your writing. Cmd/Ctrl+S
+still saves directly without opening the menu.
+
 The Mac writing field underlines spelling mistakes. Control-click or right-click
 an underlined word for suggestions, **Ignore Spelling** (for now), or **Learn
 Spelling** (remember it in your Mac's dictionary, which other Mac apps can also

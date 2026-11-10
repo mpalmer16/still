@@ -15,6 +15,7 @@ defmodule StillWeb.Room do
      |> assign(:letters_open, false)
      |> assign(:room_width, Still.Writing.Appearance.width())
      |> assign(:width_open, false)
+     |> assign(:writing_menu_open, false)
      |> assign(:landscape_open, false)
      |> assign(:places, [])
      |> assign(:place, Writing.geography(nil))
@@ -57,6 +58,7 @@ defmodule StillWeb.Room do
      |> assign(:light_open, false)
      |> assign(:letters_open, false)
      |> assign(:width_open, false)
+     |> assign(:writing_menu_open, false)
      |> assign(:places, if(opening, do: Writing.places(), else: socket.assigns.places))
      |> assign(:return_writing, Writing.current_writing())
      |> assign(:return_beside, Writing.current_beside())
@@ -70,7 +72,27 @@ defmodule StillWeb.Room do
      |> assign(:letters_open, false)
      |> assign(:width_open, false)
      |> assign(:landscape_open, false)
-     |> push_event("room-focus", %{})}
+     |> assign(:writing_menu_open, false)
+     |> push_event("room-focus", editor_focus(socket))}
+  end
+
+  defp handle_event("toggle_writing_menu", _, socket) do
+    if socket.assigns.writing_menu_open do
+      close_writing_menu(socket)
+    else
+      {:halt,
+       socket
+       |> assign(:writing_menu_open, true)
+       |> assign(:light_open, false)
+       |> assign(:letters_open, false)
+       |> assign(:width_open, false)
+       |> assign(:landscape_open, false)
+       |> push_event("room-focus", %{id: "writing-menu-close", clear_return: true})}
+    end
+  end
+
+  defp handle_event("close_writing_menu", _, socket) do
+    if socket.assigns.writing_menu_open, do: close_writing_menu(socket), else: {:halt, socket}
   end
 
   defp handle_event("change_light", %{"light" => %{"angle" => value}}, socket) do
@@ -136,6 +158,22 @@ defmodule StillWeb.Room do
   end
 
   defp handle_event(_event, _params, socket), do: {:cont, socket}
+
+  defp close_writing_menu(socket) do
+    {:halt,
+     socket
+     |> assign(:writing_menu_open, false)
+     |> assign(:light_open, false)
+     |> assign(:letters_open, false)
+     |> assign(:width_open, false)
+     |> push_event("room-focus", editor_focus(socket))}
+  end
+
+  defp editor_focus(socket) do
+    if Map.get(socket.assigns, :editing, false) && Map.has_key?(socket.assigns, :piece),
+      do: %{id: "file-writing-body", clear_return: true},
+      else: %{}
+  end
 
   defp parse_integer(value) when is_binary(value), do: Integer.parse(value)
   defp parse_integer(value) when is_integer(value), do: {value, ""}
