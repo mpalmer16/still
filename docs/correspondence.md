@@ -37,12 +37,12 @@ Correspondence does not have a second editor; global **Write** remains the way b
 
 Home shows up to three outstanding submissions, including unresolved pieces in a
 partly accepted packet, and two recent replies. **All packets** leads to the complete
-history. **Places to consider** shows up to three places you have shortlisted, your
-notes and previous correspondence. Shortlist controls in Places and on home change
-only that personal marker. Home shows recorded windows and policies only when you
+history. **Kept nearby** shows up to three places you want to return to, with your
+notes and previous correspondence. **Keep nearby** controls in Places and on home change
+only that personal marker; they do not represent an editorial decision from a journal. Home shows recorded windows and policies only when you
 have marked the source checked; this is your record, not live confirmation of availability.
 
-**Places** keeps a compact shortlist above the complete directory. Open a place to
+**Places** keeps the places you have kept nearby above the complete directory. Open a place to
 read its notes, requirements, and linked packets and pieces. **Edit place details**
 opens the manual record; **Prepare a packet** starts with that saved destination selected.
 Packet preparation separates the saved-writing chooser, ordered manuscript, and
@@ -57,9 +57,13 @@ expectations yourself. An unknown field means unknown. Personal notes remain sep
 from the information you have checked. Still does not fetch or invent journal policies.
 
 Choose saved writing, arrange it in a packet, and select a destination. Review the
-requirements and any other outstanding submissions. Save preparation notes and a
-cover-letter draft. Manuscript downloads are available in DOCX and UTF-8 plain text.
-They contain the ordered writing; the cover letter remains available separately in
+requirements and any other outstanding submissions. Keep private submission notes and a
+cover-letter draft. **Save as PDF** in the Mac app creates a clean manuscript with each
+poem beginning on a new page, using the same verified text as the preview. PDFs are
+saved under `<collection> Exports/Packets`, beside the writing folder and outside its
+notebooks. Unrelated or externally changed exports are left untouched. Manuscript
+downloads are also available in DOCX and UTF-8 plain text.
+They contain the ordered writing; submission notes and the cover letter stay separately in
 the packet for copying and review. Check the destination's formatting requirements.
 
 Submit yourself through the destination's website. Only then use **Mark sent** to
@@ -69,7 +73,11 @@ again before marking it sent. This deliberately refuses to substitute new words 
 the version you reviewed.
 
 Save journal and packet forms before leaving their page; unsaved preparation fields
-are not part of Now's editor recovery.
+are not part of Now's editor recovery. Once the packet is saved, its larger
+**Submission notes** area can be edited before and after sending. Use **Save notes**;
+unsaved notes are held in this browser or Mac profile for explicit recovery when
+you return. Saving notes does not change the packet manuscript or its reviewed
+state. Stale saves are refused, and earlier saved notes remain in SQLite revisions.
 
 A sent packet's manuscript is frozen. Reading it or downloading it later uses that
 snapshot, even after the original is revised or moved to Trash. Record a reply in the
@@ -79,13 +87,13 @@ Prepare a new packet for a subsequent submission so the earlier history remains 
 
 ## Storage and recovery
 
-Correspondence records live in the local SQLite database beside the selected writing folder. The folder itself contains the current ordinary text files and, after a backup, one latest verified `still-backup.sqlite3` copy. The database stores scoped place and packet records, desk placement, earlier record revisions, discovery details, icon bytes, and immutable submitted manuscripts. No Correspondence folders, JSON sidecars, icon files, or per-piece revision directories are created beside the writing.
+Correspondence records live in the machine-local SQLite database outside the selected writing folder. The folder itself contains the current ordinary text files and, after a backup, one latest verified `still-backup.sqlite3` copy. The database stores scoped place and packet records, desk placement, earlier record revisions, discovery details, icon bytes, and immutable submitted manuscripts. No Correspondence folders, JSON sidecars, icon files, or per-piece revision directories are created beside the writing.
 
 Each selected folder has a stable collection identity in the local database. Still stores file locations relative to that folder and keeps the active words in those files. Opening or searching synchronizes readable UTF-8 files into SQLite indexes; the index is not a second editable copy. A file without an extension is valid. Binary or unsupported text is reported and left untouched. If the selected folder becomes unavailable, Still reports that instead of treating the writing as deleted or switching to another collection.
 
-A packet records the selected piece identities and their current file tokens. **Mark sent** saves the exact full text of every piece into an immutable SQLite snapshot, including the explicit title line when one is part of the file. The snapshot also keeps title-role metadata and the destination name as it was when sent. Later edits, file moves, place renames, or Trash do not change that submitted version. Manuscript exports use this same full text and do not prepend a second title. DOCX and UTF-8 plain-text downloads contain the ordered writing; the cover letter remains separate.
+A packet records the selected piece identities and their current file tokens. **Mark sent** saves the exact full text of every piece into an immutable SQLite snapshot, including the explicit title line when one is part of the file. The snapshot also keeps title-role metadata and the destination name as it was when sent. Later edits, file moves, place renames, or Trash do not change that submitted version. Manuscript exports use this same full text and do not prepend a second title. PDF, DOCX and UTF-8 plain-text exports contain the ordered writing; the cover letter remains separate.
 
-Place details, shortlist choices, packet events, and desk placement are stored as scoped SQLite records. Stale form tokens prevent an older window from replacing a newer record. Each successful edit preserves the prior record revision in SQLite. A saved desk placement has the same stale-edit protection; clearing it removes only the placement, while its prior state remains in revision history.
+Place details, kept-nearby choices, packet events, and desk placement are stored as scoped SQLite records. Stale form tokens prevent an older window from replacing a newer record. Each successful edit preserves the prior record revision in SQLite. A saved desk placement has the same stale-edit protection; clearing it removes only the placement, while its prior state remains in revision history.
 
 Icons are optional. Still fetches only public HTTP(S) sources, checks redirects, and accepts bounded raster images. The image bytes, MIME type, source hash, and retry time are stored in SQLite. Changing the place's icon or website uses a different cache entry. A collection folder copy by itself does not carry this cache; a verified database backup does.
 
@@ -151,7 +159,7 @@ names, making retries safe. The preview stays bound to the collection in which
 it was reviewed: a missing or changed folder is an error, never a fallback.
 
 Open a place and choose **Deactivate place** to remove it from the active directory,
-home shortlist, and new packet choices. Its identity, notes, revisions, submitted
+home kept-nearby shelf, and new packet choices. Its identity, notes, revisions, submitted
 manuscripts, replies, and links remain intact. Find it under **Inactive places**
 and choose **Reactivate place** to use it again. Preparing or sending a packet to
 an inactive place requires reactivation; recording responses to existing submissions
@@ -202,7 +210,5 @@ editing through **Continue in Now**, or open the recorded correspondence from a 
 copy. A missing or unrelated version is reported instead of being substituted.
 There are no new collection formats or migrations.
 
-The separate Docker preview also includes **What the rain leaves**, an invented
-work with two sent copies and two earlier saves. Run `./scripts/preview_threads.sh`
-and open it from **Correspondence → Works → Then & now**. Existing preview pages
-and desk choices are preserved. The same `remove` command removes the entire preview.
+Use the disposable Correspondence preview described above to check this workflow;
+it leaves the installed app and personal collection untouched.

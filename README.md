@@ -20,6 +20,18 @@ readable reference. Copy includes the displayed poem.
 Menu also lets you rename the current file and export its full words as Markdown
 or PDF. Exported copies stay in a separate folder beside the writing collection.
 
+Correspondence packets keep an ordered selection of saved poems and their destination.
+The manuscript preview expands inserted poems. Save the reviewed packet before exporting
+or marking it sent; changes to its source writing require another review. **Save as PDF**
+in the Mac app creates a clean manuscript with each poem beginning on a new page, under
+`<collection> Exports/Packets`. Plain text and DOCX downloads remain available. Cover
+letters and private submission notes are excluded from manuscript exports. Marking a
+packet sent preserves its exact words; later writing changes do not alter that copy.
+Submission notes remain editable after sending, with stale-edit protection and earlier
+saved words retained locally. Use **Save notes** to keep them; unsaved notes have a local
+recovery copy in the same browser or Mac profile. **Keep nearby** is a personal marker
+for publications you want to return to, shown on the Correspondence desk.
+
 ### Let the past come near
 
 Echoes gather at the edges when your language meets words you have written before.
@@ -42,12 +54,6 @@ Hover over a notebook title, or focus it with the keyboard, for **Read**,
 **Wander**, and **Delete**. **Delete** asks for confirmation before permanently
 removing that List's local text file and saved earlier words. Submitted
 correspondence retains its exact submitted text.
-
-### Follow a word
-
-**Threads** follows a recurring word across notebooks and saved pages.
-Two passages meet. Open the whole pages, find another crossing, or let another
-word find you.
 
 ### Make room for what comes next
 

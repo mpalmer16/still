@@ -2,7 +2,6 @@
 @import "./echoes.css";
 @import "./correspondence.css";
 @import "./proofs.css";
-@import "./threads.css";
 
 :root {
   color-scheme: dark;
@@ -652,8 +651,8 @@ html[data-still-writing-focus] .site-frame:has(.file-now):not(:has([role="alert"
 .notebook-piece-title { min-width: 0; overflow-wrap: anywhere; }
 .notebook-piece-title .title-word { max-width: 100%; }
 .notebook-piece-number { flex: 0 0 24px; font: 11px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--muted); }
-#notebook-content { width: min(100%, 720px); justify-self: center; margin: 0; padding: 0 12px 60px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scroll-padding-top: 85px; }
-#notebook-content .notebook-toolbar { position: sticky; top: 0; z-index: 1; width: 100%; margin: 0 0 36px; padding: 18px 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; background: var(--night); }
+#notebook-content { width: min(100%, 1120px); justify-self: center; margin: 0; padding: 0 12px 60px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scroll-padding-top: 85px; }
+#notebook-content .notebook-toolbar { position: static; width: 100%; margin: 0 0 36px; padding: 18px 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; background: transparent; }
 #notebook-content .reader-reference { color: var(--muted); font-size: 12px; }
 #notebook-content .reading-heading { margin-top: 0; }
 #notebook-content .reading-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 22px; }
@@ -726,3 +725,9 @@ html[data-still-writing-focus] .site-frame:has(.file-now):not(:has([role="alert"
   .still-form-grid { grid-template-columns: 1fr; }
   .still-form-panel, .file-writing-details[open] { padding: 16px; }
 }
+
+/* A search within the open piece stays separate from the collection's Find. */
+.piece-find { margin: 0 0 28px; font-size: 13px; color: var(--muted); }
+#piece-find-form { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding-block: 12px; border-bottom: 1px solid #b7c7dd26; }
+#piece-find-query { flex: 1 1 180px; min-width: 0; max-width: 440px; padding: 9px 10px; border: 1px solid #b7c7dd40; background: transparent; color: var(--ink); font-size: 15px; }
+#piece-find-status { flex-basis: 100%; margin: 0; font-size: 12px; }

@@ -2,18 +2,22 @@ defmodule StillWeb.PoemReference do
   use StillWeb, :html
 
   attr :segment, :map, required: true
+  attr :id, :string, default: nil
   attr :editing, :boolean, default: false
+  attr :query, :string, default: ""
   attr :return_to, :string, default: nil
 
   def passage(assigns) do
     ~H"""
     <figure
+      id={@id}
+      tabindex={if @id, do: "-1"}
       class={"poem-insert #{if @segment.status != :available, do: "poem-insert-unavailable"}"}
       data-writing-part={if @editing, do: "reference"}
       data-reference-raw={if @editing, do: @segment.raw}
       aria-label="Linked poem"
     >
-      <blockquote :if={@segment.status == :available} class="poem-insert-words" phx-no-format>{@segment.source.body}</blockquote>
+      <blockquote :if={@segment.status == :available} class="poem-insert-words" phx-no-format><.highlight text={@segment.source.body} query={@query} /></blockquote>
       <p :if={@segment.status != :available} class="file-note" role="status">
         Source unavailable · {@segment.message}
       </p>

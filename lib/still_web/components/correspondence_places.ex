@@ -36,12 +36,12 @@ defmodule StillWeb.CorrespondencePlaces do
         aria-labelledby="shortlist-heading"
       >
         <div class="editorial-place-section-head">
-          <h2 id="shortlist-heading">On your shortlist</h2>
+          <h2 id="shortlist-heading">Kept nearby</h2>
         </div>
         <ul class="editorial-place-shortcuts">
           <li :for={journal <- @shortlisted}>
             <.link patch={~p"/correspondence/journals/#{journal.id}"}>{journal.name}</.link>
-            <span>Shortlisted</span>
+            <span>Kept nearby</span>
           </li>
         </ul>
       </section>
@@ -125,7 +125,7 @@ defmodule StillWeb.CorrespondencePlaces do
           phx-click="toggle_shortlist"
           phx-value-id={@journal.id}
           aria-pressed={to_string(truthy?(@journal.shortlisted))}
-        >{if truthy?(@journal.shortlisted), do: "Remove from shortlist", else: "Add to shortlist"}</button>
+        >{if truthy?(@journal.shortlisted), do: "Stop keeping nearby", else: "Keep nearby"}</button>
       </div>
     </article>
     """
@@ -169,7 +169,7 @@ defmodule StillWeb.CorrespondencePlaces do
           phx-click="toggle_shortlist"
           phx-value-id={@journal.id}
           aria-pressed={to_string(truthy?(@journal.shortlisted))}
-        >{if truthy?(@journal.shortlisted), do: "Remove from shortlist", else: "Add to shortlist"}</button>
+        >{if truthy?(@journal.shortlisted), do: "Stop keeping nearby", else: "Keep nearby"}</button>
       </header>
 
       <div class="corr-place-status">
@@ -511,7 +511,8 @@ defmodule StillWeb.CorrespondencePlaces do
             name="journal[shortlisted]"
             value="true"
             checked={truthy?(value(@form, :shortlisted))}
-          /> Keep this place on my shortlist</label>
+          /> Keep nearby
+          <span class="corr-meta">A personal marker for places you’d like to return to.</span></label>
         </div>
       </div>
       <div class="editorial-place-form-actions">

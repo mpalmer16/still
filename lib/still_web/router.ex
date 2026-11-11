@@ -17,6 +17,8 @@ defmodule StillWeb.Router do
   scope "/", StillWeb do
     pipe_through :browser
 
+    get "/threads", RetiredFeatureController, :index
+
     live_session :room, on_mount: [{StillWeb.Room, :default}] do
       live "/", WritingLive, :now
       live "/list", WritingLive, :new
@@ -24,7 +26,6 @@ defmodule StillWeb.Router do
       live "/read/:id", EntryLive, :read
       live "/before", EntryLive, :before
       live "/wander", EntryLive, :wander
-      live "/threads", ThreadsLive, :index
       live "/pages", ArchiveLive, :index
       live "/notebooks", NotebookLive, :index
       live "/notebooks/read/:id", NotebookReadingLive, :read

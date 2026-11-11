@@ -2,7 +2,7 @@ defmodule StillWeb.CorrespondenceLive do
   use StillWeb, :live_view
 
   alias Still.{Correspondence, Poems, Storage}
-  alias Still.Correspondence.{Appearance, Icons, PlaceImport, Proofs}
+  alias Still.Correspondence.{Appearance, Icons, PacketExports, PacketNotes, PlaceImport, Proofs}
 
   alias StillWeb.{
     CorrespondenceHome,
@@ -38,7 +38,14 @@ defmodule StillWeb.CorrespondenceLive do
        proof_sources: [],
        comparison: nil,
        proof_problem: nil,
-       proof_plain: false
+       proof_plain: false,
+       packet_preview: [],
+       packet_preview_problem: nil,
+       packet_notes: nil,
+       pdf_request: nil,
+       pdf_exporting?: false,
+       packet_export_notice: nil,
+       last_packet_export: nil
      )}
   end
 
@@ -301,6 +308,28 @@ defmodule StillWeb.CorrespondenceLive do
     end
   end
 
+  defp refresh_packet_preview(%{assigns: %{packet: %{snapshot: %{pieces: pieces}}}} = socket),
+    do: assign(socket, packet_preview: pieces, packet_preview_problem: nil)
+
+  defp refresh_packet_preview(socket) do
+    result =
+      Correspondence.manuscript_preview(
+        socket.assigns.location,
+        socket.assigns.form[:piece_ids] || []
+      )
+
+    case result do
+      {:ok, pieces} -> assign(socket, packet_preview: pieces, packet_preview_problem: nil)
+      {:error, message} -> assign(socket, packet_preview: [], packet_preview_problem: message)
+    end
+  end
+
+  defp manuscript_text(piece) do
+    if Map.get(piece, :title_in_body, true),
+      do: piece.body,
+      else: piece.title <> "\n\n" <> piece.body
+  end
+
   defp load_packet(socket, location, nil, params) do
     previous = previous_packet(location, params["from"])
     keep_ids = if previous, do: previous.piece_ids, else: []
@@ -318,8 +347,12 @@ defmodule StillWeb.CorrespondenceLive do
          page_title: "A new packet",
          form: defaults,
          overlap: overlap_rows(location, defaults.piece_ids, nil),
-         problem: nil
-       )}
+         problem: nil,
+         packet_notes: nil,
+         packet_export_notice: nil,
+         last_packet_export: nil
+       )
+       |> refresh_packet_preview()}
     else
       {:error, message} ->
         {:noreply,
@@ -337,6 +370,12 @@ defmodule StillWeb.CorrespondenceLive do
          {:ok, overview} <- Correspondence.focused_overview(location, packet.piece_ids) do
       overlap = packet_overlaps(location, packet)
 
+      {notes, notes_problem} =
+        case PacketNotes.get(location, packet) do
+          {:ok, notes} -> {notes, nil}
+          {:error, message} -> {nil, message}
+        end
+
       {:noreply,
        assign(socket,
          location: location,
@@ -346,8 +385,12 @@ defmodule StillWeb.CorrespondenceLive do
          form: packet,
          overlap: overlap,
          page_title: packet.title,
-         problem: nil
-       )}
+         packet_notes: notes,
+         packet_export_notice: nil,
+         last_packet_export: nil,
+         problem: notes_problem
+       )
+       |> refresh_packet_preview()}
     else
       {:error, message} ->
         {:noreply,
@@ -506,7 +549,10 @@ defmodule StillWeb.CorrespondenceLive do
     case Enum.find(socket.assigns.overview.journals, &(&1.id == id)) do
       nil ->
         {:noreply,
-         assign(socket, problem: "Reopen Places before changing its shortlist.", notice: nil)}
+         assign(socket,
+           problem: "Reopen Places before changing which places you keep nearby.",
+           notice: nil
+         )}
 
       journal ->
         attrs =
@@ -532,8 +578,8 @@ defmodule StillWeb.CorrespondenceLive do
                 problem: nil,
                 notice:
                   if(saved.shortlisted,
-                    do: "Place added to your shortlist.",
-                    else: "Place removed from your shortlist."
+                    do: "Place kept nearby.",
+                    else: "Place no longer kept nearby."
                   )
               )
 
@@ -604,11 +650,126 @@ defmodule StillWeb.CorrespondenceLive do
     end
   end
 
+  def handle_event("refresh_packet_preview", _, socket),
+    do: {:noreply, refresh_packet_preview(socket)}
+
+  def handle_event("save_packet_notes", %{"id" => id, "body" => body, "token" => token}, socket) do
+    if socket.assigns.packet && socket.assigns.packet.id == id do
+      case PacketNotes.save(
+             socket.assigns.location,
+             id,
+             body,
+             if(token == "", do: nil, else: token)
+           ) do
+        {:ok, notes} ->
+          {:reply, %{ok: true, body: notes.body, token: notes.token},
+           assign(socket, packet_notes: notes)}
+
+        {:error, message} ->
+          {:reply, %{error: message}, socket}
+      end
+    else
+      {:reply, %{error: "Reopen this packet before saving notes."}, socket}
+    end
+  end
+
+  def handle_event("export_packet_pdf", _, socket) do
+    packet = socket.assigns.packet
+
+    cond do
+      is_nil(packet) ->
+        {:noreply, assign(socket, problem: "Save this packet before exporting.")}
+
+      socket.assigns.pdf_exporting? ->
+        {:noreply, socket}
+
+      packet_unsaved?(socket.assigns.form, packet) ->
+        {:noreply, assign(socket, problem: "Save your packet changes before exporting.")}
+
+      true ->
+        case PacketExports.prepare(socket.assigns.location, packet.id) do
+          {:ok, prepared} ->
+            request_id = Ecto.UUID.generate()
+
+            ticket =
+              Phoenix.Token.sign(StillWeb.Endpoint, "writing-pdf-export", %{
+                scope: socket.assigns.location.scope,
+                id: packet.id,
+                kind: "packet",
+                source_token: prepared.source_token,
+                request_id: request_id
+              })
+
+            {:noreply,
+             socket
+             |> assign(
+               pdf_exporting?: true,
+               pdf_request: %{id: request_id, packet_id: packet.id},
+               packet_export_notice: "Preparing PDF…",
+               problem: nil
+             )
+             |> push_event("writing-pdf-request", %{ticket: ticket, request_id: request_id})}
+
+          {:error, message} ->
+            {:noreply, assign(socket, problem: message, packet_export_notice: nil)}
+        end
+    end
+  end
+
+  def handle_event(event, %{"request_id" => request_id} = params, socket)
+      when event in ["pdf_export_finished", "pdf_export_failed"] do
+    case socket.assigns.pdf_request do
+      %{id: ^request_id, packet_id: id} ->
+        current? = socket.assigns[:packet] && socket.assigns.packet.id == id
+
+        message =
+          if event == "pdf_export_finished",
+            do: "PDF saved: #{params["path"]}",
+            else: params["message"]
+
+        socket = assign(socket, pdf_exporting?: false, pdf_request: nil)
+
+        socket =
+          if current? do
+            if event == "pdf_export_finished",
+              do:
+                assign(socket, packet_export_notice: message, last_packet_export: params["path"]),
+              else: assign(socket, problem: message, packet_export_notice: nil)
+          else
+            put_flash(
+              socket,
+              if(event == "pdf_export_finished", do: :info, else: :error),
+              message
+            )
+          end
+
+        {:noreply, socket}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event(event, _, socket) when event in ["pdf_export_finished", "pdf_export_failed"],
+    do: {:noreply, socket}
+
+  def handle_event("reveal_packet_export", _, socket) do
+    if socket.assigns.last_packet_export,
+      do:
+        {:noreply,
+         push_event(socket, "reveal-writing-export", %{path: socket.assigns.last_packet_export})},
+      else: {:noreply, socket}
+  end
+
   def handle_event("save_packet", %{"packet" => attrs}, socket) do
     packet = socket.assigns.packet
     id = packet && packet.id
     token = packet && packet.token
-    attrs = Map.put(attrs, "piece_ids", socket.assigns.form[:piece_ids] || [])
+
+    attrs =
+      attrs
+      |> Map.put("piece_ids", socket.assigns.form[:piece_ids] || [])
+      |> Map.put_new("preparation_notes", if(packet, do: packet.preparation_notes, else: ""))
 
     case Correspondence.save_packet(socket.assigns.location, attrs, id, token) do
       {:ok, saved} ->
@@ -641,7 +802,8 @@ defmodule StillWeb.CorrespondenceLive do
            ids,
            socket.assigns.packet && socket.assigns.packet.id
          )
-     )}
+     )
+     |> refresh_packet_preview()}
   end
 
   def handle_event("move_piece", %{"id" => id, "direction" => direction}, socket) do
@@ -664,7 +826,8 @@ defmodule StillWeb.CorrespondenceLive do
            moved,
            socket.assigns.packet && socket.assigns.packet.id
          )
-     )}
+     )
+     |> refresh_packet_preview()}
   end
 
   def handle_event("set_packet_journal", %{"packet" => attrs}, socket) do
@@ -961,7 +1124,7 @@ defmodule StillWeb.CorrespondenceLive do
       )
 
     ~H"""
-    <Layouts.app flash={@flash} active="correspondence">
+    <Layouts.app flash={@flash} active="correspondence" file_exports>
       <div
         class={"correspondence-room corr-workspace #{if @correspondence_light?, do: "is-light", else: ""}"}
         data-color={@correspondence_color}
@@ -1178,6 +1341,13 @@ defmodule StillWeb.CorrespondenceLive do
           </div>
           <div class="corr-page-heading">
             <h1>{if @packet, do: @packet.title, else: "New packet"}</h1>
+            <p :if={@packet} class="corr-meta">
+              {if Map.get(@packet, :snapshot),
+                do: @packet.snapshot.journal_name,
+                else: if(@journal, do: @journal.name, else: "Choose a destination")} · {length(
+                @packet.piece_ids
+              )} {plural(length(@packet.piece_ids), "poem", "poems")} · {packet_status_label(@packet)}
+            </p>
           </div>
           <div class={"corr-packet-grid #{if @packet && Map.get(@packet, :snapshot), do: "is-sent", else: ""}"}>
             <section
@@ -1279,13 +1449,20 @@ defmodule StillWeb.CorrespondenceLive do
                 class="editorial-packet-preview"
               >
                 <div class="corr-section-heading">
-                  <h2>The manuscript</h2><span>Current saved text</span>
+                  <h2>The manuscript</h2><button
+                    type="button"
+                    phx-click="refresh_packet_preview"
+                    class="corr-small-link"
+                  >Refresh saved text</button>
                 </div>
+                <p :if={@packet_preview_problem} class="corr-message error" role="alert">
+                  {@packet_preview_problem}
+                </p>
                 <article
-                  :for={piece <- selected_pieces(@overview.pieces, @form[:piece_ids] || [])}
+                  :for={piece <- @packet_preview}
                   class="editorial-packet-sheet"
                 >
-                  <h3>{title(piece)}</h3><pre>{piece.body}</pre>
+                  <pre>{manuscript_text(piece)}</pre>
                   <.link patch={~p"/correspondence/writing/#{piece.id}"} class="corr-small-link">Current work &amp; history →</.link>
                 </article>
                 <p :if={(@form[:piece_ids] || []) == []} class="corr-empty-side">
@@ -1351,8 +1528,11 @@ defmodule StillWeb.CorrespondenceLive do
                   }>Marked source-checked by you</span>
                 </p>
                 <.link patch={~p"/correspondence/journals/new"} class="corr-small-link">Add a place you saved →</.link>
-                <label>Preparation notes<textarea name="packet[preparation_notes]" rows="3">{value(@form, :preparation_notes)}</textarea></label>
-                <label>Cover letter draft<textarea name="packet[cover_letter]" rows="5">{value(@form, :cover_letter)}</textarea></label>
+                <label :if={!@packet}>Submission notes<textarea
+                  name="packet[preparation_notes]"
+                  rows="10"
+                >{value(@form, :preparation_notes)}</textarea></label>
+                <label>Cover letter draft<textarea name="packet[cover_letter]" rows="8">{value(@form, :cover_letter)}</textarea></label>
                 <button type="submit" class="corr-button">{if @packet,
                   do: "Save changes",
                   else: "Save packet"} <span>→</span></button>
@@ -1360,7 +1540,7 @@ defmodule StillWeb.CorrespondenceLive do
               <div :if={@packet && Map.get(@packet, :snapshot)} class="corr-journal-detail">
                 <span class="corr-kicker">DESTINATION</span>
                 <p>
-                  <strong>{if @journal, do: @journal.name, else: @packet.snapshot.journal_name}</strong>
+                  <strong>{@packet.snapshot.journal_name}</strong>
                 </p>
                 <p :if={@journal && @journal.guidelines}>{@journal.guidelines}</p>
                 <p :if={@journal && @journal.simultaneous_policy}>
@@ -1376,9 +1556,7 @@ defmodule StillWeb.CorrespondenceLive do
                 <p :if={!@journal}>The saved journal details are unavailable.</p>
               </div>
               <div :if={@packet && @packet.status != "preparing"} class="corr-readonly-packet">
-                <span class="corr-kicker">PREPARATION NOTES</span><p>
-                  {value(@packet, :preparation_notes, "No notes recorded.")}
-                </p><span class="corr-kicker">COVER LETTER</span><pre>{value(@packet, :cover_letter, "No cover letter recorded.")}</pre>
+                <span class="corr-kicker">COVER LETTER AS SENT</span><pre>{value(@packet, :cover_letter, "No cover letter recorded.")}</pre>
                 <div class="corr-packet-timeline">
                   <h3>Its journey</h3><article
                     :for={event <- Enum.reverse(@packet.events || [])}
@@ -1390,6 +1568,40 @@ defmodule StillWeb.CorrespondenceLive do
                   </article>
                 </div>
               </div>
+              <p :if={
+                (!@packet || @packet.status == "preparing") && @journal &&
+                  valid_web_url?(@journal.submission_url)
+              }>
+                <a
+                  href={@journal.submission_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="corr-small-link"
+                >Open submission page ↗</a>
+              </p>
+              <section :if={@packet} class="corr-packet-export" aria-label="Export packet">
+                <h2>Submission copy</h2>
+                <p class="corr-meta">
+                  A clean manuscript, one poem starting on each page. Cover letters and private notes stay here.
+                </p>
+                <button
+                  type="button"
+                  class="corr-button"
+                  phx-click="export_packet_pdf"
+                  disabled={@pdf_exporting? || packet_unsaved?(@form, @packet)}
+                >
+                  {if @pdf_exporting?, do: "Preparing PDF…", else: "Save as PDF"}
+                </button>
+                <p :if={@packet_export_notice} role="status" class="corr-meta">
+                  {@packet_export_notice}
+                </p>
+                <button
+                  :if={@last_packet_export}
+                  type="button"
+                  class="corr-small-link"
+                  phx-click="reveal_packet_export"
+                >Show PDF in Finder</button>
+              </section>
               <p :if={@packet && packet_unsaved?(@form, @packet)} class="corr-unsaved-note">
                 This packet has unsaved changes. Save it before exporting or marking it sent.
               </p>
@@ -1481,6 +1693,35 @@ defmodule StillWeb.CorrespondenceLive do
                 </.form>
               </div>
             </aside>
+            <section
+              :if={@packet && @packet_notes}
+              class="corr-submission-notes"
+              aria-label="Submission notes"
+            >
+              <h2>Submission notes</h2>
+              <p class="corr-meta">
+                Your private notes, editable even after sending. These stay out of the manuscript and PDF.
+              </p>
+              <div
+                id={"packet-notes-#{@packet.id}"}
+                phx-update="ignore"
+                data-packet-notes
+              >
+                <label for="packet-notes-body" class="sr-only">Submission notes</label>
+                <textarea
+                  id="packet-notes-body"
+                  rows="12"
+                  phx-hook="PacketNotes"
+                  data-packet-id={@packet.id}
+                  data-scope={@location.scope}
+                  data-token={@packet_notes.token || ""}
+                  data-persisted={@packet_notes.body}
+                >{@packet_notes.body}</textarea>
+                <p data-notes-status role="status" class="corr-meta">Saved notes</p>
+                <button type="button" data-notes-save class="corr-button">Save notes</button>
+                <button type="button" data-notes-restore class="corr-small-link" hidden>Restore local notes</button>
+              </div>
+            </section>
           </div>
         </section>
         <footer :if={@location && @location.configured && @location.available} class="corr-footer">
@@ -1490,9 +1731,6 @@ defmodule StillWeb.CorrespondenceLive do
     </Layouts.app>
     """
   end
-
-  defp selected_pieces(pieces, ids),
-    do: Enum.flat_map(ids, fn id -> Enum.filter(pieces, &(&1.id == id)) end)
 
   defp filtered_pieces(pieces, search), do: Correspondence.search_pieces(pieces, search)
 

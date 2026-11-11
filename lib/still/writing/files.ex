@@ -184,6 +184,10 @@ defmodule Still.Writing.Files do
     end)
   end
 
+  @doc "Run a collection operation with an available, unchanged folder and its database lock."
+  def with_collection_lock(location, fun) when is_function(fun, 1),
+    do: with_location(location, fun)
+
   @doc "Read only the linked sources, reconciling moved files when requested. Never writes a text file."
   def reference_sources(location, references, opts \\ []) do
     with_location(location, fn active ->
@@ -2177,8 +2181,7 @@ defmodule Still.Writing.Files do
 
   def from_historical(location, %{origin: "before", source_key: key} = entry)
       when is_binary(key) and key != "" do
-    <<a::48, _::4, b::12, _::2, c::62, _::binary>> = :crypto.hash(:sha256, "still-source:" <> key)
-    {:ok, id} = Ecto.UUID.load(<<a::48, 8::4, b::12, 2::2, c::62>>)
+    id = historical_file_id(key)
     active = Storage.collection_location()
 
     case Repo.get_by(Entry, file_id: id, collection_scope: active.scope) do
@@ -2224,6 +2227,43 @@ defmodule Still.Writing.Files do
   end
 
   def from_historical(_, _), do: {:error, "Choose a historical List to save."}
+
+  @doc "Finds an existing saved copy of a historical List without creating one."
+  def saved_from_historical(location, %{origin: "before", source_key: key})
+      when is_binary(key) and key != "" do
+    id = historical_file_id(key)
+
+    with_location(location, fn active ->
+      case Repo.get_by(Entry, file_id: id, collection_scope: active.scope) do
+        nil ->
+          {:ok, nil}
+
+        %Entry{trashed: true} ->
+          {:error,
+           "This List already has a saved version in Trash. Restore it before continuing."}
+
+        %Entry{} = saved ->
+          source = (saved.source || %{})["historical_source"] || %{}
+
+          if source["source_key"] == key do
+            get(location, id)
+          else
+            {:error,
+             "This saved identity belongs to a different source. Its writing was left untouched."}
+          end
+      end
+    end)
+  end
+
+  def saved_from_historical(_, _), do: {:error, "Choose a historical List to save."}
+
+  defp historical_file_id(key) do
+    <<a::48, _::4, b::12, _::2, c::62, _::binary>> =
+      :crypto.hash(:sha256, "still-source:" <> key)
+
+    {:ok, id} = Ecto.UUID.load(<<a::48, 8::4, b::12, 2::2, c::62>>)
+    id
+  end
 
   defp rows(scope, trashed),
     do:

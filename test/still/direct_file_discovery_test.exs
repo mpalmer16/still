@@ -3,7 +3,7 @@ defmodule Still.DirectFileDiscoveryTest do
   import Phoenix.LiveViewTest
 
   alias Still.{Poems, Repo, Storage, Writing}
-  alias Still.Writing.{Entry, Notebooks, Threads}
+  alias Still.Writing.{Entry, Notebooks}
 
   setup do
     root = Path.join(System.tmp_dir!(), "still-direct-discovery-#{Ecto.UUID.generate()}")
@@ -24,7 +24,7 @@ defmodule Still.DirectFileDiscoveryTest do
     %{folder: folder, location: Storage.collection_location()}
   end
 
-  test "an ordinary file joins echoes, Threads, notebooks, reading, and search then leaves after an unreadable edit",
+  test "an ordinary file joins echoes, notebooks, reading, and search then leaves after an unreadable edit",
        %{conn: conn, folder: folder, location: location} do
     {:ok, notebook} =
       Writing.create_notebook(%{key: "Field books/Notebook 7", label: "Field book 7"})
@@ -70,11 +70,6 @@ defmodule Still.DirectFileDiscoveryTest do
     assert hd(notebook_view.entries).id == file_entry.id
     assert hd(notebook_view.entries).list_label == "07b"
 
-    assert %{documents: documents, problem: nil} = Threads.load(location)
-    [file_document] = Enum.filter(documents, &(&1.kind == :file))
-    assert file_document.body == body
-    assert file_document.label == notebook.label
-
     assert Enum.any?(Writing.list_entries(query: "velvet"), &(&1.file_id == titled.id))
     {:ok, reading, _html} = live(conn, ~p"/w/#{file_entry.id}?read=1")
     assert has_element?(reading, "[data-echo-line='1']")
@@ -84,8 +79,6 @@ defmodule Still.DirectFileDiscoveryTest do
 
     assert Writing.gravity("velvet engine", historical_only: true) == nil
     refute Enum.any?(Writing.list_entries(query: "velvet"), &(&1.file_id == titled.id))
-    after_unsupported_edit = Threads.load(location)
-    assert Enum.reject(after_unsupported_edit.documents, &(&1.kind == :before)) == []
     assert Writing.notebook(notebook.key).entries == []
   end
 end

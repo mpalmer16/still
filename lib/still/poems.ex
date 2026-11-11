@@ -17,6 +17,7 @@ defmodule Still.Poems do
   defdelegate purge(location, id, token, confirmed?), to: Files
   defdelegate permanently_delete(location, piece, confirmed?), to: Files
   defdelegate from_historical(location, entry), to: Files
+  defdelegate saved_from_historical(location, entry), to: Files
   defdelegate reconciliation(location), to: Files
   defdelegate relink(location, id, relative), to: Files
   defdelegate adopt(location, relative), to: Files

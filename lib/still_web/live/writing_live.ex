@@ -36,7 +36,10 @@ defmodule StillWeb.WritingLive do
        export_notice: nil,
        last_export: nil,
        pdf_exporting?: false,
-       pdf_request: nil
+       pdf_request: nil,
+       piece_find_open: false,
+       piece_find_query: "",
+       piece_find_target_line: nil
      )}
   end
 
@@ -76,6 +79,9 @@ defmodule StillWeb.WritingLive do
          socket
          |> assign(
            piece: piece,
+           piece_find_open: false,
+           piece_find_query: "",
+           piece_find_target_line: nil,
            submission_focus: Map.get(status.focused, piece.id, false),
            submitted: MapSet.member?(status.submitted, piece.id),
            draft: words(piece),
@@ -465,6 +471,39 @@ defmodule StillWeb.WritingLive do
            notice: nil
          )}
     end
+  end
+
+  def handle_event("open_piece_find", _, socket) do
+    {:noreply,
+     socket
+     |> assign(piece_find_open: true)
+     |> push_event("room-focus", %{id: "piece-find-query", scroll: true})}
+  end
+
+  def handle_event("close_piece_find", _, socket) do
+    {:noreply,
+     socket
+     |> assign(piece_find_open: false, piece_find_query: "", piece_find_target_line: nil)
+     |> push_event("room-focus", %{id: "open-piece-find"})}
+  end
+
+  def handle_event("find_in_piece", %{"piece_find" => %{"query" => query}} = params, socket) do
+    query = StillWeb.PieceFind.query(query)
+
+    target =
+      if Map.has_key?(params, "_target"),
+        do: nil,
+        else: reading_find_target(socket.assigns.piece, socket.assigns.linked_segments, query)
+
+    socket =
+      assign(socket, piece_find_query: query, piece_find_target_line: target && elem(target, 1))
+
+    socket =
+      if target,
+        do: push_event(socket, "room-focus", %{id: elem(target, 0), scroll: true}),
+        else: socket
+
+    {:noreply, socket}
   end
 
   def handle_event("pdf_export_finished", %{"path" => path, "request_id" => request_id}, socket)
@@ -1446,10 +1485,22 @@ defmodule StillWeb.WritingLive do
       <StillWeb.Echoes.field :if={@piece && @editing} fragments={@gravity_field} />
       <article :if={@piece && !@editing} class="reading-room file-reading">
         <h1 class="sr-only">Saved writing</h1>
+        <StillWeb.PieceFind.panel
+          open={@piece_find_open}
+          query={@piece_find_query}
+          matches={
+            StillWeb.PieceFind.match_count(
+              reading_find_text(@piece, @linked_segments),
+              @piece_find_query
+            )
+          }
+        />
         <div id="file-text" class="file-lines">
           <StillWeb.Echoes.reading
             :if={reference_markers(@linked_segments) == []}
             body={@piece.body}
+            query={@piece_find_query}
+            target_line={@piece_find_target_line}
             document_id={@piece.id}
             id_prefix="file-passage"
             active_line={@listening_line}
@@ -1459,6 +1510,8 @@ defmodule StillWeb.WritingLive do
               <%= if segment.kind == :text do %>
                 <StillWeb.Echoes.reading
                   body={segment.raw}
+                  query={@piece_find_query}
+                  target_line={@piece_find_target_line}
                   document_id={@piece.id}
                   id_prefix={"linked-passage-#{index}"}
                   active_line={@listening_line}
@@ -1467,6 +1520,8 @@ defmodule StillWeb.WritingLive do
               <% else %>
                 <StillWeb.PoemReference.passage
                   segment={segment}
+                  id={"linked-poem-#{index}"}
+                  query={@piece_find_query}
                   return_to={surrounding_path(@piece)}
                 />
               <% end %>
@@ -1488,11 +1543,6 @@ defmodule StillWeb.WritingLive do
           <.link id="edit-file" navigate={~p"/writing/#{@piece.id}/edit"} class="quiet-link">Change these words</.link>
           <.link navigate={~p"/writing"} class="quiet-link">Saved writing</.link>
           <button id="delete-file" phx-click="request_delete" class="quiet-link">Delete</button>
-          <.link
-            id="follow-file-words"
-            navigate={~p"/threads?from=#{"file:#{@piece.id}"}"}
-            class="quiet-link"
-          >Follow a word</.link>
         </div>
         <aside
           :if={@reading_echo && !@listening_line}
@@ -1565,6 +1615,51 @@ defmodule StillWeb.WritingLive do
       </article>
     </Layouts.app>
     """
+  end
+
+  defp reading_find_target(piece, segments, query) do
+    if reference_markers(segments) == [] do
+      case StillWeb.PieceFind.first_match_line(piece.body, query) do
+        nil -> nil
+        line -> {"file-passage-#{line}", line}
+      end
+    else
+      segments
+      |> reading_segments()
+      |> Enum.with_index()
+      |> Enum.find_value(fn {segment, index} ->
+        case segment do
+          %{kind: :text, raw: raw, start_line: start_line} ->
+            if line = StillWeb.PieceFind.first_match_line(raw, query) do
+              line = line + start_line - 1
+              {"linked-passage-#{index}-#{line}", line}
+            end
+
+          %{status: :available, source: source} ->
+            if StillWeb.PieceFind.first_match_line(source.body, query),
+              do: {"linked-poem-#{index}", nil}
+
+          _ ->
+            nil
+        end
+      end)
+    end
+  end
+
+  defp reading_find_text(piece, segments) do
+    if reference_markers(segments) == [] do
+      piece.body
+    else
+      segments
+      |> reading_segments()
+      |> Enum.map_join("\n", fn segment ->
+        case segment do
+          %{kind: :text, raw: raw} -> raw
+          %{status: :available, source: source} -> source.body
+          _ -> ""
+        end
+      end)
+    end
   end
 
   defp historical_source_label(source) do

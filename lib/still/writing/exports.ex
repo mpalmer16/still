@@ -49,6 +49,46 @@ defmodule Still.Writing.Exports do
 
   def publish_pdf(_, _, _, _), do: {:error, "The PDF export could not be prepared safely."}
 
+  @doc "Publish a context-owned PDF in the shared exports folder without replacing other files."
+  def publish_artifact(location, key, relative, bytes, source_digest)
+      when is_binary(key) and is_binary(relative) and is_binary(bytes) and
+             is_binary(source_digest) do
+    Files.with_collection_lock(location, fn active ->
+      with true <- Path.extname(relative) == ".pdf" && valid_pdf?(bytes),
+           {:ok, root} <- output_root(active.folder),
+           {:ok, path} <- safe_output_path(root, relative),
+           {:ok, _} <-
+             save_owned_export(
+               active.scope,
+               %{id: key},
+               :pdf,
+               root,
+               relative,
+               path,
+               bytes,
+               source_digest
+             ) do
+        {:ok, path}
+      else
+        false -> {:error, "The PDF is incomplete or larger than 20 MB; nothing was exported."}
+        error -> error
+      end
+    end)
+  end
+
+  @doc "The output path for a context-owned export, outside the writing collection."
+  def artifact_path(location, relative) when is_binary(relative) do
+    Files.with_collection_lock(location, fn active ->
+      with {:ok, root} <- output_root(active.folder),
+           true <- valid_export_relative?(relative) do
+        {:ok, Path.join(root, relative)}
+      else
+        false -> {:error, "Choose an export path inside the exports folder."}
+        error -> error
+      end
+    end)
+  end
+
   defp publish(location, piece, format, bytes, expected_source_token) do
     Files.with_export_source(location, piece, fn active, current ->
       with {:ok, segments, dependencies} <- resolve_segments(active, current),

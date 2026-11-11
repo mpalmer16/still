@@ -1,9 +1,10 @@
 defmodule StillWeb.EntryLive do
   use StillWeb, :live_view
 
-  alias Still.Writing
+  alias Still.{Correspondence, Poems, Storage, Writing}
   alias Still.Writing.Attention
   alias Still.Writing.ReadingPlace
+  alias StillWeb.PieceFind
   alias StillWeb.ReadingLinks
 
   @impl true
@@ -14,12 +15,17 @@ defmodule StillWeb.EntryLive do
      |> assign(:historical_version, nil)
      |> assign(:version_missing, false)
      |> assign(:search_query, "")
-     |> assign(:search_highlights, false)
-     |> assign(:search_line, nil)
+     |> assign(:piece_find_open?, false)
+     |> assign(:piece_find_query, "")
+     |> assign(:piece_find_target_line, nil)
      |> assign(:search_earlier, false)
      |> assign(:search_written, false)
      |> assign(:previous_reading, nil)
      |> assign(:focused_reading, false)
+     |> assign(:wander_mode?, false)
+     |> assign(:submission_focus_supported?, false)
+     |> assign(:submission_focus, false)
+     |> assign(:reading_scope, nil)
      |> assign(:reading_context, %{})
      |> assign(:reader_return, nil)
      |> assign(:notebook_neighbors, nil)
@@ -87,11 +93,18 @@ defmodule StillWeb.EntryLive do
           Writing.remember_visit(entry)
         end
 
-        words = version || entry
+        location = Storage.collection_location()
+
+        {focus_supported?, submission_focus} =
+          submission_focus_state(location, entry, version)
 
         {:noreply,
          socket
          |> assign(:focused_reading, focused)
+         |> assign(:wander_mode?, not focused)
+         |> assign(:submission_focus_supported?, focus_supported?)
+         |> assign(:submission_focus, submission_focus)
+         |> assign(:reading_scope, location.scope)
          |> assign(
            :reading_context,
            if(focused, do: ReadingPlace.context(entry, params), else: %{})
@@ -108,10 +121,11 @@ defmodule StillWeb.EntryLive do
          )
          |> assign(:version_missing, !!params["version"] && is_nil(version))
          |> assign(:search_query, query)
-         |> assign(:search_highlights, query != "")
+         |> assign(:piece_find_open?, false)
+         |> assign(:piece_find_query, "")
+         |> assign(:piece_find_target_line, nil)
          |> assign(:search_earlier, params["earlier"] == "1")
          |> assign(:search_written, params["written"] == "1")
-         |> assign(:search_line, Writing.search_passage(words.body, query).line)
          |> assign(:arrival, arrival(params))
          |> assign(:checkpoint, true)
          |> assign(:status, :quiet)
@@ -166,10 +180,16 @@ defmodule StillWeb.EntryLive do
         {:noreply,
          socket
          |> assign(:entry, nil)
+         |> assign(:wander_mode?, false)
+         |> assign(:submission_focus_supported?, false)
+         |> assign(:submission_focus, false)
+         |> assign(:reading_scope, nil)
          |> assign(:historical_version, nil)
          |> assign(:version_missing, false)
          |> assign(:search_query, "")
-         |> assign(:search_line, nil)
+         |> assign(:piece_find_open?, false)
+         |> assign(:piece_find_query, "")
+         |> assign(:piece_find_target_line, nil)
          |> assign(:previous_reading, nil)
          |> assign(:listening_line, nil)
          |> assign(:echo_attention, nil)
@@ -201,8 +221,93 @@ defmodule StillWeb.EntryLive do
   end
 
   @impl true
-  def handle_event("dismiss_search_highlights", _, socket),
-    do: {:noreply, assign(socket, :search_highlights, false)}
+  def handle_event("open_piece_find", _, socket) do
+    {:noreply,
+     socket
+     |> assign(piece_find_open?: true, piece_find_query: "", piece_find_target_line: nil)
+     |> push_event("room-focus", %{id: "piece-find-query", scroll: true})}
+  end
+
+  def handle_event("close_piece_find", _, socket) do
+    {:noreply,
+     socket
+     |> assign(piece_find_open?: false, piece_find_query: "", piece_find_target_line: nil)
+     |> push_event("room-focus", %{id: "open-piece-find"})}
+  end
+
+  def handle_event("find_in_piece", %{"piece_find" => %{"query" => query}} = params, socket) do
+    query = PieceFind.query(query)
+
+    body =
+      if socket.assigns.historical_version,
+        do: socket.assigns.historical_version.body,
+        else: socket.assigns.entry.body
+
+    target_line =
+      if Map.has_key?(params, "_target"), do: nil, else: PieceFind.first_match_line(body, query)
+
+    socket =
+      assign(socket,
+        piece_find_open?: true,
+        piece_find_query: query,
+        piece_find_target_line: target_line
+      )
+
+    socket =
+      if target_line,
+        do: push_event(socket, "room-focus", %{id: "passage-#{target_line}", scroll: true}),
+        else: socket
+
+    {:noreply, socket}
+  end
+
+  def handle_event("find_in_piece", _, socket), do: {:noreply, socket}
+
+  def handle_event(
+        "toggle_wander_submission_focus",
+        _,
+        %{
+          assigns: %{
+            wander_mode?: true,
+            submission_focus_supported?: true,
+            entry: entry
+          }
+        } = socket
+      ) do
+    marked? = !socket.assigns.submission_focus
+    location = Storage.collection_location()
+
+    result =
+      if location.available && location.scope == socket.assigns.reading_scope do
+        cond do
+          is_binary(entry.file_id) ->
+            Correspondence.set_focus(location, entry.file_id, marked?)
+
+          marked? ->
+            with {:ok, piece} <- Poems.from_historical(location, entry),
+                 :ok <- Correspondence.set_focus(location, piece.id, true) do
+              :ok
+            end
+
+          true ->
+            case Poems.saved_from_historical(location, entry) do
+              {:ok, nil} -> :ok
+              {:ok, piece} -> Correspondence.set_focus(location, piece.id, false)
+              error -> error
+            end
+        end
+      else
+        {:error, "The collection changed. Reopen this piece before marking it."}
+      end
+
+    case result do
+      :ok -> {:noreply, assign(socket, :submission_focus, marked?)}
+      {:error, message} -> {:noreply, put_flash(socket, :error, message)}
+    end
+  end
+
+  def handle_event("toggle_wander_submission_focus", _, socket),
+    do: {:noreply, socket}
 
   def handle_event("focus_passage", %{"id" => id, "line" => line}, socket)
       when is_binary(line) do
@@ -303,7 +408,7 @@ defmodule StillWeb.EntryLive do
      |> assign(:listening_line, nil)
      |> assign(:echo_attention, nil)
      |> assign(:search_query, "")
-     |> assign(:search_line, nil)
+     |> assign(piece_find_open?: false, piece_find_query: "", piece_find_target_line: nil)
      |> assign(:checkpoint, true)
      |> assign(:return_writing, Writing.current_writing())
      |> assign(:return_beside, Writing.current_beside())
@@ -861,8 +966,28 @@ defmodule StillWeb.EntryLive do
     Enum.find(siblings, &(&1.source_order > entry.source_order)) || List.last(siblings)
   end
 
+  defp piece_find_text(nil, _version), do: ""
+
+  defp piece_find_text(entry, version) do
+    words = version || entry
+    title = if is_nil(entry.file_id), do: Map.get(words, :title), else: nil
+
+    [if(is_binary(title) and title != "", do: title <> "\n", else: ""), Map.get(words, :body, "")]
+    |> IO.iodata_to_binary()
+  end
+
   @impl true
   def render(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :piece_find_matches,
+        PieceFind.match_count(
+          piece_find_text(assigns.entry, assigns.historical_version),
+          assigns.piece_find_query
+        )
+      )
+
     ~H"""
     <Layouts.app
       flash={@flash}
@@ -1037,9 +1162,7 @@ defmodule StillWeb.EntryLive do
         :if={!@editing && @historical_version}
         class="reading-room historical-reading"
         aria-labelledby="reading-title"
-        phx-mounted={
-          JS.focus(to: if(@search_line, do: "#passage-#{@search_line}", else: "#reading-title"))
-        }
+        phx-mounted={JS.focus(to: "#reading-title")}
       >
         <div class="historical-notice">
           <p>
@@ -1066,15 +1189,15 @@ defmodule StillWeb.EntryLive do
         >
           <.highlight
             text={@historical_version.title || "Earlier words"}
-            query={if @search_highlights, do: @search_query, else: ""}
+            query={if @piece_find_open?, do: @piece_find_query, else: ""}
           />
         </h1>
         <div class="list-body historical-body">
           <.shaped_words
             body={@historical_version.body}
-            query={if @search_highlights, do: @search_query, else: ""}
+            query={if @piece_find_open?, do: @piece_find_query, else: ""}
             id_prefix="passage"
-            target_line={@search_line}
+            target_line={@piece_find_target_line}
           />
         </div>
         <div class="reading-foot">
@@ -1085,14 +1208,12 @@ defmodule StillWeb.EntryLive do
             title_source={if @historical_version.title, do: "explicit", else: "first_line"}
             title_in_body={not is_nil(@entry.file_id)}
           />
+          <StillWeb.PieceFind.panel
+            open={@piece_find_open?}
+            query={@piece_find_query}
+            matches={@piece_find_matches}
+          />
           <.reader_actions :if={@focused_reading} entry={@entry} context={@reading_context} />
-          <button
-            :if={@search_highlights && @search_query != ""}
-            id="clear-search-highlights"
-            type="button"
-            class="quiet-link"
-            phx-click="dismiss_search_highlights"
-          >Clear highlights</button>
           <.link
             :if={@search_query != "" && !@focused_reading}
             navigate={results_path(@search_query, @search_earlier, @search_written)}
@@ -1116,9 +1237,7 @@ defmodule StillWeb.EntryLive do
         data-entry-id={@entry.id}
         data-entry-title={@entry.title || ""}
         aria-labelledby="reading-title"
-        phx-mounted={
-          JS.focus(to: if(@search_line, do: "#passage-#{@search_line}", else: "#reading-title"))
-        }
+        phx-mounted={JS.focus(to: "#reading-title")}
       >
         <p :if={@version_missing} class="recovery-note" role="status">
           That earlier version isn't here. These are the current words.
@@ -1141,7 +1260,7 @@ defmodule StillWeb.EntryLive do
           >
             <.highlight
               text={@entry.title || Writing.opening(@entry)}
-              query={if @search_highlights, do: @search_query, else: ""}
+              query={if @piece_find_open?, do: @piece_find_query, else: ""}
             />
           </h1>
         </header>
@@ -1149,9 +1268,9 @@ defmodule StillWeb.EntryLive do
           <StillWeb.Echoes.reading
             :if={@entry.origin == "before" || @entry.file_id}
             body={@entry.body}
-            query={if @search_highlights, do: @search_query, else: ""}
+            query={if @piece_find_open?, do: @piece_find_query, else: ""}
             id_prefix="passage"
-            target_line={@search_line}
+            target_line={@piece_find_target_line}
             active_line={@listening_line}
             document_id={@entry.id}
             listening={!@focused_reading}
@@ -1159,9 +1278,9 @@ defmodule StillWeb.EntryLive do
           <.shaped_words
             :if={@entry.origin != "before" && is_nil(@entry.file_id)}
             body={@entry.body}
-            query={if @search_highlights, do: @search_query, else: ""}
+            query={if @piece_find_open?, do: @piece_find_query, else: ""}
             id_prefix="passage"
-            target_line={@search_line}
+            target_line={@piece_find_target_line}
           />
         </div>
         <StillWeb.Echoes.field fragments={@gravity_field} responsive={not is_nil(@listening_line)} />
@@ -1174,14 +1293,28 @@ defmodule StillWeb.EntryLive do
             title_source={if @entry.title, do: "explicit", else: "first_line"}
             title_in_body={not is_nil(@entry.file_id)}
           />
-          <.reader_actions :if={@focused_reading} entry={@entry} context={@reading_context} />
+          <StillWeb.PieceFind.panel
+            open={@piece_find_open?}
+            query={@piece_find_query}
+            matches={@piece_find_matches}
+          />
           <button
-            :if={@search_highlights && @search_query != ""}
-            id="clear-search-highlights"
+            :if={@wander_mode? && @submission_focus_supported?}
+            id="keep-for-correspondence"
             type="button"
             class="quiet-link"
-            phx-click="dismiss_search_highlights"
-          >Clear highlights</button>
+            phx-click="toggle_wander_submission_focus"
+            aria-pressed={to_string(@submission_focus)}
+          >{if @submission_focus, do: "Kept for Correspondence", else: "Keep for Correspondence"}</button>
+          <span
+            :if={
+              @wander_mode? && @submission_focus_supported? && is_nil(@entry.file_id) &&
+                !@submission_focus
+            }
+            class="corr-meta"
+            id="keep-for-correspondence-help"
+          >Keeps a saved copy for submission; the original stays here.</span>
+          <.reader_actions :if={@focused_reading} entry={@entry} context={@reading_context} />
           <button
             :if={@previous_reading}
             id="reading-back"
@@ -1212,11 +1345,7 @@ defmodule StillWeb.EntryLive do
             phx-click="add_to_saved_writing"
             phx-disable-with="Opening saved writing…"
           >Add to saved writing</button>
-          <.link
-            id="follow-historical-words"
-            navigate={~p"/threads?from=#{"before:#{@entry.id}"}"}
-            class="quiet-link"
-          >Follow a word</.link>
+
           <button type="button" class="quiet-link" phx-click="toggle_versions">Earlier words</button>
           <.link
             :if={
@@ -1394,6 +1523,34 @@ defmodule StillWeb.EntryLive do
     </Layouts.app>
     """
   end
+
+  defp submission_focus_state(_location, _entry, version) when not is_nil(version),
+    do: {false, false}
+
+  defp submission_focus_state(%{available: true} = location, %{file_id: file_id}, _version)
+       when is_binary(file_id) do
+    {true, Map.get(Correspondence.writing_status(location).focused, file_id, false)}
+  end
+
+  defp submission_focus_state(
+         %{available: true} = location,
+         %{origin: "before", source_key: source_key} = entry,
+         _version
+       )
+       when is_binary(source_key) and source_key != "" do
+    case Poems.saved_from_historical(location, entry) do
+      {:ok, nil} ->
+        {true, false}
+
+      {:ok, piece} ->
+        {true, Map.get(Correspondence.writing_status(location).focused, piece.id, false)}
+
+      {:error, _message} ->
+        {false, false}
+    end
+  end
+
+  defp submission_focus_state(_location, _entry, _version), do: {false, false}
 
   attr :entry, :any, required: true
   attr :context, :map, required: true

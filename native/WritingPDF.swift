@@ -8,10 +8,12 @@ enum WritingPDF {
     struct Segment {
         let body: String
         let inset: Bool
+        let pageBreakBefore: Bool
 
-        init(body: String, inset: Bool = false) {
+        init(body: String, inset: Bool = false, pageBreakBefore: Bool = false) {
             self.body = body
             self.inset = inset
+            self.pageBreakBefore = pageBreakBefore
         }
     }
 
@@ -33,8 +35,7 @@ enum WritingPDF {
     private static let margin: CGFloat = 54
 
     static func render(title: String, segments: [Segment]) throws -> Data {
-        let text = attributedWriting(segments)
-        let framesetter = CTFramesetterCreateWithAttributedString(text)
+        let groups = attributedWritingGroups(segments)
         let pdfData = NSMutableData()
         var mediaBox = CGRect(origin: .zero, size: pageSize)
         var metadata: [CFString: Any] = [:]
@@ -52,41 +53,51 @@ enum WritingPDF {
             width: pageSize.width - margin * 2,
             height: pageSize.height - margin * 2
         )
-        var location = 0
-        let length = text.length
+        // Each group is independently paginated, so a marked segment begins
+        // on a new page without adding any delimiter to its authored text.
+        for text in groups {
+            let framesetter = CTFramesetterCreateWithAttributedString(text)
+            var location = 0
+            let length = text.length
 
-        // Keep even empty writing as a valid, single blank page.
-        repeat {
-            context.beginPDFPage(nil)
-            if location < length {
-                let path = CGPath(rect: layoutRect, transform: nil)
-                let frame = CTFramesetterCreateFrame(
-                    framesetter,
-                    CFRange(location: location, length: 0),
-                    path,
-                    nil
-                )
-                let visible = CTFrameGetVisibleStringRange(frame)
-                guard visible.length > 0 else {
-                    context.endPDFPage()
-                    context.closePDF()
-                    throw RenderError.layoutMadeNoProgress
+            // Empty writing and explicitly empty segments still have a page.
+            repeat {
+                context.beginPDFPage(nil)
+                if location < length {
+                    let path = CGPath(rect: layoutRect, transform: nil)
+                    let frame = CTFramesetterCreateFrame(
+                        framesetter,
+                        CFRange(location: location, length: 0),
+                        path,
+                        nil
+                    )
+                    let visible = CTFrameGetVisibleStringRange(frame)
+                    guard visible.length > 0 else {
+                        context.endPDFPage()
+                        context.closePDF()
+                        throw RenderError.layoutMadeNoProgress
+                    }
+                    CTFrameDraw(frame, context)
+                    location += visible.length
                 }
-                CTFrameDraw(frame, context)
-                location += visible.length
-            }
-            context.endPDFPage()
-        } while location < length
+                context.endPDFPage()
+            } while location < length
+        }
 
         context.closePDF()
         return pdfData as Data
     }
 
-    private static func attributedWriting(_ segments: [Segment]) -> NSAttributedString {
-        let result = NSMutableAttributedString(string: "")
+    private static func attributedWritingGroups(_ segments: [Segment]) -> [NSAttributedString] {
+        var groups: [NSAttributedString] = []
+        var current = NSMutableAttributedString(string: "")
         let font = CTFontCreateWithName("Georgia" as CFString, 12, nil)
 
-        for segment in segments {
+        for (index, segment) in segments.enumerated() {
+            if index > 0 && segment.pageBreakBefore {
+                groups.append(current)
+                current = NSMutableAttributedString(string: "")
+            }
             let normalizedBody = segment.body
                 .replacingOccurrences(of: "\r\n", with: "\n")
                 .replacingOccurrences(of: "\r", with: "\n")
@@ -94,13 +105,14 @@ enum WritingPDF {
             for (lineIndex, line) in lines.enumerated() {
                 let charWrap = hasOverwideToken(in: line, font: font, inset: segment.inset)
                 let attributes = attributes(font: font, inset: segment.inset, charWrap: charWrap)
-                result.append(NSAttributedString(string: line, attributes: attributes))
+                current.append(NSAttributedString(string: line, attributes: attributes))
                 if lineIndex < lines.count - 1 {
-                    result.append(NSAttributedString(string: "\n", attributes: attributes))
+                    current.append(NSAttributedString(string: "\n", attributes: attributes))
                 }
             }
         }
-        return result
+        groups.append(current)
+        return groups
     }
 
     private static func attributes(font: CTFont, inset: Bool, charWrap: Bool) -> [NSAttributedString.Key: Any] {

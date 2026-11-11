@@ -41,6 +41,21 @@ defmodule StillWeb.NotebookReadingLiveTest do
     assert has_element?(view, "#wander-with-this")
     assert Writing.current_writing() == nil
 
+    view |> element("#open-piece-find") |> render_click()
+    assert has_element?(view, "#piece-find-query")
+
+    render_change(element(view, "#piece-find-form"), %{
+      "piece_find" => %{"query" => "indented"},
+      "_target" => ["piece_find", "query"]
+    })
+
+    assert has_element?(view, "#list-body mark", "indented")
+    refute has_element?(view, "[data-search-target='true']")
+    render_submit(element(view, "#piece-find-form"), %{"piece_find" => %{"query" => "indented"}})
+    assert has_element?(view, "#passage-3[data-search-target='true'] mark", "indented")
+    view |> element("#close-piece-find") |> render_click()
+    refute has_element?(view, "#list-body mark")
+
     view |> element("#notebook-next") |> render_click()
     assert has_element?(view, "#notebook-sidebar a[aria-current='page']", "Second title:")
     assert has_element?(view, "#notebook-content", "Second words")

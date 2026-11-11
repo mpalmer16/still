@@ -2,6 +2,8 @@ import {WritingFocus} from "./writing_focus"
 import {FileRecovery} from "./file_recovery"
 import {LinkedWriting} from "./linked_writing"
 import {WritingExports} from "./writing_exports"
+import {PacketNotes} from "./packet_notes"
+import {openPieceFind, handleReadingShortcut} from "./reading_shortcuts"
 import {CopyText} from "./copy_text"
 import {echoAttention, passageAttention} from "./echo_attention"
 import "phoenix_html"
@@ -390,6 +392,7 @@ window.addEventListener("phx:room-focus", ({detail}) => {
       const target = document.getElementById(detail.id)
       if (target?.linkedEditor) target.linkedEditor.focus()
       else target?.focus({preventScroll: true})
+      if (detail.scroll) target?.scrollIntoView({block: "center"})
     })
   } else if (roomFocusReturn?.isConnected) {
     const returning = roomFocusReturn
@@ -397,7 +400,9 @@ window.addEventListener("phx:room-focus", ({detail}) => {
     roomFocusReturn = null
   }
 })
+window.addEventListener("still:find-in-piece", () => openPieceFind())
 document.addEventListener("keydown", event => {
+  if (handleReadingShortcut(event)) return
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
     event.preventDefault()
     document.querySelector(".site-nav a[href='/pages']")?.click()
@@ -417,11 +422,6 @@ document.addEventListener("keydown", event => {
   if (event.key === "Escape" && roomIsOpen) {
     event.preventDefault()
     roomIsOpen.click()
-  } else if (event.key === "Escape" && !field && document.querySelector(".reading-room")) {
-    event.preventDefault()
-    const highlights = document.querySelector("#clear-search-highlights")
-    if (highlights) highlights.click()
-    else document.querySelector("#return-to-writing")?.click()
   }
   if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "l") {
     event.preventDefault()
@@ -444,7 +444,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, FileRecovery: AttentiveFileRecovery, LinkedWriting, WritingExports, WritingFocus, CopyText, PassageAttention},
+  hooks: {...colocatedHooks, DraftRecovery, ReadRecovery, FileRecovery: AttentiveFileRecovery, LinkedWriting, WritingExports, PacketNotes, WritingFocus, CopyText, PassageAttention},
 })
 
 liveSocket.connect()

@@ -151,6 +151,10 @@ Choose **Wander with this** to open that same piece with echoes and connections.
 Wander keeps a **Back to reading** link to the place you left. **Continue reading**
 in Find and in a notebook resumes that place. Each notebook remembers its own
 place in the local database, independently of the writing open in Write.
+While wandering through a saved piece, choose **Keep for Correspondence** to
+remember it for later. For an older List, Still keeps a saved copy for submission
+while leaving the original in place. The marker can be removed from Wander or
+from the piece’s Correspondence page.
 
 **Light**, **Letters**, the room map, notebook order, **Find**, **Wander** and
 **Back where I was** retain the historical reading experience. Find searches
@@ -432,7 +436,7 @@ submission packets, and replies together in the selected collection. Sent manusc
 keep immutable copies; nothing is submitted automatically. The historical Lists and
 the Write writing experience keep their existing behavior. The editorial workspace
 uses a wide editorial layout, with an explicitly chosen work on the desk,
-shortlisted Places, side-by-side work history, a curated Places directory, and a
+Places kept nearby, side-by-side work history, a curated Places directory, and a
 live ordered manuscript in packet preparation.
 Graphite is the default dark color; Night blue, Forest, and Plum are available.
 Still remembers the chosen dark color and the optional Light appearance across
@@ -479,67 +483,11 @@ personal notes are sent. Imports only validate image links; they never require a
 successful download. Database backups include saved images and correspondence records. Copy or sync
 the ordinary text root separately to retain current writing.
 
-## Threads — a word travels
-
-**Threads**, in the main navigation, follows literal recurring words between historical
-notebooks and saved file writing. Choose a word already found in the collection, or
-open **A word of your own** and enter one. Matching is case-insensitive and uses whole
-Unicode words: `river` does not silently become `rivers`. Current words are used;
-Trash, unsaved drafts, and earlier versions stay outside this reading room.
-
-Two passages appear beside one another, favoring a crossing between an older List
-and a saved page, or between notebooks. **Whole pages** unfolds both complete texts;
-**Passages** returns to their original matching stanzas. **Another crossing** changes
-the pairing. Other matching passages continue beneath, and **Open this page** leads
-to the normal reading view. **Let another word find me** follows another discovered
-word. **Follow a word**, beneath a historical List or saved page, begins with words
-from that particular piece.
-
-This is a reading surface: it creates no categories, scores, saved arrangements, or
-interpretations. Discovery and pairing do not write files or database records. Exact
-source text and stanza whitespace remain intact. An original List and its explicitly
-saved edition share a source identity, so they cannot create a false recurrence or
-be paired as independent pages. If a chosen collection folder becomes unavailable,
-Still explains the problem and leaves historical notebooks readable. Interrupted saves
-are reported without replaying their journals or creating collection locks.
-
-Saved file reading also offers one quiet historical companion when the existing
-literal echo system finds a strong connection. Its own imported original is excluded;
-weak connections leave the page quiet. Following the companion leaves the current
-writing position intact.
-
-### A separate, disposable preview
-
-```sh
-./scripts/preview_threads.sh
-```
-
-Open **http://localhost:4097/threads**. Docker binds only to localhost. This builds the
-current checkout into `still-threads-preview:local`, starts one container, and prepares
-invented notebooks and saved pages in one named volume. It mounts no host writing
-folders and uses separate settings, database, collection, and browser origin. A small
-banner identifies the preview. Subsequent starts keep your experiments in that volume.
-Set `STILL_PREVIEW_PORT=4098` to use another port. Docker must already be running.
-
-```sh
-./scripts/preview_threads.sh stop     # keep the preview for later
-./scripts/preview_threads.sh remove   # remove its container, data volume, and image
-```
-
-Removal deletes only this preview's disposable writing. It leaves the installed Still
-app, your real collection, other containers, and the source checkout alone. There is no
-extra worktree or installed application to clean up.
-
-The same disposable preview includes **A page to listen beside**. Open it from Saved
-writing, place the caret in the orchard stanza and then the harbor stanza, and pause
-to let the company change. Hover or Tab to the echo to hear a little more of its
-source. The historical **Orchard:Harbor:** List offers the same passage listening
-while reading. Both examples are invented; existing preview pages stay intact.
-
 ## Read a notebook
 
 Open **Notebooks**, choose a notebook, and open a piece. The index stays on the
-left while the words appear in the middle. Choose another piece or use Previous
+left while the words appear in the middle. On wide displays the reading page
+expands to allow longer lines, and its location header stays transparent. Choose another piece or use Previous
 and Next to read in notebook order. On a narrow window, Notebook index switches
 between the index and the page. Continue reading returns to the saved place.
 Wander with this takes the current piece into Wander and keeps a way back.
@@ -547,3 +495,7 @@ Wander with this takes the current piece into Wander and keeps a way back.
 Find opens a focused reader with a way back to the same search results. If the
 writing folder cannot be read or another Still is updating it, Find explains the
 problem and offers Try again; an unavailable collection is never an empty result.
+
+Opening a piece from Find leaves its words unmarked. **Find in this piece** (Cmd/Ctrl+F)
+opens a separate search within the current piece; Close or Escape clears those marks.
+Escape stays on the current piece when there is no search or menu to close.

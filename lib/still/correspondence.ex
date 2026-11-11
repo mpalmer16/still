@@ -791,6 +791,9 @@ defmodule Still.Correspondence do
     end
   end
 
+  @doc "The exact expanded current words of an ordered packet selection, before it is saved."
+  def manuscript_preview(location, ids) when is_list(ids), do: current_pieces(location, ids)
+
   defp expand_linked_pieces(pieces, location) do
     Enum.reduce_while(pieces, {:ok, []}, fn piece, {:ok, acc} ->
       references = Enum.filter(PoemReferences.parse(piece.body), &(&1.kind == :reference))

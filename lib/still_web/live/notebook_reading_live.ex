@@ -3,6 +3,7 @@ defmodule StillWeb.NotebookReadingLive do
 
   alias Still.{Correspondence, Storage, Writing}
   alias Still.Writing.ReadingPlace
+  alias StillWeb.PieceFind
   alias StillWeb.ReadingLinks
 
   @impl true
@@ -18,6 +19,9 @@ defmodule StillWeb.NotebookReadingLive do
        reading_context: %{},
        versions: [],
        words: nil,
+       piece_find_open?: false,
+       piece_find_query: "",
+       piece_find_target_line: nil,
        problem: nil,
        sidebar_open: false,
        place: Writing.geography(nil)
@@ -94,7 +98,10 @@ defmodule StillWeb.NotebookReadingLive do
                  do: "Earlier words · #{Writing.opening(entry)}",
                  else: Writing.opening(entry)
                ),
-             words: words
+             words: words,
+             piece_find_open?: false,
+             piece_find_query: "",
+             piece_find_target_line: nil
            )}
         end
       end
@@ -104,6 +111,45 @@ defmodule StillWeb.NotebookReadingLive do
   @impl true
   def handle_event("toggle_index", _, socket),
     do: {:noreply, update(socket, :sidebar_open, &(!&1))}
+
+  def handle_event("open_piece_find", _, socket) do
+    {:noreply,
+     socket
+     |> assign(piece_find_open?: true, piece_find_query: "", piece_find_target_line: nil)
+     |> push_event("room-focus", %{id: "piece-find-query", scroll: true})}
+  end
+
+  def handle_event("close_piece_find", _, socket) do
+    {:noreply,
+     socket
+     |> assign(piece_find_open?: false, piece_find_query: "", piece_find_target_line: nil)
+     |> push_event("room-focus", %{id: "open-piece-find"})}
+  end
+
+  def handle_event("find_in_piece", %{"piece_find" => %{"query" => query}} = params, socket) do
+    query = PieceFind.query(query)
+
+    target_line =
+      if Map.has_key?(params, "_target"),
+        do: nil,
+        else: PieceFind.first_match_line(socket.assigns.words.body, query)
+
+    socket =
+      assign(socket,
+        piece_find_open?: true,
+        piece_find_query: query,
+        piece_find_target_line: target_line
+      )
+
+    socket =
+      if target_line,
+        do: push_event(socket, "room-focus", %{id: "passage-#{target_line}", scroll: true}),
+        else: socket
+
+    {:noreply, socket}
+  end
+
+  def handle_event("find_in_piece", _, socket), do: {:noreply, socket}
 
   def handle_event("toggle_submission_focus", _, %{assigns: %{entry: %{file_id: id}}} = socket)
       when is_binary(id) do
@@ -184,6 +230,11 @@ defmodule StillWeb.NotebookReadingLive do
               id="wander-with-this"
               class="quiet-link"
             >Wander with this ↗</.link>
+            <StillWeb.PieceFind.panel
+              open={@piece_find_open?}
+              query={@piece_find_query}
+              matches={piece_find_matches(@entry, @words, @piece_find_query)}
+            />
           </nav>
           <div
             id={"notebook-document-#{@entry.id}-#{@version && @version.id || "current"}"}
@@ -205,21 +256,30 @@ defmodule StillWeb.NotebookReadingLive do
                 tabindex="-1"
                 class={if @entry.title && is_nil(@entry.file_id), do: "list-title", else: "sr-only"}
               >
-                <.list_title text={
-                  (@version && (@version.title || "Earlier words")) || @entry.title ||
-                    Writing.opening(@entry)
-                } />
+                <.highlight
+                  text={
+                    (@version && (@version.title || "Earlier words")) || @entry.title ||
+                      Writing.opening(@entry)
+                  }
+                  query={if @piece_find_open?, do: @piece_find_query, else: ""}
+                />
               </h1>
             </header>
             <div class="list-body" id="list-body">
               <StillWeb.Echoes.reading
                 :if={@entry.origin == "before" || @entry.file_id}
                 body={@words.body}
+                query={if @piece_find_open?, do: @piece_find_query, else: ""}
+                id_prefix="passage"
+                target_line={@piece_find_target_line}
                 listening={false}
               />
               <.shaped_words
                 :if={@entry.origin != "before" && is_nil(@entry.file_id)}
                 body={@words.body}
+                query={if @piece_find_open?, do: @piece_find_query, else: ""}
+                id_prefix="passage"
+                target_line={@piece_find_target_line}
               />
             </div>
             <.submission_mark
@@ -287,6 +347,19 @@ defmodule StillWeb.NotebookReadingLive do
       |> Map.put("notebook", notebook && notebook.key)
       |> Map.put("version", nil)
     )
+  end
+
+  defp piece_find_matches(entry, words, query) do
+    title = if is_nil(entry.file_id), do: Map.get(words, :title), else: nil
+
+    text =
+      [
+        if(is_binary(title) and title != "", do: title <> "\n", else: ""),
+        Map.get(words, :body, "")
+      ]
+      |> IO.iodata_to_binary()
+
+    PieceFind.match_count(text, query)
   end
 
   defp neighbors(notebook, id) do

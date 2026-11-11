@@ -140,7 +140,6 @@ The existing behaviors map to that model as follows:
 | Experience | Required source and behavior |
 | --- | --- |
 | Echoes | Verified current file text; preserve caret/selection sensitivity, exact source passages, restrained admission, and exclusion of the active work. Newly transcribed Lists can be candidates without being historical SQLite rows. |
-| Threads | Verified passages and whole works from the same file identities; preserve stanza whitespace and Unicode word matching. A move cannot create another work or a false recurrence. |
 | Notebook reading | Independent notebooks and preserved List sequence, including gaps and suffixes; no invented dates. |
 | Reading place | Notebook and Find selections open a focused reader. SQLite remembers the last reader and each notebook's own place, including Find query, earlier-word version and result position. Wandering and the Now writing cursor cannot replace that place. |
 | Search | Current file index plus database-held earlier words; refresh indexes after external changes, and expose unreadable/unavailable files. |

@@ -9,7 +9,7 @@ export const WritingExports = {
     this.handleEvent("writing-pdf-request", payload => {
       const handler = window.webkit?.messageHandlers?.stillPDFExport
       if (handler) handler.postMessage(payload)
-      else this.pushEvent("pdf_export_failed", {message: "PDF export is available in the Mac app. Your text file is saved.", request_id: payload.request_id})
+      else this.pushEvent("pdf_export_failed", {message: "PDF export is available in the Mac app.", request_id: payload.request_id})
     })
     this.handleEvent("reveal-writing-export", ({path}) => {
       window.webkit?.messageHandlers?.stillRevealExport?.postMessage({path})

@@ -13,7 +13,8 @@ defmodule StillWeb.ReadingImprovementsTest do
     refute has_element?(found, ".entry-excerpt script")
     assert has_element?(found, ".entry-row[href$='#passage-3']")
     {:ok, read, _} = live(conn, ~p"/w/#{entry.id}?q=heron+cafe&read=1")
-    assert has_element?(read, "#passage-3[data-search-target='true'][tabindex='-1'] mark", "Café")
+    refute has_element?(read, ".reading-room mark")
+    refute has_element?(read, "[data-search-target='true']")
 
     assert read
            |> element("#list-body")
@@ -23,11 +24,36 @@ defmodule StillWeb.ReadingImprovementsTest do
            |> LazyHTML.to_tree()
            |> length() == 4
 
-    render_click(element(read, "#clear-search-highlights"))
     refute has_element?(read, ".reading-room mark")
-    assert has_element?(read, "#passage-3[data-search-target='true']")
+    refute has_element?(read, "[data-search-target='true']")
     assert has_element?(read, "a[href*='q=heron+cafe']", "Back to results")
-    refute has_element?(read, "#clear-search-highlights")
+
+    render_click(element(read, "#open-piece-find"))
+    assert has_element?(read, "#piece-find-query")
+
+    render_change(element(read, "#piece-find-form"), %{
+      "piece_find" => %{"query" => "heron cafe"},
+      "_target" => ["piece_find", "query"]
+    })
+
+    assert has_element?(read, ".reading-room mark", "Café")
+    assert has_element?(read, ".reading-room mark", "heron")
+    refute has_element?(read, "[data-search-target='true']")
+
+    render_submit(element(read, "#piece-find-form"), %{"piece_find" => %{"query" => "heron cafe"}})
+
+    assert has_element?(read, "#passage-3[data-search-target='true'][tabindex='-1'] mark", "Café")
+
+    render_change(element(read, "#piece-find-form"), %{
+      "piece_find" => %{"query" => "no-such-word"},
+      "_target" => ["piece_find", "query"]
+    })
+
+    assert has_element?(read, "#piece-find-status", "No matches in this piece")
+    render_click(element(read, "#close-piece-find"))
+    refute has_element?(read, ".reading-room mark")
+    assert has_element?(read, "a[href*='q=heron+cafe']", "Back to results")
+    refute has_element?(read, "#close-piece-find")
 
     assert Writing.get_entry!(entry.id).body == body
     assert Writing.list_versions(entry) == []
@@ -54,7 +80,8 @@ defmodule StillWeb.ReadingImprovementsTest do
     {:ok, read, html} =
       live(conn, ~p"/w/#{current.id}?read=1&q=heron&earlier=1&version=#{version.id}")
 
-    assert has_element?(read, ".historical-reading mark", "heron")
+    refute has_element?(read, ".historical-reading mark")
+    refute has_element?(read, "[data-search-target='true']")
     assert html =~ "current words are unchanged"
 
     refute has_element?(
@@ -62,7 +89,10 @@ defmodule StillWeb.ReadingImprovementsTest do
              "textarea, [phx-hook='ReadRecovery'], button[phx-click='restore_version']"
            )
 
-    render_click(element(read, "#clear-search-highlights"))
+    render_click(element(read, "#open-piece-find"))
+    render_submit(element(read, "#piece-find-form"), %{"piece_find" => %{"query" => "heron"}})
+    assert has_element?(read, ".historical-reading mark", "heron")
+    render_click(element(read, "#close-piece-find"))
     refute has_element?(read, ".historical-reading mark")
     assert has_element?(read, ".historical-reading", "earlier heron")
     assert has_element?(read, "a[href*='earlier=1'][href*='q=heron']", "Back to results")

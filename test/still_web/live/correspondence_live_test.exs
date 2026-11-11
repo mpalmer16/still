@@ -165,6 +165,88 @@ defmodule StillWeb.CorrespondenceLiveTest do
     assert hd(packet_after_unmarking.snapshot.pieces).body == piece.body
   end
 
+  test "packet preview expands links, PDF requests are correlated, and private notes remain editable after sending",
+       %{conn: conn, location: location} do
+    {:ok, source} =
+      Poems.save(location, Poems.new(location), %{
+        title: "Inserted poem",
+        body: "Exact inserted words"
+      })
+
+    {:ok, host} =
+      Poems.save(location, Poems.new(location), %{
+        title: "Host poem",
+        body: Still.Writing.PoemReferences.marker(source)
+      })
+
+    {:ok, journal} =
+      Correspondence.save_journal(location, %{
+        name: "Quiet Review",
+        submission_url: "https://example.test/submit"
+      })
+
+    {:ok, packet} =
+      Correspondence.save_packet(location, %{
+        title: "Autumn",
+        journal_id: journal.id,
+        piece_ids: [host.id],
+        preparation_notes: "Private original"
+      })
+
+    {:ok, view, _} = live(conn, ~p"/correspondence/packets/#{packet.id}")
+    assert has_element?(view, "#packet-preview", "Exact inserted words")
+    refute has_element?(view, "#packet-preview", "[[poem:")
+    assert has_element?(view, "a[href='https://example.test/submit']")
+    render_click(view, "export_packet_pdf", %{})
+    assert_push_event(view, "writing-pdf-request", %{ticket: ticket, request_id: request_id})
+
+    assert {:ok, %{kind: "packet", id: id}} =
+             Phoenix.Token.verify(StillWeb.Endpoint, "writing-pdf-export", ticket, max_age: 300)
+
+    assert id == packet.id
+
+    render_click(view, "pdf_export_finished", %{
+      "request_id" => "unrelated",
+      "path" => "/wrong.pdf"
+    })
+
+    refute has_element?(view, ".corr-packet-export", "wrong.pdf")
+
+    render_click(view, "pdf_export_finished", %{
+      "request_id" => request_id,
+      "path" => "/verified.pdf"
+    })
+
+    assert has_element?(view, ".corr-packet-export", "verified.pdf")
+    render_submit(element(view, ".corr-send-form"), %{"date" => "2026-11-11"})
+    assert has_element?(view, "#packet-notes-body", "Private original")
+    {:ok, sent} = Correspondence.packet(location, packet.id)
+
+    render_hook(view, "save_packet_notes", %{
+      "id" => packet.id,
+      "body" => "A long private note\n  with indentation",
+      "token" => ""
+    })
+
+    assert {:ok, notes} = Still.Correspondence.PacketNotes.get(location, packet.id)
+    assert notes.body == "A long private note\n  with indentation"
+    assert {:ok, same_sent} = Correspondence.packet(location, packet.id)
+    assert same_sent.token == sent.token
+    assert same_sent.snapshot == sent.snapshot
+
+    render_hook(view, "save_packet_notes", %{
+      "id" => packet.id,
+      "body" => "Stale note",
+      "token" => ""
+    })
+
+    assert {:ok, ^notes} = Still.Correspondence.PacketNotes.get(location, packet.id)
+    File.write!(source.path, "Later words")
+    {:ok, reopened, _} = live(conn, ~p"/correspondence/packets/#{packet.id}")
+    assert has_element?(reopened, ".corr-snapshot", "Exact inserted words")
+    refute has_element?(reopened, ".corr-snapshot", "Later words")
+  end
+
   test "an empty collection has a gentle first step and no invented activity", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/correspondence")
 

@@ -73,7 +73,7 @@ defmodule StillWeb.CorrespondenceImport do
         <p>
           Use an array of places like this. Only <code>name</code>
           is required; other fields may be omitted. Text fields are strings. <code>shortlisted</code>
-          is true or false. <code>simultaneous_policy</code>
+          is true or false and marks places you’d like to return to. <code>simultaneous_policy</code>
           is <code>unknown</code>, <code>allowed</code>, or <code>not_allowed</code>. Use empty strings for unknown details and HTTP or HTTPS links for web addresses.
         </p>
         <p>

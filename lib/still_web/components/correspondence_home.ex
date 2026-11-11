@@ -90,7 +90,7 @@ defmodule StillWeb.CorrespondenceHome do
             aria-labelledby="places-to-consider-heading"
           >
             <header class="editorial-home-section-heading">
-              <h2 id="places-to-consider-heading">Places to consider</h2>
+              <h2 id="places-to-consider-heading">Kept nearby</h2>
               <.link patch={~p"/correspondence/journals"}>All places</.link>
             </header>
             <div :if={@shortlisted != []} class="editorial-home-place-grid">
@@ -142,7 +142,7 @@ defmodule StillWeb.CorrespondenceHome do
                     patch={~p"/correspondence/packets/#{packet.id}"}
                   >{packet.title}</.link>
                 </div>
-                <button type="button" phx-click="toggle_shortlist" phx-value-id={journal.id}>Remove from shortlist</button>
+                <button type="button" phx-click="toggle_shortlist" phx-value-id={journal.id}>Stop keeping nearby</button>
               </article>
             </div>
             <p :if={@overview.journals == []} class="editorial-home-empty-note">
@@ -150,7 +150,7 @@ defmodule StillWeb.CorrespondenceHome do
               <.link patch={~p"/correspondence/journals/new"}>Add a place</.link>
             </p>
             <p :if={@overview.journals != [] && @shortlisted == []} class="editorial-home-empty-note">
-              No places are shortlisted yet.
+              No places are kept nearby yet. Mark places you’d like to return to.
               <.link patch={~p"/correspondence/journals"}>Browse Places</.link>
             </p>
           </section>

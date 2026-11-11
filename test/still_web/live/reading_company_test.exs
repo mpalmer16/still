@@ -42,7 +42,7 @@ defmodule StillWeb.ReadingCompanyTest do
 
     assert html =~ "&lt;b&gt;literal&lt;/b&gt;"
     refute has_element?(reading, "#reading-company b")
-    assert has_element?(reading, "#follow-file-words[href='/threads?from=file%3A#{saved.id}']")
+    refute has_element?(reading, "#follow-file-words")
     assert has_element?(reading, "#file-text", "opal quartz orchard")
 
     {:ok, after_cursor} = Desk.current(Storage.collection_location())

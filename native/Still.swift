@@ -391,14 +391,19 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
             var size = 0
             for raw in rawSegments {
                 guard let body = raw["body"] as? String,
-                      let kind = raw["kind"] as? String, ["text", "poem"].contains(kind) else {
+                      let kind = raw["kind"] as? String, ["text", "poem"].contains(kind),
+                      let pageBreakBefore = raw["page_break_before"] as? Bool else {
                     throw StillError.message("The PDF passage is incomplete. Export it again.")
                 }
                 size += body.utf8.count
                 guard size <= 10_000_000 else {
                     throw StillError.message("This writing is too large for PDF export. Markdown export remains available.")
                 }
-                segments.append(WritingPDF.Segment(body: body, inset: kind == "poem"))
+                segments.append(WritingPDF.Segment(
+                    body: body,
+                    inset: kind == "poem",
+                    pageBreakBefore: pageBreakBefore
+                ))
             }
             let renderSegments = segments
             let data = try await Task.detached(priority: .userInitiated) {
@@ -549,15 +554,20 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let script = """
         (() => { const form = document.getElementById('file-writing-form');
           const body = document.getElementById('file-writing-body');
+          const notes = document.querySelector('[data-packet-notes] textarea');
+          const notesChanged = !!notes && (notes.dataset.unsaved === 'true' ||
+            notes.value !== notes.dataset.persisted);
+          const notesSafe = !notesChanged || notes.dataset.recoverySafe === 'true';
           return {hasFile: !!form, authoritative: form?.dataset.authoritative === 'true',
             unsaved: form?.dataset.unsaved === 'true',
             hasContent: !!body?.value.length || !!document.getElementById('file-writing-title')?.value.length,
-            recoverySafe: form?.dataset.recoverySafe === 'true'}; })()
+            recoverySafe: form?.dataset.recoverySafe === 'true', notesSafe}; })()
         """
         let state: [String: Bool]? = await withCheckedContinuation { done in
             webView.evaluateJavaScript(script) { value, _ in done.resume(returning: value as? [String: Bool]) }
         }
         guard let state else { return false }
+        guard state["notesSafe"] != false else { return false }
         return FileLeavePolicy.allowsLeaving(hasFile: state["hasFile"] == true,
             authoritative: state["authoritative"] == true, unsaved: state["unsaved"] == true,
             hasContent: state["hasContent"] == true, recoverySafe: state["recoverySafe"] == true)
@@ -867,6 +877,10 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
     @objc func newWriting(_ sender: Any?) {
         navigate(to: "/?new=1")
     }
+    @objc func findInPiece(_ sender: Any?) {
+        webView?.evaluateJavaScript("window.dispatchEvent(new Event('still:find-in-piece'))", completionHandler: nil)
+    }
+
     @objc func findWriting(_ sender: Any?) {
         navigate(to: "/pages")
     }
@@ -1092,6 +1106,9 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let redo = NSMenuItem(title: "Redo", action: NSSelectorFromString("redo:"), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         edit.insertItem(redo, at: 1)
+        edit.addItem(.separator())
+        let pieceFindItem = edit.addItem(withTitle: "Find in This Piece…", action: #selector(findInPiece(_:)), keyEquivalent: "f")
+        pieceFindItem.target = self
         edit.addItem(.separator())
         let spellingItem = edit.addItem(withTitle: "Spelling", action: nil, keyEquivalent: "")
         let spelling = NSMenu(title: "Spelling")

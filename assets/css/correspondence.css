@@ -164,7 +164,7 @@
 .editorial-packet-sheet pre { margin: 0; color: var(--corr-ink); font: 18px/1.85 Georgia, "Iowan Old Style", serif; }
 .editorial-packet-sheet .corr-small-link { margin-top: 28px; }
 .corr-destination-panel { padding: 24px; background: var(--corr-panel); border-top: 2px solid var(--corr-blue); }
-.corr-destination-panel h2 { margin: 8px 0 19px; font: 400 26px/1.2 Georgia, "Iowan Old Style", serif; }
+.corr-destination-panel h2, .corr-submission-notes h2 { margin: 8px 0 19px; font: 400 26px/1.2 Georgia, "Iowan Old Style", serif; }
 .corr-destination-panel .corr-button { width: 100%; }
 .corr-packet-form label, .corr-send-form label, .corr-response label { display: block; margin: 17px 0; color: var(--corr-muted); font-size: 14px; }
 .corr-packet-form :is(input,select,textarea), .corr-send-form input, .corr-response :is(input:not([type=checkbox]):not([type=hidden]),select,textarea) { display: block; width: 100%; min-height: 44px; margin-top: 7px; padding: 10px 11px; border: 1px solid var(--corr-line); border-radius: 2px; background: var(--corr-bg); color: var(--corr-ink); font: 16px/1.5 var(--sans); }
@@ -508,3 +508,15 @@
 .is-profile .place-icon { flex-basis: 64px; width: 64px; height: 64px; }
 .place-description { max-width: 70ch; margin: 14px 0; color: var(--corr-ink); font: 17px/1.55 Georgia, 'Iowan Old Style', serif; white-space: pre-wrap; overflow-wrap: anywhere; }
 .editorial-home-place > .place-icon { margin-bottom: 12px; }
+
+.corr-submission-notes, .corr-packet-export { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--corr-line); }
+.corr-submission-notes textarea { width: 100%; min-height: 15em; resize: vertical; padding: 12px; border: 1px solid var(--corr-line); background: var(--corr-bg); color: var(--corr-ink); font: 16px/1.65 var(--sans); }
+.corr-submission-notes [data-notes-status], .corr-packet-export [role="status"] { white-space: pre-wrap; overflow-wrap: anywhere; }
+.corr-submission-notes [data-notes-restore] { margin-top: 12px; }
+.editorial-packet-sheet pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.correspondence-room button.corr-small-link { padding: 0; border: 0; background: transparent; font-family: var(--sans); cursor: pointer; }
+.corr-submission-notes [hidden] { display: none !important; }
+.corr-submission-notes { grid-column: 1 / -1; }
+.corr-submission-notes textarea { min-height: 18em; }
+.corr-submission-notes [data-notes-save] { width: auto; }

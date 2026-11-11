@@ -28,7 +28,7 @@ defmodule StillWeb.CorrespondencePlacesTest do
     assert html =~ "Checked by writer"
     assert html =~ "You marked source checked"
     assert html =~ "Personal record"
-    assert html =~ "Shortlisted"
+    assert html =~ "Kept nearby"
     assert length(Regex.scan(~r/class="editorial-place-shortcuts"/, html)) == 1
     assert length(Regex.scan(~r/class="editorial-place-card"/, html)) == 2
     refute html =~ "class=\"editorial-place-card is-shortlisted"
@@ -132,7 +132,8 @@ defmodule StillWeb.CorrespondencePlacesTest do
 
     assert html =~ "Unknown"
     assert html =~ "I checked these details at the publication’s own source"
-    assert html =~ "Keep this place on my shortlist"
+    assert html =~ "Keep nearby"
+    assert html =~ "places you’d like to return to"
   end
 
   defp journal(name, overrides) do

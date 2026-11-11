@@ -17,7 +17,7 @@ defmodule StillWeb.CorrespondenceHomeTest do
     assert html =~ "Choose a work to keep in view."
     assert html =~ ~s(href="/correspondence/writing")
     assert html =~ "Nothing is awaiting a reply just now."
-    assert html =~ "Places to consider"
+    assert html =~ "Kept nearby"
     assert html =~ ~s(href="/correspondence/journals/new")
     assert html =~ "Keep a publication’s details and your own notes together here."
     assert html =~ "Add a place"
@@ -26,7 +26,7 @@ defmodule StillWeb.CorrespondenceHomeTest do
   test "saved unshortlisted places invite browsing the directory" do
     journal = place("Saved place", false, false, "", "unknown")
     html = render_home(%{pieces: [], journals: [journal], packets: []}, %{})
-    assert html =~ "No places are shortlisted yet."
+    assert html =~ "No places are kept nearby yet."
     assert html =~ "Browse Places"
     refute html =~ "Add a place</a>"
   end

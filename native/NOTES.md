@@ -24,6 +24,10 @@ request; the writing context rechecks the source and linked-source snapshot
 before publishing. The renderer fetches the verified words directly from that
 backend rather than taking rendered text from page scripts. Completion stays
 associated with the initiating request even if the writer changes pages.
+Correspondence uses the same authenticated bridge for packet PDFs, with each poem
+starting on a fresh page. Packet export rechecks the reviewed sources; sent packets
+use only their immutable manuscript snapshot. Private notes and cover letters never
+enter the renderer.
 No editor capture, print panel, online service or external
 PDF dependency is used. Export copies stay in a sibling `<collection> Exports`
 folder and **Show export in Finder** only reveals files within that folder.
@@ -74,7 +78,7 @@ New writing is stored as ordinary text files in a chosen local writing folder. F
 
 The writing root is stored in machine-local Still settings scoped to the local database path. Each selected root gets a separate persistent WebKit recovery profile. A missing root remains unavailable until reconnected or another usable location is explicitly chosen; Still does not silently switch to an empty folder. Fresh installs keep local data under `~/Library/Application Support/Still/Writing`. `STILL_DATA_DIRECTORY` is an explicit scratch override for the local database and backend files; launch with it to isolate a preview. Old remembered database-folder bookmarks do not redirect the live database. No writing is copied into the app bundle.
 
-AppKit provides a normal Dock application, persistent window placement, native fullscreen, and standard editing menus. Cmd+N opens fresh writing, Cmd+O opens Saved writing, Cmd+S saves immediately, Cmd+K opens Find, and Ctrl+Cmd+F enters fullscreen. Save and Open Writing are also in the File menu. Typing keeps a local recovery copy; Save writes the ordinary text file. WKWebView shows the existing application without tabs or an address bar. On load, the window gives keyboard focus to the writer without moving an already focused selection. It accepts navigation only to its own local origin.
+AppKit provides a normal Dock application, persistent window placement, native fullscreen, and standard editing menus. Cmd+N opens fresh writing, Cmd+O opens Saved writing, Cmd+S saves immediately, Cmd+K opens Find, Cmd+F opens Find in This Piece in a reader, and Ctrl+Cmd+F enters fullscreen. Save and Open Writing are also in the File menu. Typing keeps a local recovery copy; Save writes the ordinary text file. WKWebView shows the existing application without tabs or an address bar. On load, the window gives keyboard focus to the writer without moving an already focused selection. It accepts navigation only to its own local origin.
 
 The native titlebar sits above the WebView. Its double-click follows the Mac's Desktop & Dock preference. The app's standard Zoom frame fills the usable display between the menu bar and Dock; AppKit owns the zoom and restore behavior. New windows begin at 90% of that space, capped at 1700×1040 points. The exact former 1120×820 default is enlarged once; a custom saved frame is preserved. Subsequent sizing and placement use the same native frame autosave. Window → Zoom is also available, and fullscreen remains separate.
 
