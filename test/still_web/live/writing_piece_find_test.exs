@@ -37,7 +37,11 @@ defmodule StillWeb.WritingPieceFindTest do
     {:ok, view, _} = live(conn, ~p"/writing/#{host.id}")
     refute has_element?(view, "#file-text mark")
     render_click(element(view, "#open-piece-find"))
-    assert_push_event(view, "room-focus", %{id: "piece-find-query", scroll: true})
+
+    assert_push_event(view, "room-focus", %{
+      id: "piece-find-query",
+      scroll: true
+    })
 
     render_change(element(view, "#piece-find-form"), %{
       "piece_find" => %{"query" => "heron"},
@@ -47,8 +51,22 @@ defmodule StillWeb.WritingPieceFindTest do
     assert has_element?(view, ".poem-insert-words mark", "heron")
     assert has_element?(view, "#piece-find-status", "1 matching word")
     render_submit(element(view, "#piece-find-form"), %{"piece_find" => %{"query" => "heron"}})
-    assert_push_event(view, "room-focus", %{id: "linked-poem-1", scroll: true})
+
+    assert_push_event(view, "room-focus", %{
+      id: "linked-poem-1",
+      focus_id: "piece-find-query",
+      scroll: true
+    })
+
     render_click(element(view, "#close-piece-find"))
+
+    render_hook(view, "find_in_piece", %{
+      "piece_find" => %{"query" => "heron"},
+      "_target" => ["piece_find", "query"]
+    })
+
+    refute has_element?(view, "#piece-find-form")
+
     refute has_element?(view, "#file-text mark")
     assert File.read!(host.path) == host.body
     assert File.read!(source.path) == source.body
@@ -69,7 +87,13 @@ defmodule StillWeb.WritingPieceFindTest do
 
     refute has_element?(view, "[data-search-target]")
     render_submit(element(view, "#piece-find-form"), %{"piece_find" => %{"query" => "heron"}})
-    assert_push_event(view, "room-focus", %{id: "file-passage-3", scroll: true})
+
+    assert_push_event(view, "room-focus", %{
+      id: "file-passage-3",
+      focus_id: "piece-find-query",
+      scroll: true
+    })
+
     assert has_element?(view, "#file-passage-3[data-search-target='true']")
   end
 end

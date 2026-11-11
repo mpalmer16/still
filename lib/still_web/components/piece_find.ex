@@ -49,7 +49,9 @@ defmodule StillWeb.PieceFind do
         :if={!@open}
         type="button"
         id="open-piece-find"
-        class="quiet-link"
+        class="sr-only"
+        tabindex="-1"
+        aria-keyshortcuts="Control+F Meta+F"
         phx-click="open_piece_find"
       >Find in this piece</button>
       <form
@@ -58,8 +60,9 @@ defmodule StillWeb.PieceFind do
         phx-change="find_in_piece"
         phx-submit="find_in_piece"
         role="search"
+        aria-label="Find in this piece"
       >
-        <label for="piece-find-query">Find in this piece</label>
+        <label for="piece-find-query" class="sr-only">Find in this piece</label>
         <input
           id="piece-find-query"
           type="search"
@@ -67,6 +70,8 @@ defmodule StillWeb.PieceFind do
           value={@query}
           maxlength="200"
           autocomplete="off"
+          placeholder="Find in this piece"
+          aria-describedby="piece-find-status"
           phx-debounce="120"
         />
         <p id="piece-find-status" role="status" aria-live="polite">

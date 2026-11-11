@@ -487,6 +487,9 @@ defmodule StillWeb.WritingLive do
      |> push_event("room-focus", %{id: "open-piece-find"})}
   end
 
+  def handle_event("find_in_piece", _, %{assigns: %{piece_find_open: false}} = socket),
+    do: {:noreply, socket}
+
   def handle_event("find_in_piece", %{"piece_find" => %{"query" => query}} = params, socket) do
     query = StillWeb.PieceFind.query(query)
 
@@ -500,7 +503,12 @@ defmodule StillWeb.WritingLive do
 
     socket =
       if target,
-        do: push_event(socket, "room-focus", %{id: elem(target, 0), scroll: true}),
+        do:
+          push_event(socket, "room-focus", %{
+            id: elem(target, 0),
+            focus_id: "piece-find-query",
+            scroll: true
+          }),
         else: socket
 
     {:noreply, socket}
@@ -1540,7 +1548,7 @@ defmodule StillWeb.WritingLive do
             title_in_body
             reference_sources={reference_sources(@linked_segments)}
           />
-          <.link id="edit-file" navigate={~p"/writing/#{@piece.id}/edit"} class="quiet-link">Change these words</.link>
+          <.link id="edit-file" navigate={~p"/writing/#{@piece.id}/edit"} class="quiet-link">Edit</.link>
           <.link navigate={~p"/writing"} class="quiet-link">Saved writing</.link>
           <button id="delete-file" phx-click="request_delete" class="quiet-link">Delete</button>
         </div>

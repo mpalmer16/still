@@ -23,6 +23,10 @@ defmodule StillWeb.EntryLiveTest do
     assert html =~ "Imported words"
     assert html =~ "with their spacing"
     refute has_element?(view, "#writing-form")
+    assert has_element?(view, "button", "Edit")
+    refute has_element?(view, "button", "Earlier words")
+    refute has_element?(view, "#notebook-previous, #notebook-next")
+    refute has_element?(view, "#wander-with-this")
     assert has_element?(view, "#copy-entry-reading button[aria-label='Copy text']")
 
     [payload] =
@@ -35,7 +39,7 @@ defmodule StillWeb.EntryLiveTest do
     assert %{"body" => ^original_body, "title" => ^original_title, "title_source" => "explicit"} =
              Jason.decode!(payload)
 
-    element(view, "button", "Change these words") |> render_click()
+    element(view, "button", "Edit") |> render_click()
 
     assert has_element?(
              view,
@@ -59,6 +63,10 @@ defmodule StillWeb.EntryLiveTest do
 
     {:ok, earlier, _} = live(conn, ~p"/w/#{saved.id}?read=1&version=#{version.id}")
     assert has_element?(earlier, "#copy-entry-version button[aria-label='Copy text']")
+    refute has_element?(earlier, "button", "Edit")
+    refute has_element?(earlier, "button", "Earlier words")
+    refute has_element?(earlier, "#notebook-previous, #notebook-next")
+    refute has_element?(earlier, "#wander-with-this")
 
     [payload] =
       earlier

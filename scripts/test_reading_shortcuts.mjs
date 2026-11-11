@@ -43,3 +43,23 @@ test('Command-F returns focus to an already open piece search', () => {
   assert.equal(query.focused, true)
   assert.equal(event.prevented, true)
 })
+
+test('Backspace cannot navigate away from a reader, but remains available while editing', () => {
+  const reader = {}
+  const root = {querySelector: selector => selector.includes(".reading-room") || selector.includes("#notebook-content") ? reader : null}
+  const plain = key('Backspace', {target: {closest: () => null}})
+  assert.equal(handleReadingShortcut(plain, root), true)
+  assert.equal(plain.prevented, true)
+
+  for (const selector of ['input', 'textarea', "[contenteditable='']", "[contenteditable='true']"]) {
+    const field = key('Backspace', {target: {closest: value => value.includes(selector) ? {} : null}})
+    assert.equal(handleReadingShortcut(field, root), false)
+    assert.equal(field.prevented, false)
+  }
+  const composing = key('Backspace', {isComposing: true, target: {closest: () => null}})
+  assert.equal(handleReadingShortcut(composing, root), false)
+  assert.equal(composing.prevented, false)
+  const outside = key('Backspace', {target: {closest: () => null}})
+  assert.equal(handleReadingShortcut(outside, {querySelector: () => null}), false)
+  assert.equal(outside.prevented, false)
+})

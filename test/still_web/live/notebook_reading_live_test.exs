@@ -37,8 +37,10 @@ defmodule StillWeb.NotebookReadingLiveTest do
     assert has_element?(view, "#notebook-content", "First words")
     assert has_element?(view, "#notebook-content", "indented")
     refute has_element?(view, "#notebook-previous")
-    assert has_element?(view, "#notebook-next[href*='/notebooks/read/#{second.id}']")
+    assert has_element?(view, "#reader-list-#{second.id} a[href*='/notebooks/read/#{second.id}']")
     assert has_element?(view, "#wander-with-this")
+    assert has_element?(view, "#open-piece-find.sr-only[tabindex='-1']")
+    assert has_element?(view, "#notebook-content .piece-find")
     assert Writing.current_writing() == nil
 
     view |> element("#open-piece-find") |> render_click()
@@ -54,13 +56,19 @@ defmodule StillWeb.NotebookReadingLiveTest do
     render_submit(element(view, "#piece-find-form"), %{"piece_find" => %{"query" => "indented"}})
     assert has_element?(view, "#passage-3[data-search-target='true'] mark", "indented")
     view |> element("#close-piece-find") |> render_click()
+
+    render_hook(view, "find_in_piece", %{
+      "piece_find" => %{"query" => "heron"},
+      "_target" => ["piece_find", "query"]
+    })
+
+    refute has_element?(view, "#piece-find-form")
     refute has_element?(view, "#list-body mark")
 
-    view |> element("#notebook-next") |> render_click()
+    view |> element("#reader-list-#{second.id} a") |> render_click()
     assert has_element?(view, "#notebook-sidebar a[aria-current='page']", "Second title:")
     assert has_element?(view, "#notebook-content", "Second words")
-    assert has_element?(view, "#notebook-previous[href*='/notebooks/read/#{first.id}']")
-    refute has_element?(view, "#notebook-next")
+    assert has_element?(view, "#reader-list-#{first.id} a")
   end
 
   test "ordinary file copy keeps its authored title once and earlier words stay read-only", %{
@@ -118,6 +126,15 @@ defmodule StillWeb.NotebookReadingLiveTest do
 
     {:ok, earlier, _html} = live(conn, ~p"/notebooks/read/#{entry.id}?version=#{version.id}")
     assert has_element?(earlier, ".historical-notice", "Earlier words")
+    refute has_element?(earlier, "#notebook-previous, #notebook-next")
+
+    assert earlier
+           |> render()
+           |> LazyHTML.from_fragment()
+           |> LazyHTML.query("#wander-with-this")
+           |> LazyHTML.to_tree()
+           |> length() == 1
+
     assert has_element?(earlier, "#notebook-content", "Body line")
     refute has_element?(earlier, "#writing-form")
     refute has_element?(earlier, "#writing-body")
@@ -200,6 +217,16 @@ defmodule StillWeb.NotebookReadingLiveTest do
              "#list-#{saved.id} .notebook-list-actions a[href^='/w/#{saved.id}?']",
              "Wander"
            )
+  end
+
+  test "Edit opens a historical notebook piece directly without changing its words", %{conn: conn} do
+    source = entry("edit-source", "Field book edit", "Original title", "  Words kept\nexactly.")
+    {:ok, reader, _} = live(conn, ~p"/notebooks/read/#{source.id}")
+    assert has_element?(reader, "a[href='/w/#{source.id}?edit=1']", "Edit")
+    {:ok, editor, _} = live(conn, ~p"/w/#{source.id}?edit=1")
+    assert has_element?(editor, "#writing-body", "Words kept")
+    assert Repo.get!(Entry, source.id).body == source.body
+    assert Writing.list_versions(source) == []
   end
 
   defp entry(key, notebook, title, body) do

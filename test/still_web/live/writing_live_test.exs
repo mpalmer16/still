@@ -129,7 +129,7 @@ defmodule StillWeb.WritingLiveTest do
     wander_path = ~p"/w/#{saved.entry_id}?read=1"
     edit_path = ~p"/writing/#{saved.id}/edit?from=wander"
     {:ok, wander, _} = live(conn, wander_path)
-    assert has_element?(wander, ~s(a[href="#{edit_path}"]), "Change these words")
+    assert has_element?(wander, ~s(a[href="#{edit_path}"]), "Edit")
 
     {:ok, edit, _} = live(conn, edit_path)
     assert has_element?(edit, ~s(#back-to-wander[href="#{wander_path}"]), "Back to Wander")

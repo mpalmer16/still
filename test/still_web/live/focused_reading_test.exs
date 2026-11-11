@@ -146,16 +146,23 @@ defmodule StillWeb.FocusedReadingTest do
              "Contents"
            )
 
+    refute has_element?(reader, "#notebook-next, #notebook-previous")
+
     assert has_element?(
              reader,
-             "#notebook-next[href^='/notebooks/read/#{second.id}?'][href*='from=notebook']"
+             "#reader-list-#{second.id} a[href^='/notebooks/read/#{second.id}?'][href*='from=notebook']"
            )
 
     refute has_element?(reader, ".gravity-presence, .drift-room, .passage-listen")
     assert has_element?(reader, "#wander-with-this[href^='/w/#{first.id}?']", "Wander with this")
 
     {:ok, second_reader, _} = live(conn, ReadingLinks.reader(second, context))
-    assert has_element?(second_reader, "#notebook-previous[href^='/notebooks/read/#{first.id}?']")
+
+    assert has_element?(
+             second_reader,
+             "#reader-list-#{first.id} a[href^='/notebooks/read/#{first.id}?']"
+           )
+
     assert ReadingPlace.last().entry.id == second.id
 
     {:ok, wander, _} = live(conn, ~p"/w/#{elsewhere.id}?read=1")
@@ -185,8 +192,16 @@ defmodule StillWeb.FocusedReadingTest do
     selected = Enum.at(entries, 140)
     {:ok, found, _} = live(conn, ~p"/pages?q=cobalt")
     for _ <- 1..3, do: found |> element("button", "Keep looking") |> render_click()
-    assert has_element?(found, ".entry-row[href^='/read/#{hd(entries).id}?'][href*='shown=160']")
-    assert has_element?(found, ".entry-row[href^='/read/#{selected.id}?'][href*='shown=160']")
+
+    assert has_element?(
+             found,
+             ".entry-row[href^='/notebooks/read/#{hd(entries).id}?'][href*='shown=160']"
+           )
+
+    assert has_element?(
+             found,
+             ".entry-row[href^='/notebooks/read/#{selected.id}?'][href*='shown=160']"
+           )
 
     context = %{
       "from" => "find",
@@ -216,6 +231,77 @@ defmodule StillWeb.FocusedReadingTest do
            |> length() == 145
   end
 
+  test "notebook Find keeps its result context through sidebar reading and Wander", %{conn: conn} do
+    first = piece("Find heron", 1)
+    second = piece("Nearby fox", 2)
+    {:ok, found, _} = live(conn, ~p"/pages?q=heron")
+
+    assert has_element?(
+             found,
+             ".entry-row[href^='/notebooks/read/#{first.id}?'][href*='from=find']"
+           )
+
+    {:ok, reader, _} =
+      live(
+        conn,
+        ReadingLinks.reader(first, %{
+          "from" => "find",
+          "q" => "heron",
+          "shown" => 40,
+          "at" => "current-#{first.id}"
+        })
+      )
+
+    assert has_element?(
+             reader,
+             "#reading-origin[href*='q=heron'][href*='at=current-#{first.id}']",
+             "Back to results"
+           )
+
+    assert has_element?(reader, "#reading-origin-bottom[href*='q=heron']", "Back to results")
+
+    assert has_element?(
+             reader,
+             "#reader-list-#{second.id} a[href*='from=find'][href*='q=heron']"
+           )
+
+    reader
+    |> element("#notebook-sidebar a[href*='/notebooks/read/#{second.id}']")
+    |> render_click()
+
+    assert has_element?(reader, "#notebook-content", "Nearby fox")
+
+    assert has_element?(
+             reader,
+             "#reading-origin[href^='/pages?'][href*='q=heron'][href*='shown=40']",
+             "Back to results"
+           )
+
+    context = %{
+      "from" => "find",
+      "q" => "heron",
+      "shown" => 40,
+      "at" => "current-#{second.id}"
+    }
+
+    {:ok, wander, _} = live(conn, ReadingLinks.wander(second, context))
+
+    assert has_element?(
+             wander,
+             "#return-to-reading[href^='/notebooks/read/#{second.id}?'][href*='q=heron']"
+           )
+
+    {:ok, returned, _} = live(conn, ReadingLinks.reader(second, context))
+    assert has_element?(returned, "#notebook-content", "Nearby fox")
+    assert has_element?(returned, "#reading-origin[href*='q=heron']", "Back to results")
+    returned |> element("#reading-origin-bottom") |> render_click()
+
+    assert_redirect(
+      returned,
+      ~p"/pages?at=current-#{second.id}&q=heron&shown=40#results-current-#{second.id}"
+    )
+  end
+
   test "an earlier Find match stays read only when moving into Wander and returning", %{
     conn: conn
   } do
@@ -235,17 +321,17 @@ defmodule StillWeb.FocusedReadingTest do
     }
 
     {:ok, reader, _} = live(conn, ReadingLinks.reader(current, context))
-    refute has_element?(reader, ".historical-reading mark")
+    refute has_element?(reader, "#notebook-content mark")
     refute has_element?(reader, "textarea, button[phx-click='restore_version']")
     assert has_element?(reader, "#wander-with-this[href*='version=#{version.id}']")
     {:ok, wander, _} = live(conn, ReadingLinks.wander(current, context))
     assert has_element?(wander, "#return-to-reading[href*='version=#{version.id}']")
     {:ok, back, _} = live(conn, ReadingLinks.resume(ReadingPlace.last()))
-    refute has_element?(back, ".historical-reading mark")
+    refute has_element?(back, "#notebook-content mark")
     assert has_element?(back, "a[href*='q=heron']", "Back to results")
     back |> element("#open-piece-find") |> render_click()
     render_submit(element(back, "#piece-find-form"), %{"piece_find" => %{"query" => "heron"}})
-    assert has_element?(back, ".historical-reading mark", "heron")
+    assert has_element?(back, "#notebook-content mark", "heron")
 
     assert has_element?(
              back,

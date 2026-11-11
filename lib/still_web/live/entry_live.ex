@@ -28,7 +28,6 @@ defmodule StillWeb.EntryLive do
      |> assign(:reading_scope, nil)
      |> assign(:reading_context, %{})
      |> assign(:reader_return, nil)
-     |> assign(:notebook_neighbors, nil)
      |> assign(:form, to_form(Writing.change_entry(Writing.new_entry())))
      |> assign(:status, :quiet)
      |> assign(:recovery_available, false)
@@ -75,7 +74,7 @@ defmodule StillWeb.EntryLive do
     focused = socket.assigns.live_action == :read
 
     cond do
-      focused && params["from"] == "notebook" ->
+      focused && ReadingLinks.notebook_reader?(entry, params) ->
         {:noreply,
          push_navigate(socket,
            to: ReadingLinks.reader(entry, ReadingPlace.context(entry, params))
@@ -87,7 +86,8 @@ defmodule StillWeb.EntryLive do
         {:noreply, assign(socket, :page_title, Writing.opening(entry))}
 
       true ->
-        editing = false
+        editing =
+          not focused and is_nil(version) and entry.origin == "before" and params["edit"] == "1"
 
         if connected?(socket) do
           Writing.remember_visit(entry)
@@ -193,7 +193,6 @@ defmodule StillWeb.EntryLive do
          |> assign(:previous_reading, nil)
          |> assign(:listening_line, nil)
          |> assign(:echo_attention, nil)
-         |> assign(:notebook_neighbors, nil)
          |> assign(:form, to_form(Writing.change_entry(Writing.new_entry())))
          |> assign(:page_title, "Write")
          |> assign(:editing, true)
@@ -235,6 +234,9 @@ defmodule StillWeb.EntryLive do
      |> push_event("room-focus", %{id: "open-piece-find"})}
   end
 
+  def handle_event("find_in_piece", _, %{assigns: %{piece_find_open?: false}} = socket),
+    do: {:noreply, socket}
+
   def handle_event("find_in_piece", %{"piece_find" => %{"query" => query}} = params, socket) do
     query = PieceFind.query(query)
 
@@ -255,7 +257,12 @@ defmodule StillWeb.EntryLive do
 
     socket =
       if target_line,
-        do: push_event(socket, "room-focus", %{id: "passage-#{target_line}", scroll: true}),
+        do:
+          push_event(socket, "room-focus", %{
+            id: "passage-#{target_line}",
+            focus_id: "piece-find-query",
+            scroll: true
+          }),
         else: socket
 
     {:noreply, socket}
@@ -728,7 +735,6 @@ defmodule StillWeb.EntryLive do
     |> assign(:list_interpretation, if(editing, do: interpretation(entry, list?), else: nil))
     |> assign(:draft_scope, "")
     |> assign(:return_list, Writing.current_list_draft?())
-    |> assign(:notebook_neighbors, if(editing, do: nil, else: Writing.notebook_neighbors(entry)))
     |> assign(
       :connections,
       if(quiet?,
@@ -896,11 +902,6 @@ defmodule StillWeb.EntryLive do
 
   defp reading_path(%{origin: "now", id: id}, crossing), do: ~p"/w/#{id}?read=1&cross=#{crossing}"
   defp reading_path(%{id: id}, crossing), do: ~p"/w/#{id}?cross=#{crossing}"
-
-  defp sequence_path(entry, %{focused_reading: true, reading_context: context}),
-    do: ReadingLinks.reader(entry, Map.put(context, "version", nil))
-
-  defp sequence_path(entry, _assigns), do: ~p"/w/#{entry.id}?read=1"
 
   defp accept_list_title(attrs, socket) do
     body = Map.get(attrs, "body", "")
@@ -1192,6 +1193,11 @@ defmodule StillWeb.EntryLive do
             query={if @piece_find_open?, do: @piece_find_query, else: ""}
           />
         </h1>
+        <StillWeb.PieceFind.panel
+          open={@piece_find_open?}
+          query={@piece_find_query}
+          matches={@piece_find_matches}
+        />
         <div class="list-body historical-body">
           <.shaped_words
             body={@historical_version.body}
@@ -1207,11 +1213,6 @@ defmodule StillWeb.EntryLive do
             title={@historical_version.title}
             title_source={if @historical_version.title, do: "explicit", else: "first_line"}
             title_in_body={not is_nil(@entry.file_id)}
-          />
-          <StillWeb.PieceFind.panel
-            open={@piece_find_open?}
-            query={@piece_find_query}
-            matches={@piece_find_matches}
           />
           <.reader_actions :if={@focused_reading} entry={@entry} context={@reading_context} />
           <.link
@@ -1264,6 +1265,11 @@ defmodule StillWeb.EntryLive do
             />
           </h1>
         </header>
+        <StillWeb.PieceFind.panel
+          open={@piece_find_open?}
+          query={@piece_find_query}
+          matches={@piece_find_matches}
+        />
         <div class="list-body" id="list-body">
           <StillWeb.Echoes.reading
             :if={@entry.origin == "before" || @entry.file_id}
@@ -1292,11 +1298,6 @@ defmodule StillWeb.EntryLive do
             title={@entry.title}
             title_source={if @entry.title, do: "explicit", else: "first_line"}
             title_in_body={not is_nil(@entry.file_id)}
-          />
-          <StillWeb.PieceFind.panel
-            open={@piece_find_open?}
-            query={@piece_find_query}
-            matches={@piece_find_matches}
           />
           <button
             :if={@wander_mode? && @submission_focus_supported?}
@@ -1327,7 +1328,7 @@ defmodule StillWeb.EntryLive do
             navigate={results_path(@search_query, @search_earlier, @search_written)}
             class="quiet-link"
           >Back to results</.link>
-          <button :if={@entry.origin == "before"} type="button" class="quiet-link" phx-click="edit">Change these words</button>
+          <button :if={@entry.origin == "before"} type="button" class="quiet-link" phx-click="edit">Edit</button>
           <.link
             :if={@entry.file_id}
             navigate={
@@ -1336,7 +1337,7 @@ defmodule StillWeb.EntryLive do
                 else: ~p"/writing/#{@entry.file_id}/edit?from=wander"
             }
             class="quiet-link"
-          >Change these words</.link>
+          >Edit</.link>
           <button
             :if={@entry.origin == "before"}
             id="add-to-saved-writing"
@@ -1346,7 +1347,6 @@ defmodule StillWeb.EntryLive do
             phx-disable-with="Opening saved writing…"
           >Add to saved writing</button>
 
-          <button type="button" class="quiet-link" phx-click="toggle_versions">Earlier words</button>
           <.link
             :if={
               !@focused_reading && (@entry.origin == "before" || @entry.file_id) && @entry.notebook
@@ -1356,34 +1356,7 @@ defmodule StillWeb.EntryLive do
             class="quiet-link"
           >{@place.label} · index</.link>
         </div>
-        <nav
-          :if={@notebook_neighbors}
-          class="notebook-sequence"
-          aria-label={"Read #{@notebook_neighbors.notebook} in source order"}
-        >
-          <.link
-            :if={@notebook_neighbors.previous}
-            id="notebook-previous"
-            navigate={sequence_path(@notebook_neighbors.previous, assigns)}
-            class="quiet-link"
-            aria-label={"Previous List: #{Writing.opening(@notebook_neighbors.previous)}"}
-          >
-            <span>Previous</span><span class="sequence-title"><.list_title text={
-              Writing.opening(@notebook_neighbors.previous)
-            } /></span>
-          </.link>
-          <.link
-            :if={@notebook_neighbors.next}
-            id="notebook-next"
-            navigate={sequence_path(@notebook_neighbors.next, assigns)}
-            class="quiet-link"
-            aria-label={"Next List: #{Writing.opening(@notebook_neighbors.next)}"}
-          >
-            <span>Next</span><span class="sequence-title"><.list_title text={
-              Writing.opening(@notebook_neighbors.next)
-            } /></span>
-          </.link>
-        </nav>
+
         <.versions open={@versions_open} versions={@versions} />
 
         <section
@@ -1564,11 +1537,6 @@ defmodule StillWeb.EntryLive do
     >
       {if @context["from"] == "notebook", do: "Contents", else: "Back to results"}
     </.link>
-    <.link
-      id="wander-with-this-bottom"
-      navigate={ReadingLinks.wander(@entry, @context)}
-      class="quiet-link"
-    >Wander with this</.link>
     """
   end
 

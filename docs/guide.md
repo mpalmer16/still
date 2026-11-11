@@ -142,8 +142,8 @@ a passage, select its text, or Tab to it to draw related echoes. The echoes stay
 available as you move the pointer to them. Choose **Whole page** to clear the
 passage focus.
 
-Notebook contents and Find results open a quiet reader under Find. **Previous**
-and **Next** keep you in the notebook; **Contents** returns to the selected List
+Notebook contents and notebook-associated Find results open the notebook reader.
+Choose another piece in the index; **Contents** returns to the selected List
 in its index. A Find match keeps its query, earlier-words choice and place in
 the results, including results revealed with **Keep looking**.
 
@@ -487,8 +487,7 @@ the ordinary text root separately to retain current writing.
 
 Open **Notebooks**, choose a notebook, and open a piece. The index stays on the
 left while the words appear in the middle. On wide displays the reading page
-expands to allow longer lines, and its location header stays transparent. Choose another piece or use Previous
-and Next to read in notebook order. On a narrow window, Notebook index switches
+expands to allow longer lines, and its location header stays transparent. Choose another piece in the index to read in notebook order. On a narrow window, Notebook index switches
 between the index and the page. Continue reading returns to the saved place.
 Wander with this takes the current piece into Wander and keeps a way back.
 
@@ -496,6 +495,11 @@ Find opens a focused reader with a way back to the same search results. If the
 writing folder cannot be read or another Still is updating it, Find explains the
 problem and offers Try again; an unavailable collection is never an empty result.
 
-Opening a piece from Find leaves its words unmarked. **Find in this piece** (Cmd/Ctrl+F)
-opens a separate search within the current piece; Close or Escape clears those marks.
+Opening a piece from Find leaves its words unmarked. Notebook pieces open beside
+their notebook index; **Back to results** keeps the search, result count, and selected
+result. Pressing Enter in the collection search keeps the query and its results.
+Cmd/Ctrl+F opens a compact search at the upper right of the current piece. Finding a
+match scrolls the words while keeping the search field ready for typing; Backspace
+edits the query. Close or Escape clears the local marks. The bottom controls keep
+Copy, Back to results when applicable, and Edit; Wander stays in the header.
 Escape stays on the current piece when there is no search or menu to close.

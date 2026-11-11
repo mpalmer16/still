@@ -390,8 +390,9 @@ window.addEventListener("phx:room-focus", ({detail}) => {
     else if (!roomFocusReturn?.isConnected) roomFocusReturn = document.activeElement
     requestAnimationFrame(() => {
       const target = document.getElementById(detail.id)
-      if (target?.linkedEditor) target.linkedEditor.focus()
-      else target?.focus({preventScroll: true})
+      const focusTarget = detail.focus_id ? document.getElementById(detail.focus_id) : target
+      if (focusTarget?.linkedEditor) focusTarget.linkedEditor.focus()
+      else focusTarget?.focus({preventScroll: true})
       if (detail.scroll) target?.scrollIntoView({block: "center"})
     })
   } else if (roomFocusReturn?.isConnected) {
@@ -427,11 +428,9 @@ document.addEventListener("keydown", event => {
     event.preventDefault()
     document.querySelector("#light-toggle")?.click()
   }
-  if (!field && event.altKey && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
+  if (!field && event.altKey && !event.shiftKey && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
     if (roomIsOpen) { event.preventDefault(); return }
-    const door = document.querySelector(event.shiftKey
-      ? (event.key === "ArrowLeft" ? "#notebook-previous" : "#notebook-next")
-      : (event.key === "ArrowLeft" ? "#move-near" : "#move-far"))
+    const door = document.querySelector(event.key === "ArrowLeft" ? "#move-near" : "#move-far")
     if (door) { event.preventDefault(); door.click() }
   }
   if (!field && event.altKey && !event.metaKey && !event.ctrlKey && event.key === "ArrowUp") {

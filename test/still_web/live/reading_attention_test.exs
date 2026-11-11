@@ -71,7 +71,7 @@ defmodule StillWeb.ReadingAttentionTest do
     anchor = historical("opal quartz orchard\n\nlantern compass resting")
     {:ok, view, _} = live(conn, ~p"/w/#{anchor.id}?read=1")
 
-    render_click(element(view, "button", "Change these words"))
+    render_click(element(view, "button", "Edit"))
 
     render_hook(view, "echo_attention", %{
       "id" => anchor.id,

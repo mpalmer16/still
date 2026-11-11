@@ -14,8 +14,6 @@ defmodule StillWeb.NotebookReadingLive do
        entry: nil,
        version: nil,
        version_missing: false,
-       previous: nil,
-       next: nil,
        reading_context: %{},
        versions: [],
        words: nil,
@@ -57,10 +55,9 @@ defmodule StillWeb.NotebookReadingLive do
           context =
             ReadingPlace.context(
               entry,
-              Map.put(params, "from", "notebook") |> Map.put("notebook", key)
+              Map.put_new(params, "from", "notebook") |> Map.put("notebook", key)
             )
 
-          {previous, next} = neighbors(notebook, entry.id)
           location = Storage.collection_location()
           status = Correspondence.writing_status(location)
 
@@ -87,8 +84,6 @@ defmodule StillWeb.NotebookReadingLive do
              version: version,
              version_missing: not is_nil(params["version"]) and is_nil(version),
              versions: Writing.list_versions(entry),
-             previous: previous,
-             next: next,
              reading_context: context,
              problem: nil,
              sidebar_open: false,
@@ -126,6 +121,9 @@ defmodule StillWeb.NotebookReadingLive do
      |> push_event("room-focus", %{id: "open-piece-find"})}
   end
 
+  def handle_event("find_in_piece", _, %{assigns: %{piece_find_open?: false}} = socket),
+    do: {:noreply, socket}
+
   def handle_event("find_in_piece", %{"piece_find" => %{"query" => query}} = params, socket) do
     query = PieceFind.query(query)
 
@@ -143,7 +141,12 @@ defmodule StillWeb.NotebookReadingLive do
 
     socket =
       if target_line,
-        do: push_event(socket, "room-focus", %{id: "passage-#{target_line}", scroll: true}),
+        do:
+          push_event(socket, "room-focus", %{
+            id: "passage-#{target_line}",
+            focus_id: "piece-find-query",
+            scroll: true
+          }),
         else: socket
 
     {:noreply, socket}
@@ -223,7 +226,7 @@ defmodule StillWeb.NotebookReadingLive do
               id="reading-origin"
               navigate={ReadingLinks.origin(%{entry: @entry, context: @reading_context})}
               class="quiet-link"
-            >Contents</.link>
+            >{if @reading_context["from"] == "find", do: "Back to results", else: "Contents"}</.link>
             <span class="reader-reference">{Writing.reference_label(@entry)}</span>
             <.link
               navigate={ReadingLinks.wander(@entry, @reading_context)}
@@ -296,42 +299,23 @@ defmodule StillWeb.NotebookReadingLive do
                 title_source={if @words.title, do: "explicit", else: "first_line"}
                 title_in_body={not is_nil(@entry.file_id)}
               />
-              <.link :if={@entry.origin == "before"} navigate={~p"/w/#{@entry.id}"} class="quiet-link">Change these words</.link>
+              <.link
+                :if={@reading_context["from"] == "find"}
+                id="reading-origin-bottom"
+                navigate={ReadingLinks.origin(%{entry: @entry, context: @reading_context})}
+                class="quiet-link"
+              >Back to results</.link>
+              <.link
+                :if={@entry.origin == "before"}
+                navigate={~p"/w/#{@entry.id}?edit=1"}
+                class="quiet-link"
+              >Edit</.link>
               <.link
                 :if={@entry.file_id}
                 navigate={~p"/writing/#{@entry.file_id}/edit"}
                 class="quiet-link"
-              >Change these words</.link>
-              <details :if={@versions != []} class="notebook-earlier-words">
-                <summary>Earlier words</summary>
-                <ul>
-                  <li :for={version <- @versions}>
-                    <.link patch={
-                      ReadingLinks.reader(@entry, Map.put(@reading_context, "version", version.id))
-                    }>
-                      {version.title || "Untitled"} · {Calendar.strftime(
-                        version.inserted_at,
-                        "%B %d, %Y"
-                      )}
-                    </.link>
-                  </li>
-                </ul>
-              </details>
+              >Edit</.link>
             </div>
-            <nav class="notebook-sequence" aria-label="Move through this notebook">
-              <.link
-                :if={@previous}
-                id="notebook-previous"
-                patch={reader_path(@previous, @notebook, @reading_context)}
-                class="quiet-link"
-              >Previous</.link>
-              <.link
-                :if={@next}
-                id="notebook-next"
-                patch={reader_path(@next, @notebook, @reading_context)}
-                class="quiet-link"
-              >Next</.link>
-            </nav>
           </div>
         </article>
       </div>
@@ -343,7 +327,7 @@ defmodule StillWeb.NotebookReadingLive do
     ReadingLinks.reader(
       entry,
       context
-      |> Map.put("from", "notebook")
+      |> Map.put_new("from", "notebook")
       |> Map.put("notebook", notebook && notebook.key)
       |> Map.put("version", nil)
     )
@@ -360,14 +344,5 @@ defmodule StillWeb.NotebookReadingLive do
       |> IO.iodata_to_binary()
 
     PieceFind.match_count(text, query)
-  end
-
-  defp neighbors(notebook, id) do
-    entries = Enum.flat_map(notebook.sections, & &1.entries)
-
-    case Enum.find_index(entries, &(&1.id == id)) do
-      nil -> {nil, nil}
-      index -> {if(index > 0, do: Enum.at(entries, index - 1)), Enum.at(entries, index + 1)}
-    end
   end
 end

@@ -51,6 +51,14 @@ defmodule StillWeb.ReadingImprovementsTest do
 
     assert has_element?(read, "#piece-find-status", "No matches in this piece")
     render_click(element(read, "#close-piece-find"))
+
+    render_hook(read, "find_in_piece", %{
+      "piece_find" => %{"query" => "heron"},
+      "_target" => ["piece_find", "query"]
+    })
+
+    refute has_element?(read, "#piece-find-form")
+
     refute has_element?(read, ".reading-room mark")
     assert has_element?(read, "a[href*='q=heron+cafe']", "Back to results")
     refute has_element?(read, "#close-piece-find")
@@ -70,7 +78,7 @@ defmodule StillWeb.ReadingImprovementsTest do
     {:ok, found, _} = live(conn, ~p"/pages?q=heron")
     refute has_element?(found, ".entry-row")
 
-    render_change(element(found, "#search-form"), %{
+    render_submit(element(found, "#search-form"), %{
       "search" => %{"query" => "heron", "earlier" => "true"}
     })
 
@@ -105,31 +113,22 @@ defmodule StillWeb.ReadingImprovementsTest do
     assert has_element?(invalid, ".recovery-note", "That earlier version isn't here")
   end
 
-  test "source neighbors cross sections in index order and retracing preserves pending writing",
+  test "neighbor order remains available without reader previous and next controls",
        %{conn: conn} do
     a = before("Root first", "Current Notebooks/2026/Notebook 1", 0)
     b = before("Root last", "Current Notebooks/2026/Notebook 1", 100)
     c = before("Corner first", "Current Notebooks/2026/Notebook 1/Jan - Mar", 0)
     Writing.begin_writing(a, writing_form: "list")
     {:ok, first, _} = live(conn, ~p"/w/#{a.id}?read=1")
-    refute has_element?(first, "#notebook-previous")
-    assert has_element?(first, "#notebook-next[href='/w/#{b.id}?read=1']")
-    {:ok, middle, _} = live(conn, ~p"/w/#{b.id}?read=1")
-    assert has_element?(middle, "#notebook-previous[href='/w/#{a.id}?read=1']")
-    assert has_element?(middle, "#notebook-next[href='/w/#{c.id}?read=1']")
-    {:ok, last, _} = live(conn, ~p"/w/#{c.id}?read=1")
-    refute has_element?(last, "#notebook-next")
-    last |> element("#reading-back") |> render_click()
-    assert_redirect(last, ~p"/w/#{b.id}?read=1")
-    {:ok, returned, _} = live(conn, ~p"/w/#{b.id}?read=1")
-    returned |> element("#reading-back") |> render_click()
-    assert_redirect(returned, ~p"/w/#{a.id}?read=1")
+    refute has_element?(first, "#notebook-previous, #notebook-next")
     assert Writing.current_writing() == nil
     assert Writing.current_beside().id == a.id
     assert Writing.current_list_draft?()
     assert Writing.list_versions(a) == []
     {:ok, edited} = Writing.save_entry(a, "Edited words", title: "Later title")
     assert Writing.notebook_neighbors(edited).next.id == b.id
+    assert Writing.notebook_neighbors(b).previous.id == a.id
+    assert Writing.notebook_neighbors(b).next.id == c.id
   end
 
   test "retracing a search restores its matched passage", %{conn: conn} do

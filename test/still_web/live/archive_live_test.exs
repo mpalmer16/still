@@ -54,7 +54,7 @@ defmodule StillWeb.ArchiveLiveTest do
 
     assert has_element?(
              found,
-             ".entry-row[href^='/read/#{entry.id}?'] .entry-notebook",
+             ".entry-row[href^='/notebooks/read/#{entry.id}?'][href*='from=find'] .entry-notebook",
              "Early/Notebook 3, No. 14"
            )
 
@@ -66,13 +66,13 @@ defmodule StillWeb.ArchiveLiveTest do
 
     assert has_element?(
              earlier,
-             ".entry-row[href^='/read/#{entry.id}?'][href*='version=#{version.id}'] .entry-notebook",
+             ".entry-row[href^='/notebooks/read/#{entry.id}?'][href*='from=find'][href*='version=#{version.id}'] .entry-notebook",
              "Early/Notebook 3, No. 14"
            )
 
     assert has_element?(
              earlier,
-             ".entry-row[href^='/read/#{entry.id}?'][href*='version=#{version.id}'] .earlier-label",
+             ".entry-row[href^='/notebooks/read/#{entry.id}?'][href*='from=find'][href*='version=#{version.id}'] .earlier-label",
              "Earlier words"
            )
   end

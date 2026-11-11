@@ -8,20 +8,37 @@ defmodule StillWeb.ReadingLinks do
   def reader(entry_or_id, context \\ %{}) do
     id = id(entry_or_id)
 
+    build_reader_path(
+      id,
+      normalized(entry_or_id, context),
+      notebook_reader?(entry_or_id, context)
+    )
+  end
+
+  @doc "Build a link from a verified Find result without querying each earlier version again."
+  def find_result(%{entry: %Entry{} = entry, version: version}, context) do
+    context = Map.put(context, "version", if(version, do: version.id))
+    build_reader_path(entry.id, context, notebook_reader?(entry, context))
+  end
+
+  defp build_reader_path(id, context, notebook?) do
     params =
-      normalized(entry_or_id, context)
+      context
       |> Map.take(@reader_keys)
       |> Enum.reject(fn {_k, v} -> is_nil(v) or v == "" or v == false end)
 
     query = URI.encode_query(params)
-
-    base =
-      if context_value(context, "from") == "notebook",
-        do: "/notebooks/read/#{id}",
-        else: "/read/#{id}"
-
+    base = if notebook?, do: "/notebooks/read/#{id}", else: "/read/#{id}"
     base <> if(query == "", do: "", else: "?" <> query)
   end
+
+  def notebook_reader?(%Entry{} = entry, context) do
+    context_value(context, "from") == "notebook" or
+      (is_binary(entry.notebook) and String.trim(entry.notebook) != "") or
+      is_integer(entry.notebook_id)
+  end
+
+  def notebook_reader?(_, context), do: context_value(context, "from") == "notebook"
 
   def resume(%{entry: entry, context: context}), do: reader(entry, context)
   def resume(_), do: nil

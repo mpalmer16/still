@@ -54,7 +54,7 @@ defmodule StillWeb.BeforeLiveTest do
   test "editing before retains title and words together in history", %{conn: conn} do
     entry = piece()
     {:ok, view, _} = live(conn, ~p"/w/#{entry.id}")
-    view |> element("button", "Change these words") |> render_click()
+    view |> element("button", "Edit") |> render_click()
     assert has_element?(view, "#writing-title")
 
     view
@@ -74,6 +74,7 @@ defmodule StillWeb.BeforeLiveTest do
     assert [%{title: "The:Uncertain:Light:", body: original}] = Writing.list_versions(saved)
     assert original == entry.body
 
+    view |> element("button", "Edit") |> render_click()
     view |> element("button", "Earlier words") |> render_click()
     view |> element(".version-row button") |> render_click()
     assert Writing.get_entry!(entry.id).body == entry.body
@@ -101,7 +102,7 @@ defmodule StillWeb.BeforeLiveTest do
   } do
     entry = piece()
     {:ok, view, _} = live(conn, ~p"/w/#{entry.id}")
-    element(view, "button", "Change these words") |> render_click()
+    element(view, "button", "Edit") |> render_click()
 
     render_submit(element(view, "#writing-form"), %{
       "entry" => %{"title" => entry.title, "body" => entry.body}
@@ -155,7 +156,7 @@ defmodule StillWeb.BeforeLiveTest do
   test "a title in ordinary words finds its colon form without invented chronology", %{conn: conn} do
     entry = piece()
     {:ok, view, _} = live(conn, ~p"/pages?q=uncertain%20light")
-    assert has_element?(view, "a[href^='/read/#{entry.id}?']")
+    assert has_element?(view, "a[href^='/notebooks/read/#{entry.id}?']")
     assert has_element?(view, ".entry-notebook", "Early/Notebook 1")
     refute has_element?(view, "time")
   end
@@ -164,7 +165,7 @@ defmodule StillWeb.BeforeLiveTest do
        %{conn: conn} do
     entry = piece()
     {:ok, view, _} = live(conn, ~p"/w/#{entry.id}")
-    view |> element("button", "Change these words") |> render_click()
+    view |> element("button", "Edit") |> render_click()
 
     view
     |> element("#writing-form")
@@ -206,6 +207,7 @@ defmodule StillWeb.BeforeLiveTest do
       Writing.save_entry(original, "Current words", title: "Current:", checkpoint: true)
 
     {:ok, view, _} = live(conn, ~p"/w/#{current.id}")
+    view |> element("button", "Edit") |> render_click()
     view |> element("button", "Earlier words") |> render_click()
 
     {:ok, other_window} =

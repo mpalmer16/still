@@ -126,7 +126,7 @@ defmodule StillWeb.ArchiveLive do
       "version" => if(result.version, do: result.version.id)
     }
 
-    ReadingLinks.reader(result.entry.id, context) <>
+    ReadingLinks.find_result(result, context) <>
       if(result.line, do: "#passage-#{result.line}", else: "#reading-title")
   end
 
@@ -185,7 +185,14 @@ defmodule StillWeb.ArchiveLive do
           >Saved writing</.link>
           <.link id="storage-settings" navigate={~p"/storage"} class="quiet-link">Storage &amp; Backups</.link>
         </nav>
-        <.form for={@form} id="search-form" phx-change="search" class="search-form" role="search">
+        <.form
+          for={@form}
+          id="search-form"
+          phx-change="search"
+          phx-submit="search"
+          class="search-form"
+          role="search"
+        >
           <.input
             field={@form[:query]}
             type="search"

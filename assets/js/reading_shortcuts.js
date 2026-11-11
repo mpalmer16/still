@@ -20,5 +20,15 @@ export function handleReadingShortcut(event, root = document) {
     close.click()
     return true
   }
+  if (event.key === "Backspace" && !event.isComposing && !event.target?.isComposing) {
+    const target = event.target
+    const editable = target?.closest?.("input, textarea, [contenteditable=''], [contenteditable='true']") ||
+      target?.isContentEditable
+    const reader = root.querySelector?.(".reading-room, #notebook-content")
+    if (!editable && reader) {
+      event.preventDefault()
+      return true
+    }
+  }
   return false
 }
