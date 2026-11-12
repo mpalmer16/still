@@ -179,6 +179,19 @@ defmodule StillWeb.CalendarLiveTest do
 
     assert Regex.match?(Regex.compile!(properties["date"]["pattern"]), date)
     assert properties["category"]["enum"] == ~w(reading workshop deadline other)
+    url_pattern = Regex.compile!(properties["url"]["pattern"])
+
+    for url <- [
+          "https://example.org",
+          "http://example.org/events/reading",
+          "https://example.org/events/reading?date=2026-11-20&source=cal#tickets"
+        ] do
+      assert Regex.match?(url_pattern, url)
+    end
+
+    for url <- ["https://", "http://", "mailto:reader@example.org", "not a URL"] do
+      refute Regex.match?(url_pattern, url)
+    end
 
     assert {:ok, [_]} =
              CalendarImport.parse(

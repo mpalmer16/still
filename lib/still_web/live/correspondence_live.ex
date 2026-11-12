@@ -57,6 +57,8 @@ defmodule StillWeb.CorrespondenceLive do
        packet_search: "",
        import_plan: nil,
        import_result: nil,
+       upcoming_events: [],
+       events_problem: nil,
        calendar_events: [],
        calendar_today: NaiveDateTime.local_now() |> NaiveDateTime.to_date(),
        calendar_month:
@@ -462,8 +464,20 @@ defmodule StillWeb.CorrespondenceLive do
   defp load_overview(socket, location, action) do
     case Correspondence.focused_overview(location) do
       {:ok, overview} ->
+        {events, events_problem} =
+          if action == :home do
+            case Calendar.upcoming(location, NaiveDateTime.local_now() |> NaiveDateTime.to_date()) do
+              {:ok, events} -> {events, nil}
+              {:error, message} -> {[], message}
+            end
+          else
+            {[], nil}
+          end
+
         {:noreply,
          assign(socket,
+           upcoming_events: events,
+           events_problem: events_problem,
            location: location,
            overview: overview,
            page_title: title_for(action),
@@ -1856,6 +1870,8 @@ defmodule StillWeb.CorrespondenceLive do
           :if={@live_action == :home && @location.configured && @location.available}
           icons={@place_icons}
           overview={@overview}
+          upcoming_events={@upcoming_events}
+          events_problem={@events_problem}
         />
 
         <section

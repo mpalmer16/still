@@ -88,7 +88,7 @@
         ],
         "maxLength": 500,
         "description": "Optional complete HTTP or HTTPS URL with a hostname. Empty string or null means not supplied.",
-        "pattern": "^(?:$|[hH][tT][tT][pP][sS]?://)$"
+        "pattern": "^(?:$|[Hh][Tt][Tt][Pp][Ss]?://[^\\s/?#]+(?:[/?#][^\\s]*)?)$"
       },
       "notes": {
         "type": [

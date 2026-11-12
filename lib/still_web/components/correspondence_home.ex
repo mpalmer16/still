@@ -5,6 +5,8 @@ defmodule StillWeb.CorrespondenceHome do
   attr :overview, :map, required: true
   attr :desk, :map, default: %{}
   attr :icons, :map, default: %{}
+  attr :upcoming_events, :list, default: []
+  attr :events_problem, :string, default: nil
 
   def home(assigns) do
     packets = assigns.overview.packets || []
@@ -22,6 +24,7 @@ defmodule StillWeb.CorrespondenceHome do
       |> assign(:awaiting_packets, awaiting)
       |> assign(:recent_responses, responses)
       |> assign(:packet_count, length(packets))
+      |> assign(:upcoming_events, Enum.take(assigns.upcoming_events || [], 4))
 
     ~H"""
     <section id="correspondence-home" class="corr-home" aria-labelledby="home-heading">
@@ -110,6 +113,39 @@ defmodule StillWeb.CorrespondenceHome do
           <p :if={@awaiting_packets == []} class="corr-home-empty">
             Nothing is awaiting a reply just now.
           </p>
+        </section>
+
+        <section class="corr-home-section corr-home-coming-up" aria-labelledby="coming-up-heading">
+          <header class="corr-home-section-heading">
+            <h2 id="coming-up-heading">Coming up</h2>
+            <.link patch={~p"/correspondence/calendar"}>Calendar</.link>
+          </header>
+          <p :if={@events_problem} class="corr-home-events-problem" role="alert">
+            {@events_problem}
+          </p>
+          <article :for={event <- @upcoming_events} class="corr-home-event">
+            <div class="corr-home-meta">
+              <time datetime={value(event, :date)}>
+                {display_date(value(event, :date))} · {event_time(event)}
+              </time>
+            </div>
+            <h3>
+              <.link patch={calendar_day_path(event)}>{value(event, :title) || "Untitled event"}</.link>
+            </h3>
+            <p :if={has_text?(value(event, :venue))} class="corr-home-event-venue">
+              {value(event, :venue)}
+            </p>
+            <p :if={has_text?(value(event, :recurrence_label))} class="corr-home-event-recurrence">
+              {value(event, :recurrence_label)}
+            </p>
+          </article>
+          <p :if={@upcoming_events == [] && !@events_problem} class="corr-home-empty">
+            No upcoming events.
+          </p>
+          <div :if={@upcoming_events == [] && !@events_problem} class="corr-home-event-actions">
+            <.link patch={~p"/correspondence/calendar/events/new"}>Add event</.link>
+            <.link patch={~p"/correspondence/calendar/import"}>Import events</.link>
+          </div>
         </section>
       </div>
 
@@ -241,6 +277,19 @@ defmodule StillWeb.CorrespondenceHome do
   end
 
   defp sort_date(packet), do: value(packet, :updated_at, "") |> to_string()
+
+  defp event_time(event) do
+    case value(event, :start_time) do
+      time when is_binary(time) and time != "" -> time
+      _ -> "Time not provided"
+    end
+  end
+
+  defp calendar_day_path(event) do
+    date = value(event, :date, "")
+    month = String.slice(date, 0, 7)
+    "/correspondence/calendar?month=#{month}&date=#{date}"
+  end
 
   defp display_date(nil), do: "Date not recorded"
 

@@ -93,8 +93,53 @@ defmodule StillWeb.CorrespondenceHomeTest do
     assert :binary.match(html, "Later") < :binary.match(html, "Earlier")
   end
 
-  defp render_home(overview) do
-    render_component(&CorrespondenceHome.home/1, %{overview: overview, desk: %{piece_id: nil}})
+  test "coming up events link to their selected calendar day with useful details" do
+    event = %{
+      title: "Poetry reading",
+      date: "2026-11-18",
+      start_time: "18:30",
+      venue: "North Window Books",
+      recurrence_label: "Every third Wednesday"
+    }
+
+    html = render_home(%{pieces: [], journals: [], packets: []}, %{upcoming_events: [event]})
+
+    assert html =~ "Coming up"
+    assert html =~ ~s(href="/correspondence/calendar")
+    assert html =~ "18 Nov 2026 · 18:30"
+    assert html =~ "Poetry reading"
+    assert html =~ "North Window Books"
+    assert html =~ "Every third Wednesday"
+    assert html =~ ~s(href="/correspondence/calendar?month=2026-11&amp;date=2026-11-18")
+    refute html =~ "No upcoming events."
+  end
+
+  test "empty calendar state offers add and import while load problems stay distinct" do
+    empty = render_home(%{pieces: [], journals: [], packets: []})
+    assert empty =~ "No upcoming events."
+    assert empty =~ ~s(href="/correspondence/calendar/events/new")
+    assert empty =~ "Add event"
+    assert empty =~ ~s(href="/correspondence/calendar/import")
+    assert empty =~ "Import events"
+
+    problem =
+      render_home(%{pieces: [], journals: [], packets: []}, %{
+        events_problem: "The calendar could not be read."
+      })
+
+    assert problem =~ ~s(role="alert")
+    assert problem =~ "The calendar could not be read."
+    refute problem =~ "No upcoming events."
+    refute problem =~ "Add event"
+  end
+
+  defp render_home(overview, options \\ %{}) do
+    render_component(&CorrespondenceHome.home/1, %{
+      overview: overview,
+      desk: %{piece_id: nil},
+      upcoming_events: Map.get(options, :upcoming_events, []),
+      events_problem: Map.get(options, :events_problem)
+    })
   end
 
   defp piece(title, body, id), do: %{id: id, title: title, title_source: "explicit", body: body}

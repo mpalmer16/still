@@ -269,11 +269,14 @@ defmodule StillWeb.CorrespondenceEditorialTest do
     refute has_element?(writing, "#work-directory-row-#{hd(pieces).id}")
 
     render_change(element(writing, "#works-filters"), %{"works" => %{"q" => ""}})
+
+    [_, first_page_row] = Regex.run(~r/id="(work-directory-row-[^"]+)"/, render(writing))
+
     render_click(element(writing, "button[phx-click='works_page'][phx-value-page='2']"))
     assert has_element?(writing, ".corr-pagination", "Page 2 of 2")
     assert length(Regex.scan(~r/id="work-directory-row-/, render(writing))) == 5
 
-    refute has_element?(writing, "#work-directory-row-#{hd(pieces).id}")
+    refute has_element?(writing, "##{first_page_row}")
 
     {:ok, places, _} = live(conn, "/correspondence/journals")
     for journal <- journals, do: assert(has_element?(places, "#places-directory", journal.name))

@@ -286,3 +286,10 @@ source list or delete event history. Cancelled events have a separate visibility
 filter. Repeats preserve their advertised local clock times; the time-zone field
 is a display label, and Still does not convert times between zones. Monthly dates
 that do not exist and non-leap-year February 29 repeats are skipped without drifting.
+
+Correspondence uses the available window width with a small margin. The calendar
+month grows taller on larger screens; its upcoming list scrolls independently.
+Home shows the next four visible event dates, including recurring dates and
+events already in progress, beside packet activity on wide screens. Hidden and
+cancelled events stay out of this summary. Open an event title to see its date
+in Calendar, or use the Calendar link for the complete view.

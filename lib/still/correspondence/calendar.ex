@@ -22,6 +22,39 @@ defmodule Still.Correspondence.Calendar do
     end
   end
 
+  @doc "Returns the earliest visible calendar occurrences, including events already in progress."
+  def upcoming(location, today, limit \\ 4)
+
+  def upcoming(location, %Date{} = today, limit)
+      when is_integer(limit) and limit in 1..10 do
+    with {:ok, events} <- list(location) do
+      last = Date.add(today, 366)
+
+      in_window = Still.Correspondence.Recurrence.occurrences(events, today, last)
+
+      beyond_window =
+        events
+        |> Enum.filter(fn event ->
+          is_nil(event.recurrence) and Date.compare(Date.from_iso8601!(event.date), last) == :gt
+        end)
+        |> Enum.flat_map(fn event ->
+          date = Date.from_iso8601!(event.date)
+          Still.Correspondence.Recurrence.occurrences([event], date, date)
+        end)
+
+      visible =
+        (in_window ++ beyond_window)
+        |> Enum.reject(&(&1.hidden or &1.status == "cancelled"))
+        |> Enum.sort_by(&{&1.date, &1.start_time || "", &1.title, &1.id})
+        |> Enum.take(limit)
+
+      {:ok, visible}
+    end
+  end
+
+  def upcoming(_location, _today, _limit),
+    do: {:error, "Choose a date and a limit between 1 and 10."}
+
   def get(location, id) when is_binary(id) do
     with {:ok, scope} <- active_scope(location),
          %LocalRecord{} = row <-
