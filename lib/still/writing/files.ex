@@ -3,7 +3,16 @@ defmodule Still.Writing.Files do
   import Ecto.Query
   alias Ecto.Changeset
   alias Still.{Repo, Storage}
-  alias Still.Writing.{CollectionFolder, CollectionLock, Entry, Notebook, TextFile, Version}
+
+  alias Still.Writing.{
+    CollectionFolder,
+    CollectionLock,
+    Entry,
+    Notebook,
+    NotebookSections,
+    TextFile,
+    Version
+  }
 
   def collection_scope(root) do
     root = Path.expand(root)
@@ -129,6 +138,7 @@ defmodule Still.Writing.Files do
       notebook: nil,
       notebook_id: nil,
       list_label: nil,
+      unplaced: false,
       source_order: nil,
       scope: if(is_map(location), do: location[:scope])
     }
@@ -275,10 +285,7 @@ defmodule Still.Writing.Files do
             case Still.Writing.Discovery.problem(active) do
               nil ->
                 if scope == active.scope do
-                  pieces =
-                    rows(scope, false)
-                    |> Enum.reject(& &1.file_missing)
-                    |> Enum.map(&piece(&1, active))
+                  pieces = visible_pieces(rows(scope, false), active)
 
                   {:ok, pieces}
                 else
@@ -329,10 +336,24 @@ defmodule Still.Writing.Files do
   defp rows_for(active), do: rows(active.scope, false)
 
   defp visible_pieces(entries, active) do
+    folders = unplaced_folders(active)
+
     entries
     |> Enum.reject(& &1.file_missing)
-    |> Enum.map(&piece(&1, active))
+    |> Enum.map(&piece(&1, active, in_unplaced?(folders[&1.notebook_id], &1.relative_path)))
   end
+
+  defp unplaced_folders(active) do
+    Still.Writing.Discovery.memo({__MODULE__, :unplaced_folders, active.scope}, fn ->
+      Repo.all(from n in Notebook, where: n.collection_scope == ^active.scope)
+      |> Map.new(&{&1.id, NotebookSections.unplaced_folder(&1)})
+    end)
+  end
+
+  defp in_unplaced?(folder, relative) when is_binary(folder) and is_binary(relative),
+    do: String.starts_with?(relative, folder <> "/")
+
+  defp in_unplaced?(_, _), do: false
 
   def get(location, id) do
     active = Storage.collection_location()
@@ -464,8 +485,10 @@ defmodule Still.Writing.Files do
         )
       end
 
+    unplaced? = notebook && explicit? && NotebookSections.unplaced?(notebook, relative)
+
     path_number =
-      if explicit? && notebook && notebook.numbered,
+      if explicit? && notebook && notebook.numbered && not unplaced?,
         do: elem(filename_order(Path.basename(relative)), 0)
 
     %{
@@ -473,7 +496,9 @@ defmodule Still.Writing.Files do
       notebook: notebook && notebook.label,
       section: section,
       number:
-        if(notebook && notebook.numbered, do: path_number || next_label(location.scope, notebook))
+        if(notebook && notebook.numbered && not unplaced?,
+          do: path_number || next_label(location.scope, notebook)
+        )
     }
   end
 
@@ -490,6 +515,318 @@ defmodule Still.Writing.Files do
   end
 
   defp infer_path_notebook(_, _, attrs), do: attrs
+
+  @doc "Save a new transcription in its notebook without assigning a List number."
+  def save_to_unplaced(location, %{token: nil} = existing, attrs) do
+    with_location(location, fn active ->
+      id =
+        selected_notebook_id(existing, attrs) || (Still.Writing.Notebooks.current() || %{})[:id]
+
+      with %Notebook{collection_scope: scope, numbered: true} = notebook <-
+             if(id, do: Repo.get(Notebook, id)),
+           true <- scope == active.scope,
+           {:ok, body, title_line} <- desired_text(existing, attrs),
+           {:ok, doc} <- TextFile.decode(body),
+           {:ok, _} <- role_for(doc, title_line),
+           {:ok, folder} <- ensure_unplaced(active, notebook),
+           {:ok, relative} <-
+             free_name(
+               active.folder,
+               Path.join(folder, filename_from_label(first_filename_line(attrs[:body]))),
+               1
+             ) do
+        attrs =
+          Map.merge(attrs, %{
+            notebook_id: notebook.id,
+            relative_path: relative,
+            list_label: nil,
+            source_order: nil,
+            notebook_from_path: false
+          })
+
+        save(active, %{existing | relative_path: nil}, attrs)
+      else
+        nil -> {:error, "Choose a numbered notebook for this transcription."}
+        false -> {:error, "That notebook is unavailable in this collection."}
+        %Notebook{} -> {:error, "This notebook already saves without numbers."}
+        error -> error
+      end
+    end)
+  end
+
+  def save_to_unplaced(_, _, _),
+    do: {:error, "This page is already saved. Use Place in notebook to move it to Unplaced."}
+
+  def unplaced_location(location, id) do
+    notebook = if is_integer(number(id)), do: Repo.get(Notebook, number(id))
+    notebook = notebook || Still.Writing.Notebooks.current()
+
+    if notebook && notebook.collection_scope == location.scope do
+      folder = unplaced_folder(location, notebook)
+      %{folder: folder, notebook: notebook.label, section: "Unplaced", number: nil}
+    else
+      %{folder: ".", notebook: nil, section: nil, number: nil}
+    end
+  end
+
+  defp unplaced_folder(active, notebook) do
+    case NotebookSections.unplaced_section(notebook) do
+      nil ->
+        available_unplaced_folder(active.folder, Path.join(notebook.relative_path, "Unplaced"), 1)
+
+      section ->
+        section_folder(notebook, section)
+    end
+  end
+
+  defp available_unplaced_folder(root, base, n) do
+    candidate = if n == 1, do: base, else: base <> "_#{n}"
+
+    case File.lstat(Path.join(root, candidate)) do
+      {:error, :enoent} -> candidate
+      _ -> available_unplaced_folder(root, base, n + 1)
+    end
+  end
+
+  defp ensure_unplaced(active, notebook) do
+    folder = unplaced_folder(active, notebook)
+
+    with {:ok, path} <- safe_directory(active.folder, folder) do
+      if NotebookSections.unplaced_section(notebook) do
+        if File.dir?(path) and NotebookSections.unplaced_folder(notebook) == folder,
+          do: {:ok, folder},
+          else: {:error, "The Unplaced folder is unavailable. Reconnect it before saving."}
+      else
+        with :ok <- File.mkdir(path) do
+          case with :ok <- sync_dir(Path.dirname(path)),
+                    {:ok, _} <-
+                      NotebookSections.register_unplaced(
+                        notebook,
+                        folder,
+                        directory_identity(path)
+                      ),
+                    do: {:ok, folder} do
+            {:ok, _} = result ->
+              result
+
+            error ->
+              File.rmdir(path)
+              error
+          end
+        end
+      end
+    end
+  end
+
+  @doc "Available sections and a suggestion, without assigning or reserving a number."
+  def placement_options(location, existing) do
+    with_location(location, fn active ->
+      with {:ok, _} <- synchronize(active),
+           {:ok, entry} <- open_snapshot(active, existing),
+           {:ok, notebook} <- placement_notebook(active, entry) do
+        detail = Still.Writing.Notebooks.get(notebook.key)
+        keys = Enum.map(detail.sections, & &1.key)
+        current = NotebookSections.settings(notebook.key)["current"] || notebook.key
+        keys = Enum.uniq([notebook.key, current | keys])
+        unplaced = NotebookSections.unplaced_section(notebook)
+
+        sections =
+          keys
+          |> Enum.reject(&(&1 == unplaced))
+          |> Enum.map(fn key ->
+            %{
+              key: key,
+              label:
+                NotebookSections.label(
+                  notebook.key,
+                  key,
+                  if(key == notebook.key, do: notebook.label, else: Path.basename(key))
+                )
+            }
+          end)
+
+        {:ok,
+         %{
+           sections: sections,
+           unplaced_section: unplaced,
+           next_label: next_label(active.scope, notebook),
+           notebook: notebook.label
+         }}
+      end
+    end)
+  end
+
+  def placement_preview(location, existing, attrs) do
+    with_location(location, fn active ->
+      with {:ok, _} <- synchronize(active),
+           {:ok, entry} <- open_snapshot(active, existing),
+           {:ok, notebook} <- placement_notebook(active, entry),
+           {:ok, plan} <- placement_plan(active, entry, notebook, attrs) do
+        {:ok, Map.take(plan, [:relative_path, :section, :list_label, :duplicates])}
+      end
+    end)
+  end
+
+  @doc "Move the same file within its notebook, without renumbering any other piece."
+  def place(location, existing, attrs) do
+    with_location(location, fn active ->
+      with {:ok, _} <- synchronize(active),
+           {:ok, entry} <- open_snapshot(active, existing),
+           {:ok, notebook} <- placement_notebook(active, entry),
+           {:ok, plan} <- placement_plan(active, entry, notebook, attrs),
+           true <- plan.duplicates == [] or attrs[:allow_duplicate] in [true, "true"],
+           {:ok, path} <- safe_path(active.folder, entry.relative_path),
+           :ok <- fresh_disk(entry, path),
+           {:ok, _} <- ensure_placement_folder(active, notebook, plan),
+           {:ok, target} <- safe_path(active.folder, plan.relative_path),
+           :ok <- if(target == path, do: :ok, else: fresh_disk(nil, target)) do
+        metadata = %{
+          notebook_id: notebook.id,
+          notebook: plan.section_key,
+          list_label: plan.list_label,
+          source_order: plan.source_order
+        }
+
+        pending = %{
+          "kind" => "rename",
+          "target" => plan.relative_path,
+          "identity" => file_identity(path),
+          "metadata" => Map.new(metadata, fn {key, value} -> {to_string(key), value} end)
+        }
+
+        if plan.relative_path == entry.relative_path do
+          {:ok, piece(entry |> Changeset.change(metadata) |> persist!(), active)}
+        else
+          with prepared <- entry |> Changeset.change(pending: pending) |> persist!(),
+               {:ok, finished} <- complete_pending(active, prepared),
+               do: {:ok, piece(finished, active)}
+        end
+      else
+        false ->
+          {:error,
+           "That List number is already in use. Review the other pieces and explicitly allow the same number, or choose another."}
+
+        error ->
+          error
+      end
+    end)
+  end
+
+  defp placement_notebook(active, %Entry{notebook_id: id}) when not is_nil(id) do
+    case Repo.get(Notebook, id) do
+      %Notebook{collection_scope: scope, numbered: true} = notebook when scope == active.scope ->
+        {:ok, notebook}
+
+      _ ->
+        {:error, "Choose a saved piece in an available numbered notebook."}
+    end
+  end
+
+  defp placement_notebook(_, _), do: {:error, "Save this piece in a notebook before placing it."}
+
+  defp ensure_placement_folder(active, notebook, %{unplaced: true}),
+    do: ensure_unplaced(active, notebook)
+
+  defp ensure_placement_folder(_active, _notebook, _plan), do: {:ok, nil}
+
+  defp placement_plan(active, entry, notebook, attrs) do
+    unplaced = NotebookSections.unplaced_section(notebook)
+
+    unplaced? =
+      attrs[:section] == "unplaced" or (not is_nil(unplaced) and attrs[:section] == unplaced)
+
+    section =
+      if unplaced?,
+        do:
+          unplaced ||
+            file_section_key(
+              notebook,
+              Path.join(unplaced_folder(active, notebook), "page.txt")
+            ),
+        else: attrs[:section]
+
+    label = if unplaced?, do: nil, else: String.trim(attrs[:list_label] || "")
+    folder = if is_binary(section), do: section_folder(notebook, section)
+    known = Still.Writing.Notebooks.get(notebook.key)
+    current = NotebookSections.settings(notebook.key)["current"] || notebook.key
+    allowed = [notebook.key, current | Enum.map(known.sections, & &1.key)]
+
+    cond do
+      not unplaced? and section not in allowed ->
+        {:error, "Choose a section in this notebook."}
+
+      not unplaced? and not valid_list_label?(label) ->
+        {:error,
+         "Choose a List number such as 55, 55a, or 12.1, or leave this piece in Unplaced."}
+
+      not is_binary(folder) ->
+        {:error, "That section is unavailable."}
+
+      true ->
+        basename = Path.basename(entry.relative_path)
+        {file_label, _} = filename_order(basename)
+
+        basename =
+          if entry.list_label && file_label == entry.list_label,
+            do: Regex.replace(~r/^#{Regex.escape(entry.list_label)}[_. -]*/u, basename, ""),
+            else: basename
+
+        basename = if basename == "", do: "Untitled.txt", else: basename
+        filename = if label, do: label <> "_" <> basename, else: basename
+        relative = Path.join(folder, filename)
+
+        duplicates =
+          if label do
+            Repo.all(
+              from e in Entry,
+                where:
+                  e.collection_scope == ^active.scope and
+                    e.notebook_id == ^notebook.id and e.id != ^entry.id and not e.trashed and
+                    not e.file_missing and e.list_label == ^label
+            )
+            |> Enum.map(
+              &%{
+                id: &1.file_id,
+                title: display_title(piece(&1, active)),
+                relative_path: &1.relative_path
+              }
+            )
+          else
+            []
+          end
+
+        with {:ok, _} <- safe_directory(active.folder, folder) do
+          {:ok,
+           %{
+             relative_path: relative,
+             unplaced: unplaced?,
+             section_key: section,
+             section:
+               NotebookSections.label(
+                 notebook.key,
+                 section,
+                 if(unplaced?, do: "Unplaced", else: Path.basename(folder))
+               ),
+             list_label: label,
+             source_order: if(label, do: elem(filename_order(label), 1)),
+             duplicates: duplicates
+           }}
+        end
+    end
+  end
+
+  defp section_folder(notebook, section) do
+    cond do
+      section == notebook.key ->
+        notebook.relative_path
+
+      is_binary(section) and String.starts_with?(section, notebook.key <> "/") ->
+        Path.join(notebook.relative_path, String.replace_prefix(section, notebook.key <> "/", ""))
+
+      true ->
+        nil
+    end
+  end
 
   def save_to_scratch(location, %{token: nil} = existing, attrs) do
     with_location(location, fn active ->
@@ -765,6 +1102,9 @@ defmodule Still.Writing.Files do
       label = attrs[:list_label] || existing[:list_label]
       order = number(attrs[:source_order] || existing[:source_order])
 
+      unplaced? =
+        notebook && is_binary(relative) && NotebookSections.unplaced?(notebook, relative)
+
       {path_label, _} =
         if is_binary(relative) and (is_nil(notebook) or notebook.numbered),
           do: filename_order(Path.basename(relative)),
@@ -778,15 +1118,19 @@ defmodule Still.Writing.Files do
           do: next_label(active.scope, notebook),
           else: label
 
-      if label not in [nil, ""] and not valid_list_label?(label) do
-        {:error, "Use a List number such as 12, 0012, 12a, or 12.1."}
+      if unplaced? do
+        {:ok, attrs |> Map.put(:list_label, nil) |> Map.put(:source_order, nil)}
       else
-        order =
-          if is_nil(order) and label not in [nil, ""],
-            do: elem(filename_order(label), 1),
-            else: order
+        if label not in [nil, ""] and not valid_list_label?(label) do
+          {:error, "Use a List number such as 12, 0012, 12a, or 12.1."}
+        else
+          order =
+            if is_nil(order) and label not in [nil, ""],
+              do: elem(filename_order(label), 1),
+              else: order
 
-        {:ok, attrs |> Map.put(:list_label, label) |> Map.put(:source_order, order)}
+          {:ok, attrs |> Map.put(:list_label, label) |> Map.put(:source_order, order)}
+        end
       end
     end
   end
@@ -806,8 +1150,15 @@ defmodule Still.Writing.Files do
                  (is_nil(e.notebook_id) and e.notebook == ^notebook.key))
       )
 
+    unplaced_folder = NotebookSections.unplaced_folder(notebook)
+
     {last, width} =
-      Enum.reduce(entries, {0, 1}, fn entry, {highest, width} ->
+      entries
+      |> Enum.reject(fn entry ->
+        unplaced_folder && is_binary(entry.relative_path) &&
+          String.starts_with?(entry.relative_path, unplaced_folder <> "/")
+      end)
+      |> Enum.reduce({0, 1}, fn entry, {highest, width} ->
         digits =
           case Regex.run(~r/^\d+/, entry.list_label || "") do
             [digits] -> digits
@@ -1054,8 +1405,8 @@ defmodule Still.Writing.Files do
            notebook_id: id,
            notebook:
              if(notebook, do: file_section_key(notebook, relative), else: entry && entry.notebook),
-           source_order: order,
-           list_label: label
+           source_order: if(NotebookSections.unplaced?(notebook, relative), do: nil, else: order),
+           list_label: if(NotebookSections.unplaced?(notebook, relative), do: nil, else: label)
          }}
     end
   end
@@ -1232,10 +1583,22 @@ defmodule Still.Writing.Files do
 
         "rename" ->
           with {:ok, target} <- safe_path(active.folder, p["target"]),
-               :ok <- publish_rename(path, target, entry, p),
+               :ok <-
+                 if(path == target,
+                   do: fresh_disk(entry, path),
+                   else: publish_rename(path, target, entry, p)
+                 ),
+               :ok <- sync_dir(Path.dirname(target)),
                :ok <- sync_dir(Path.dirname(path)) do
+            metadata =
+              Map.new(p["metadata"] || %{}, fn {key, value} ->
+                {String.to_existing_atom(key), value}
+              end)
+
             {:ok,
-             entry |> Changeset.change(relative_path: p["target"], pending: nil) |> persist!()}
+             entry
+             |> Changeset.change(Map.merge(metadata, %{relative_path: p["target"], pending: nil}))
+             |> persist!()}
           end
 
         "trash" ->
@@ -1655,8 +2018,23 @@ defmodule Still.Writing.Files do
     section_key = file_section_key(notebook, file.relative)
     {found_label, found_order} = notebook_file_number(notebook, file.relative)
     renamed? = Path.basename(entry.relative_path) != Path.basename(file.relative)
-    label = if renamed?, do: found_label || entry.list_label, else: entry.list_label
-    order = if renamed?, do: found_order || entry.source_order, else: entry.source_order
+    unplaced? = NotebookSections.unplaced?(notebook, file.relative)
+    moved_from_unplaced? = is_nil(entry.list_label) and entry.relative_path != file.relative
+
+    label =
+      cond do
+        unplaced? -> nil
+        renamed? or moved_from_unplaced? -> found_label || entry.list_label
+        true -> entry.list_label
+      end
+
+    order =
+      cond do
+        unplaced? -> nil
+        renamed? or moved_from_unplaced? -> found_order || entry.source_order
+        true -> entry.source_order
+      end
+
     changed? = entry.file_token != file.document.token
     if changed?, do: checkpoint(entry)
 
@@ -1840,7 +2218,12 @@ defmodule Still.Writing.Files do
   end
 
   defp notebook_file_number(%Notebook{numbered: false}, _relative), do: {nil, nil}
-  defp notebook_file_number(_notebook, relative), do: filename_order(Path.basename(relative))
+
+  defp notebook_file_number(notebook, relative) do
+    if NotebookSections.unplaced?(notebook, relative),
+      do: {nil, nil},
+      else: filename_order(Path.basename(relative))
+  end
 
   defp filename_order(filename) do
     case Regex.run(~r/^(\d+(?:\.\d+)*[A-Za-z]*)(?:\D|$)/u, filename) do
@@ -2274,7 +2657,10 @@ defmodule Still.Writing.Files do
         )
       )
 
-  defp piece(e, active) do
+  defp piece(e, active),
+    do: piece(e, active, in_unplaced?(unplaced_folders(active)[e.notebook_id], e.relative_path))
+
+  defp piece(e, active, unplaced?) do
     %{
       id: e.file_id,
       entry_id: e.id,
@@ -2292,6 +2678,7 @@ defmodule Still.Writing.Files do
       notebook: e.notebook,
       notebook_id: e.notebook_id,
       list_label: e.list_label,
+      unplaced: unplaced?,
       source_order: e.source_order,
       historical_source: (e.source || %{})["historical_source"],
       created_at: DateTime.to_iso8601(e.inserted_at),
@@ -2378,7 +2765,9 @@ defmodule Still.Writing.Files do
         {:error, "The active collection changed. Reopen this writing before continuing."}
 
       true ->
-        CollectionLock.with_lock(Repo.config()[:database], fn -> fun.(active) end)
+        Still.Writing.Discovery.with_memo(fn ->
+          CollectionLock.with_lock(Repo.config()[:database], fn -> fun.(active) end)
+        end)
     end
   rescue
     e -> {:error, "Could not safely access this writing: #{Exception.message(e)}"}

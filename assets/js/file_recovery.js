@@ -1,6 +1,6 @@
 import {insertEnter, replaceSelection} from "./indentation"
 
-const fields = ["title_line", "relative_path", "notebook_id", "list_label", "source_order"]
+const fields = ["title_line", "relative_path", "notebook_id", "list_label", "source_order", "unplaced"]
 const equal = (a, b) => a?.body === b?.body && String(a?.title ?? "") === String(b?.title ?? "") &&
   fields.every(field => String(a?.[field] ?? "") === String(b?.[field] ?? ""))
 const valid = value => value && typeof value.body === "string" && typeof (value.title ?? "") === "string"
@@ -117,6 +117,7 @@ export const FileRecovery = {
         notebook_id: value("notebook_id"),
         list_label: value("list_label"),
         source_order: value("source_order"),
+        unplaced: value("unplaced"),
       }
     }
     this.flags = () => {
@@ -161,24 +162,30 @@ export const FileRecovery = {
       if (resize) this.fit()
       this.form.dispatchEvent(new Event("still:writing-display-changed"))
     }
-    this.submitWriting = (read, scratch = false) => {
+    this.submitWriting = (read, scratch = false, unplaced = false) => {
       this.capture(); this.keepPosition()
-      this.pushEvent("save_file", {writing: this.words(), draft_key: this.key, read, scratch})
+      this.pushEvent("save_file", {writing: this.words(), draft_key: this.key, read, scratch, unplaced})
     }
     this.save = () => this.submitWriting(false)
     this.onFileAction = ({detail}) => {
       this.capture(); this.keepPosition()
+      const placement = detail.action === "place" ? {
+        section: document.getElementById("placement-section")?.value || "unplaced",
+        list_label: document.getElementById("placement-list-label")?.value || "",
+        allow_duplicate: document.getElementById("placement-allow-duplicate")?.checked || false,
+      } : undefined
       this.pushEvent("save_file", {
         writing: this.words(), draft_key: this.key,
         file_action: detail.action,
         name: detail.action === "rename" ? document.getElementById("rename-menu-name")?.value : undefined,
+        placement,
       })
     }
     this.newButton = [...document.querySelectorAll("#new-file")].find(button => button.form === this.form)
     this.saveButton = [...document.querySelectorAll("#save-file")].find(button => button.form === this.form)
     this.onNew = () => { this.capture(); this.keepPosition(); this.pushEvent("new_file", {writing: this.words()}) }
     this.newButton?.addEventListener("click", this.onNew)
-    this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); this.submitWriting(event.submitter?.id === "read-file", event.submitter?.id === "save-scratch") }
+    this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); this.submitWriting(event.submitter?.id === "read-file", event.submitter?.id === "save-scratch", event.submitter?.id === "save-unplaced") }
     this.onKey = event => {
       if (event.target !== this.el && event.target?.form !== this.form) return
       const editor = event.target === this.el || this.el.linkedEditor?.owns(event.target) ? event.target : null

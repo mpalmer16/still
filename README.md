@@ -48,8 +48,22 @@ Sometimes the page stays quiet.
 its pages in order, return to your reading place, or choose **Wander with this**.
 **Find** opens a focused reader and keeps the route back to your search results.
 New Lists take the next number in the selected notebook and include it in the
-filename. Change it in **Page details → List number** when needed. Collections
-such as Poems can turn off automatic numbering when they are added.
+filename, counting across all its sections. Collections such as Poems can turn
+off automatic numbering when they are added.
+
+For a transcription whose place in the physical notebook is still unknown,
+choose **New unplaced List** in that notebook, or **Save to Unplaced** in the
+writing Menu. It stays in that notebook's collapsible **Unplaced** section as an
+ordinary title-only text file, without consuming a number. This is separate from
+Scratch, which holds writing outside the notebook sequence. Leave a piece
+Unplaced for as long as you like.
+
+In the saved piece's writing Menu, **Place in notebook…** previews a section and
+an editable List number. Gaps, suffixes such as `55a`, and corrections are allowed.
+Other pieces keep their numbers. If a number is already used, review the existing
+pieces and explicitly allow it or choose another. An occupied filename is never
+overwritten. Placement moves the same file and retains its identity, earlier
+words, poem links, and correspondence records; you can also return it to Unplaced.
 Hover over a notebook title, or focus it with the keyboard, for **Read**,
 **Wander**, and **Delete**. **Delete** asks for confirmation before permanently
 removing that List's local text file and saved earlier words. Submitted

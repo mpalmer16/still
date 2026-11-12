@@ -152,6 +152,27 @@ defmodule Still.Writing.Notebooks do
 
   defp managed_summary(notebook) do
     place = place_for(notebook.key)
+    settings = Still.Writing.NotebookSections.settings(notebook.key)
+    unplaced_key = Still.Writing.NotebookSections.unplaced_section(notebook)
+
+    unplaced_label =
+      get_in(settings, ["labels", unplaced_key]) ||
+        get_in(settings, ["labels", get_in(settings, ["unplaced", "section"])]) || "Unplaced"
+
+    sections =
+      if is_binary(unplaced_key) do
+        [
+          %{
+            key: unplaced_key,
+            label: unplaced_label,
+            count: 0,
+            entries: [],
+            unplaced: true
+          }
+        ]
+      else
+        []
+      end
 
     Map.merge(
       %{
@@ -161,8 +182,9 @@ defmodule Still.Writing.Notebooks do
         region: place.region,
         count: 0,
         place: place,
-        section_count: 0,
-        sections: [],
+        section_count: length(sections),
+        sections: sections,
+        unplaced_section: unplaced_key,
         current: notebook.current,
         numbered: notebook.numbered,
         series: notebook.series,
@@ -178,7 +200,8 @@ defmodule Still.Writing.Notebooks do
 
   defp managed_detail(notebook) do
     place = place_for(notebook.key)
-    Map.merge(managed_summary(notebook), %{place: place, entries: [], sections: []})
+    summary = managed_summary(notebook)
+    Map.merge(summary, %{place: place, entries: [], sections: summary.sections})
   end
 
   defp managed_fields(notebook) do
@@ -259,26 +282,83 @@ defmodule Still.Writing.Notebooks do
     settings = Still.Writing.NotebookSections.settings(place.key)
     labels = settings["labels"] || %{}
 
+    scope = Still.Storage.collection_location().scope
+
+    unplaced_notebook =
+      Repo.one(
+        from(n in Notebook,
+          where:
+            n.key == ^place.key and (is_nil(n.collection_scope) or n.collection_scope == ^scope)
+        )
+      )
+
+    unplaced_key =
+      if unplaced_notebook,
+        do: Still.Writing.NotebookSections.unplaced_section(unplaced_notebook),
+        else: nil
+
+    unplaced_label =
+      labels[unplaced_key] || labels[get_in(settings, ["unplaced", "section"])] || "Unplaced"
+
+    is_unplaced = fn key, section_entries ->
+      unplaced_key =
+        if unplaced_notebook,
+          do: Still.Writing.NotebookSections.unplaced_section(unplaced_notebook),
+          else: nil
+
+      is_binary(unplaced_key) and
+        (key == unplaced_key or
+           Enum.any?(section_entries, fn entry ->
+             Still.Writing.NotebookSections.unplaced?(
+               unplaced_notebook,
+               entry.relative_path || ""
+             )
+           end))
+    end
+
     sections =
       entries
       |> Enum.group_by(& &1.notebook)
-      |> Enum.sort_by(fn {key, _section_entries} ->
-        {Enum.find_index(settings["order"] || [], &(&1 == key)) || 100_000,
-         if(key == place.key, do: 0, else: 1), natural_key(key)}
+      |> Enum.sort_by(fn {key, section_entries} ->
+        {if(is_unplaced.(key, section_entries),
+           do: 200_000,
+           else: Enum.find_index(settings["order"] || [], &(&1 == key)) || 100_000
+         ), if(key == place.key, do: 0, else: 1), natural_key(key)}
       end)
       |> Enum.map(fn {key, section_entries} ->
         section_place = Geography.for_entry(hd(section_entries))
 
         section = %{
           key: key,
-          label: labels[key] || section_place.corner || place.label,
-          count: length(section_entries)
+          label:
+            if(is_unplaced.(key, section_entries),
+              do: unplaced_label,
+              else: labels[key] || section_place.corner || place.label
+            ),
+          count: length(section_entries),
+          unplaced: is_unplaced.(key, section_entries)
         }
 
         if include_entries,
           do: Map.put(section, :entries, Enum.sort_by(section_entries, &source_position/1)),
           else: section
       end)
+
+    sections =
+      if is_binary(unplaced_key) and not Enum.any?(sections, & &1.unplaced) do
+        sections ++
+          [
+            %{
+              key: unplaced_key,
+              label: unplaced_label,
+              count: 0,
+              unplaced: true,
+              entries: []
+            }
+          ]
+      else
+        sections
+      end
 
     notebook = %{
       key: place.key,
@@ -287,7 +367,12 @@ defmodule Still.Writing.Notebooks do
       count: length(entries),
       place: place,
       section_count: length(sections),
-      current_section: settings["current"] || place.key,
+      current_section:
+        if(settings["current"] in [unplaced_key, get_in(settings, ["unplaced", "section"])],
+          do: place.key,
+          else: settings["current"] || place.key
+        ),
+      unplaced_section: unplaced_key,
       sections: sections
     }
 

@@ -299,6 +299,12 @@ defmodule StillWeb.NotebookLive do
             </p>
           </header>
 
+          <.link
+            :if={Map.get(@notebook, :managed, false) && Map.get(@notebook, :numbered, true)}
+            navigate={~p"/?notebook=#{@notebook.id}&unplaced=true"}
+            class="quiet-link"
+          >New unplaced List</.link>
+
           <section
             :for={{section, index} <- Enum.with_index(@notebook.sections)}
             id={"notebook-section-#{index}"}
@@ -322,6 +328,9 @@ defmodule StillWeb.NotebookLive do
                   }
                   class="section-whisper"
                 >New Lists go here</span>
+                <span :if={Map.get(section, :unplaced, false)} class="section-whisper">
+                  Unnumbered, until you place it
+                </span>
               </summary>
               <div class="notebook-section-heading">
                 <div>
@@ -340,7 +349,7 @@ defmodule StillWeb.NotebookLive do
                       <button type="submit" class="quiet-link">Save name</button>
                     </form>
                     <button
-                      :if={Map.get(@notebook, :managed, false)}
+                      :if={Map.get(@notebook, :managed, false) && !Map.get(section, :unplaced, false)}
                       type="button"
                       phx-click="choose_section"
                       phx-value-section={section.key}
@@ -354,6 +363,9 @@ defmodule StillWeb.NotebookLive do
                   <a href={"#section-#{index}-end"}>End</a>
                 </nav>
               </div>
+              <p :if={Map.get(section, :unplaced, false)} class="section-whisper">
+                Lists here have no notebook number yet. They stay in this folder until you place them in a numbered section.
+              </p>
               <div id={"section-#{index}-beginning"} class="notebook-boundary">
                 <span class="section-whisper">Beginning</span>
               </div>
@@ -366,6 +378,10 @@ defmodule StillWeb.NotebookLive do
                   <span :if={entry.list_label not in [nil, ""]} class="notebook-list-number">
                     {entry.list_label}
                   </span>
+                  <span
+                    :if={Map.get(section, :unplaced, false) && entry.list_label in [nil, ""]}
+                    class="notebook-list-number"
+                  >Not yet numbered</span>
                   <.link
                     navigate={
                       ReadingLinks.reader(entry, %{"from" => "notebook", "notebook" => @notebook.key})

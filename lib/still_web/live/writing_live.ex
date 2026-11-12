@@ -39,7 +39,11 @@ defmodule StillWeb.WritingLive do
        pdf_request: nil,
        piece_find_open: false,
        piece_find_query: "",
-       piece_find_target_line: nil
+       piece_find_target_line: nil,
+       placement_options: nil,
+       placement_preview: nil,
+       placement_draft: %{},
+       unplaced_requested?: false
      )}
   end
 
@@ -74,6 +78,7 @@ defmodule StillWeb.WritingLive do
 
         status = Correspondence.writing_status(location)
         cursor_problem = if editing && connected?(socket), do: remember(location, piece, beside)
+        placement_options = placement_options(location, piece)
 
         {:noreply,
          socket
@@ -86,7 +91,11 @@ defmodule StillWeb.WritingLive do
            submitted: MapSet.member?(status.submitted, piece.id),
            draft: words(piece),
            location: location,
-           save_location: Still.Writing.Files.save_location(location, piece.relative_path),
+           save_location:
+             if(params["unplaced"] == "true" && is_nil(piece.token),
+               do: Still.Writing.Files.unplaced_location(location, piece.notebook_id),
+               else: Still.Writing.Files.save_location(location, piece.relative_path)
+             ),
            editing: editing,
            wander_return:
              if(
@@ -102,6 +111,15 @@ defmodule StillWeb.WritingLive do
            revisions: revisions,
            notice: if(same_editor?, do: socket.assigns.notice),
            recovery_waiting: false,
+           placement_options: placement_options,
+           placement_draft: %{
+             "section" =>
+               if(Map.get(piece, :unplaced), do: "unplaced", else: piece.notebook || "unplaced"),
+             "list_label" =>
+               if(placement_options, do: placement_label(piece, placement_options), else: "")
+           },
+           placement_preview: nil,
+           unplaced_requested?: params["unplaced"] == "true",
            resume_active: resume?,
            reading_echo: reading_echo,
            echo_attention: if(same_editor?, do: socket.assigns.echo_attention),
@@ -138,6 +156,12 @@ defmodule StillWeb.WritingLive do
 
   defp opening(:now, %{"new" => "1"} = params, location),
     do: {{:ok, Poems.new(location)}, false, historical_beside(params["beside"])}
+
+  defp opening(:now, %{"unplaced" => "true", "notebook" => notebook_id}, location) do
+    piece = Poems.new(location)
+    notebook_id = integer_or_nil(notebook_id)
+    {{:ok, %{piece | notebook_id: notebook_id, unplaced: true}}, false, nil}
+  end
 
   defp opening(:now, %{"resume_new" => "1"}, location),
     do: {{:ok, Poems.new(location)}, true, nil}
@@ -222,8 +246,19 @@ defmodule StillWeb.WritingLive do
     draft = draft_words(attrs, socket.assigns.piece)
 
     socket =
+      if is_nil(socket.assigns.piece.token) and draft.unplaced == "true" do
+        assign(socket,
+          unplaced_requested?: true,
+          save_location:
+            Still.Writing.Files.unplaced_location(socket.assigns.location, draft.notebook_id)
+        )
+      else
+        socket
+      end
+
+    socket =
       if is_nil(socket.assigns.piece.token) &&
-           draft.relative_path != socket.assigns.draft.relative_path do
+           draft.unplaced != "true" && draft.relative_path != socket.assigns.draft.relative_path do
         assign(
           socket,
           :save_location,
@@ -419,17 +454,28 @@ defmodule StillWeb.WritingLive do
          do: params["draft_key"],
          else: socket.assigns.draft_key
 
+    unplaced_save? =
+      is_nil(socket.assigns.piece.token) and
+        (params["unplaced"] in [true, "true"] or draft.unplaced == "true" or
+           socket.assigns.unplaced_requested?)
+
     save =
-      if params["scratch"] in [true, "true"],
-        do: &Still.Writing.Files.save_to_scratch/3,
-        else: &Poems.save/3
+      cond do
+        params["scratch"] in [true, "true"] -> &Still.Writing.Files.save_to_scratch/3
+        unplaced_save? -> &Still.Writing.Files.save_to_unplaced/3
+        true -> &Poems.save/3
+      end
 
     with :ok <- validate_position(draft.source_order),
          {:ok, piece} <-
            save.(
              location,
              socket.assigns.piece,
-             Map.put(save_attrs(draft), :notebook_from_path, is_nil(socket.assigns.piece.token))
+             Map.put(
+               save_attrs(draft),
+               :notebook_from_path,
+               is_nil(socket.assigns.piece.token) and not unplaced_save?
+             )
            ) do
       {socket, piece, action_problem, notice} = finish_file_action(socket, piece, params)
       target_key = draft_key(location, piece)
@@ -457,10 +503,17 @@ defmodule StillWeb.WritingLive do
          notebook_id: piece.notebook_id,
          list_label: piece.list_label,
          source_order: piece.source_order,
+         unplaced: if(Map.get(piece, :unplaced), do: "true", else: ""),
          source_key: source_key,
          target_key: target_key
        })
-       |> finish_save(piece, params["read"] in [true, "true"])}
+       |> then(fn updated ->
+         if params["file_action"] == "place" and action_problem do
+           updated
+         else
+           finish_save(updated, piece, params["read"] in [true, "true"])
+         end
+       end)}
     else
       {:error, message} ->
         {:noreply,
@@ -617,6 +670,19 @@ defmodule StillWeb.WritingLive do
   def handle_event("file_recovery_available", _, socket),
     do: {:noreply, assign(socket, recovery_problem: nil)}
 
+  def handle_event("preview_piece_placement", %{"placement" => attrs}, socket) do
+    socket = assign(socket, placement_draft: attrs)
+
+    case Still.Writing.Files.placement_preview(
+           socket.assigns.location,
+           socket.assigns.piece,
+           placement_attrs(attrs)
+         ) do
+      {:ok, preview} -> {:noreply, assign(socket, placement_preview: preview)}
+      {:error, message} -> {:noreply, assign(socket, placement_preview: %{error: message})}
+    end
+  end
+
   def handle_event("restore_file_local", _, socket),
     do: {:noreply, push_event(socket, "file-restore-local", %{})}
 
@@ -733,7 +799,37 @@ defmodule StillWeb.WritingLive do
     end
   end
 
+  defp finish_file_action(socket, piece, %{"file_action" => "place"} = params) do
+    attrs = placement_attrs(Map.get(params, "placement", %{}))
+
+    case Still.Writing.Files.place(socket.assigns.location, piece, attrs) do
+      {:ok, placed} ->
+        {assign(socket, placement_preview: nil), placed, nil, "Placed in notebook"}
+
+      {:error, message} ->
+        {assign(socket, placement_preview: %{error: message}), piece, message,
+         "Saved on this Mac"}
+    end
+  end
+
   defp finish_file_action(socket, piece, _), do: {socket, piece, nil, "Saved on this Mac"}
+
+  defp placement_attrs(attrs) do
+    %{
+      section: Map.get(attrs, "section", "unplaced"),
+      list_label: Map.get(attrs, "list_label", ""),
+      allow_duplicate: Map.get(attrs, "allow_duplicate") in ["true", true, "on"]
+    }
+  end
+
+  defp placement_options(location, %{token: token} = piece) when is_binary(token) do
+    case Still.Writing.Files.placement_options(location, piece) do
+      {:ok, options} -> options
+      _ -> nil
+    end
+  end
+
+  defp placement_options(_, _), do: nil
 
   defp rename_filename(name, relative) when is_binary(name) do
     name = String.trim(name)
@@ -965,7 +1061,8 @@ defmodule StillWeb.WritingLive do
       relative_path: Map.get(piece, :relative_path) || "",
       notebook_id: to_string(draft_notebook_id(piece) || ""),
       list_label: Map.get(piece, :list_label) || "",
-      source_order: to_string(Map.get(piece, :source_order) || "")
+      source_order: to_string(Map.get(piece, :source_order) || ""),
+      unplaced: if(Map.get(piece, :unplaced), do: "true", else: "")
     }
   end
 
@@ -982,6 +1079,31 @@ defmodule StillWeb.WritingLive do
 
       _ ->
         nil
+    end
+  end
+
+  defp notebook_label(id, notebooks) do
+    case Enum.find(notebooks || [], &(to_string(Map.get(&1, :id) || "") == to_string(id))) do
+      nil -> "Notebook"
+      notebook -> Map.get(notebook, :label) || Map.get(notebook, :key) || "Notebook"
+    end
+  end
+
+  defp save_destination(%{notebook: notebook, section: section, number: number}) do
+    if notebook do
+      "#{notebook} · #{section || "Notebook"} · Next List #{number || "not yet numbered"}"
+    else
+      "No notebook · Unnumbered"
+    end
+  end
+
+  defp placement_label(%{unplaced: true}, options), do: options.next_label
+  defp placement_label(piece, _options), do: piece.list_label || ""
+
+  defp numbered_notebook?(id, notebooks) do
+    case Enum.find(notebooks || [], &(to_string(Map.get(&1, :id) || "") == to_string(id))) do
+      %{numbered: true} -> true
+      _ -> false
     end
   end
 
@@ -1034,7 +1156,8 @@ defmodule StillWeb.WritingLive do
       relative_path: Map.get(attrs, "relative_path", Map.get(words(piece), :relative_path, "")),
       notebook_id: Map.get(attrs, "notebook_id", Map.get(words(piece), :notebook_id, "")),
       list_label: Map.get(attrs, "list_label", Map.get(words(piece), :list_label, "")),
-      source_order: Map.get(attrs, "source_order", Map.get(words(piece), :source_order, ""))
+      source_order: Map.get(attrs, "source_order", Map.get(words(piece), :source_order, "")),
+      unplaced: Map.get(attrs, "unplaced", Map.get(words(piece), :unplaced, ""))
     })
   end
 
@@ -1111,6 +1234,15 @@ defmodule StillWeb.WritingLive do
               value="true"
               class="quiet-link"
             >Save to scratch</button>
+            <button
+              :if={is_nil(@piece.token) && numbered_notebook?(@draft.notebook_id, @notebooks)}
+              form="file-writing-form"
+              id="save-unplaced"
+              type="submit"
+              name="unplaced"
+              value="true"
+              class="quiet-link"
+            >Save to Unplaced</button>
             <.link id="open-saved-writing" navigate={~p"/writing"} class="quiet-link">Saved writing</.link>
             <button
               :if={@piece.token}
@@ -1124,6 +1256,107 @@ defmodule StillWeb.WritingLive do
           </div>
         </footer>
         <section class="writing-file-actions" aria-label="File name and exports">
+          <p :if={@piece.token && Map.get(@piece, :unplaced, false)} class="file-note">
+            {notebook_label(@draft.notebook_id, @notebooks)} · Unplaced · Not yet numbered
+          </p>
+          <p
+            :if={is_nil(@piece.token) && numbered_notebook?(@draft.notebook_id, @notebooks)}
+            id="unplaced-save-destination"
+            class="file-note"
+          >
+            <%= if @unplaced_requested? do %>
+              Save: {notebook_label(@draft.notebook_id, @notebooks)} · Unplaced · Not yet numbered
+            <% else %>
+              Save: {save_destination(@save_location)}. Save to Unplaced: {notebook_label(
+                @draft.notebook_id,
+                @notebooks
+              )} · Unplaced · Not yet numbered
+            <% end %>
+          </p>
+          <p :if={is_nil(@piece.token) && @draft.notebook_id == ""} class="file-note">
+            Saving normally uses {save_destination(@save_location)}. Choose a notebook to save into Unplaced.
+          </p>
+          <details
+            :if={@piece.token && @placement_options}
+            id="place-piece-details"
+            class="file-location"
+            phx-mounted={JS.ignore_attributes(["open"])}
+          >
+            <summary>Place in notebook…</summary>
+            <.form for={%{}} as={:placement} id="placement-form" phx-change="preview_piece_placement">
+              <label for="placement-section">Notebook section</label>
+              <select id="placement-section" name="placement[section]">
+                <option value="unplaced" selected={@placement_draft["section"] == "unplaced"}>
+                  Unplaced · Not yet numbered
+                </option>
+                <option
+                  :for={section <- @placement_options.sections}
+                  value={section.key}
+                  selected={@placement_draft["section"] == section.key}
+                >
+                  {section.label}
+                </option>
+              </select>
+              <label for="placement-list-label">List number</label>
+              <input
+                id="placement-list-label"
+                name="placement[list_label]"
+                value={@placement_draft["list_label"]}
+                autocomplete="off"
+              />
+              <p class="file-note">
+                Choose a numbered section to use this number. The next number is only a suggestion; gaps, 55a, or 12.1 are fine. Other Lists keep their numbers.
+              </p>
+              <p
+                :if={@placement_preview && Map.get(@placement_preview, :error)}
+                class="file-note"
+                role="alert"
+              >
+                {Map.get(@placement_preview, :error)}
+              </p>
+              <div
+                :if={@placement_preview && !Map.get(@placement_preview, :error)}
+                id="placement-preview"
+                class="file-note"
+                role="status"
+              >
+                Destination: <strong>{@placement_options.notebook}</strong>
+                · {@placement_preview.section}
+                <span :if={@placement_preview.list_label}> · List {@placement_preview.list_label}</span>
+                <br />Path: <code>{@placement_preview.relative_path}</code>
+              </div>
+              <div
+                :if={@placement_preview && Map.get(@placement_preview, :duplicates, []) != []}
+                id="placement-duplicates"
+                class="file-note"
+                role="alert"
+              >
+                <p>This label is already used. Confirm to keep the same number:</p>
+                <ul>
+                  <li :for={duplicate <- @placement_preview.duplicates}>
+                    {duplicate.title} · <code>{duplicate.relative_path}</code>
+                  </li>
+                </ul>
+                <label><input
+                  id="placement-allow-duplicate"
+                  type="checkbox"
+                  name="placement[allow_duplicate]"
+                  value="true"
+                /> Keep this same label</label>
+              </div>
+              <button
+                id="place-piece"
+                type="button"
+                class="quiet-link"
+                phx-click={
+                  JS.dispatch("still:file-action",
+                    to: "#file-writing-body",
+                    detail: %{action: "place"}
+                  )
+                }
+              >Save words &amp; place</button>
+            </.form>
+          </details>
           <.form
             for={%{}}
             id="rename-menu-form"
@@ -1196,12 +1429,16 @@ defmodule StillWeb.WritingLive do
         >
           <summary>Save location &amp; file name</summary>
           <p :if={is_nil(@piece.token)} id="next-list-destination" class="file-note">
-            <%= if @save_location.notebook do %>
-              <strong>{@save_location.notebook}</strong> → {@save_location.section}
-              <span :if={@save_location.number}> · Next List <strong>{@save_location.number}</strong></span>
-              <span :if={!@save_location.number}> · Unnumbered</span>
+            <%= if @unplaced_requested? do %>
+              <strong>{@save_location.notebook}</strong> · Unplaced · Not yet numbered
             <% else %>
-              No notebook · Unnumbered
+              <%= if @save_location.notebook do %>
+                <strong>{@save_location.notebook}</strong> → {@save_location.section}
+                <span :if={@save_location.number}> · Next List <strong>{@save_location.number}</strong></span>
+                <span :if={!@save_location.number}> · Unnumbered</span>
+              <% else %>
+                No notebook · Unnumbered
+              <% end %>
             <% end %>
           </p>
           <p id="file-save-destination" class="file-note">
@@ -1231,6 +1468,12 @@ defmodule StillWeb.WritingLive do
             type="hidden"
             name="writing[title_line]"
             value={@draft.title_line}
+          />
+          <input
+            form="file-writing-form"
+            type="hidden"
+            name="writing[unplaced]"
+            value={@draft.unplaced}
           />
           <input
             form="file-writing-form"

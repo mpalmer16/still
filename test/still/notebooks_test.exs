@@ -82,7 +82,7 @@ defmodule Still.NotebooksTest do
     [catalog] = Writing.notebooks()
     assert catalog.count == 137
     assert catalog.section_count == 1
-    assert catalog.sections == [%{key: @lists, label: "Lists 1", count: 137}]
+    assert catalog.sections == [%{key: @lists, label: "Lists 1", count: 137, unplaced: false}]
     refute Map.has_key?(catalog, :entries)
 
     notebook = Writing.notebook(@lists)

@@ -127,3 +127,13 @@ test('purging saved files from another tab cannot erase an active unsaved recove
     assert.equal(store.getItem(key),original)
   } finally { delete globalThis.window; delete globalThis.localStorage }
 })
+
+test('Unplaced draft recovery retains the chosen notebook and unnumbered destination', () => {
+  const store = memory()
+  const draft = {body: 'Transcribed words', title: '', notebook_id: '12', unplaced: 'true', baseToken: null}
+  captureCopy(store, 'new', draft, blank)
+  const resumed = resumableCopy(store, 'new', null, true)
+  assert.equal(resumed.notebook_id, '12')
+  assert.equal(resumed.unplaced, 'true')
+  assert.equal(resumed.body, draft.body)
+})

@@ -7,6 +7,21 @@ defmodule Still.Writing.Discovery do
   @key {__MODULE__, :snapshot}
   @memo_key {__MODULE__, :memo}
 
+  @doc "Batch context lookups for one locked file operation without caching across operations."
+  def with_memo(fun) when is_function(fun, 0) do
+    if Process.get(@memo_key) do
+      fun.()
+    else
+      Process.put(@memo_key, %{})
+
+      try do
+        fun.()
+      after
+        Process.delete(@memo_key)
+      end
+    end
+  end
+
   def memo(key, fun) do
     case Process.get(@memo_key) do
       nil ->
