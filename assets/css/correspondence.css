@@ -194,7 +194,6 @@
 .corr-message.error { border-color: var(--corr-clay); }
 .corr-message a { display: inline-block; margin-left: 10px; text-decoration: underline; color: var(--corr-blue); }
 .corr-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 15px; margin-top: 45px; padding-top: 20px; border-top: 1px solid var(--corr-line); color: var(--corr-faint); font-size: 14px; }
-@media (min-width: 1700px) { .editorial-place-grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
 @media (max-width: 1200px) {
   .corr-header { grid-template-columns: 1fr auto; gap: 10px 30px; padding-top: 18px; }
   .corr-header nav { grid-row: 2; grid-column: 1/-1; }
@@ -328,28 +327,10 @@
 .editorial-place-intro,.editorial-place-profile-head{display:flex;justify-content:space-between;align-items:end;gap:32px;border-bottom:1px solid var(--corr-line);padding:0 0 20px}
 .editorial-place-intro h1,.editorial-place-profile-head h1,.editorial-place-editor h1{margin:0;font:32px/1.2 Georgia,'Iowan Old Style',serif;letter-spacing:-.04em;font-weight:400}
 .editorial-place-intro p,.editorial-place-editor header>p{max-width:650px;color:var(--corr-muted);font:18px/1.5 Georgia,'Iowan Old Style',serif}
-.editorial-place-shortlist,.editorial-place-all{margin-top:40px}
 .editorial-place-section-head{display:flex;justify-content:space-between;align-items:end;gap:20px;border-bottom:1px solid var(--corr-line);padding-bottom:13px;margin-bottom:6px}
 .editorial-place-section-head h2{margin:5px 0 0;font:29px/1.15 Georgia,'Iowan Old Style',serif;font-weight:400;letter-spacing:-.02em}
 .editorial-place-section-head>span{font-size:14px;color:var(--corr-muted)}
-.editorial-place-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:clamp(28px,5vw,78px)}
-/* Compact shortlisted place links; full cards remain in All places. */
-.editorial-place-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:clamp(28px,5vw,78px);list-style:none;margin:0;padding:0}
-.editorial-place-shortcuts li{display:flex;align-items:baseline;justify-content:space-between;gap:14px;min-width:0;padding:13px 0;border-bottom:1px solid var(--corr-line)}
-.editorial-place-shortcuts a{overflow-wrap:anywhere;color:var(--corr-ink);font:19px/1.35 Georgia,'Iowan Old Style',serif}
-.editorial-place-shortcuts a:hover,.editorial-place-shortcuts a:focus-visible{color:var(--corr-blue)}
-.editorial-place-shortcuts li>span{flex:0 0 auto;color:var(--corr-muted);font-size:14px}
-.editorial-place-card{min-width:0;padding:23px 22px 24px;background:var(--corr-surface,var(--corr-panel));border-top:1px solid var(--corr-line);border-bottom:1px solid var(--corr-line)}
-.editorial-place-card-top{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:20px}
 .editorial-place-mark{color:var(--corr-blue);font:14px var(--sans);letter-spacing:.07em;text-transform:uppercase}
-.editorial-place-source{color:var(--corr-muted);font-size:14px}
-.editorial-place-card h3{margin:11px 0 5px;font:25px/1.2 Georgia,'Iowan Old Style',serif;font-weight:400;letter-spacing:-.02em}
-.editorial-place-card h3 a:hover,.editorial-place-card h3 a:focus-visible{color:var(--corr-blue)}
-.editorial-place-interest{margin:0;color:var(--corr-ink);font:16px/1.45 Georgia,'Iowan Old Style',serif}
-.editorial-place-note{margin:9px 0 14px;color:var(--corr-muted);font:14px/1.5 Georgia,'Iowan Old Style',serif}
-.editorial-place-facts{display:flex;flex-wrap:wrap;gap:7px 19px;color:var(--corr-muted);font-size:14px}
-.editorial-place-open{display:inline-flex;gap:8px;margin-top:16px;color:var(--corr-blue);font-size:14px}
-.editorial-place-open:hover{text-decoration:underline;text-underline-offset:4px}
 .editorial-place-empty{max-width:650px;margin:28px 0 0;padding:28px 0;border-top:1px solid var(--corr-line)}
 .editorial-place-empty-title{margin:0 0 8px;font:27px Georgia,'Iowan Old Style',serif}
 .editorial-place-empty p:not(.editorial-place-empty-title){color:var(--corr-muted);font:16px/1.5 Georgia,'Iowan Old Style',serif}
@@ -398,11 +379,70 @@
 .editorial-place-checks label{display:flex;align-items:flex-start;gap:10px;color:var(--corr-ink);font-size:14px}
 .editorial-place-checks input{flex:0 0 auto;margin:2px 0 0;accent-color:var(--corr-blue)}
 .editorial-place-form-actions{display:flex;align-items:center;gap:22px;padding:24px 0}
-@media(max-width:1000px){.editorial-place-grid{grid-template-columns:1fr}.editorial-place-profile-grid{grid-template-columns:minmax(0,1.2fr) minmax(250px,.8fr);gap:30px}.editorial-place-facts-panel{position:static}}
-@media(max-width:850px){.editorial-place-shortcuts{grid-template-columns:1fr}.editorial-place-intro,.editorial-place-profile-head{display:block}.editorial-place-profile-head .editorial-place-mark{display:inline-block;margin-top:18px}.editorial-place-profile-grid{grid-template-columns:1fr;gap:32px}.editorial-place-form-section{grid-template-columns:1fr;gap:18px}.editorial-place-checks{grid-column:1}.editorial-place-section-head h2{font-size:26px}}
-@media(max-width:480px){.editorial-place-intro h1,.editorial-place-profile-head h1,.editorial-place-editor h1{font-size:32px}.editorial-place-card h3{font-size:23px}.editorial-place-fields{grid-template-columns:1fr}.editorial-place-field.is-wide{grid-column:auto}.editorial-place-packet-head{display:block}.editorial-place-packet-open{display:inline-block;margin-top:6px}.editorial-place-facts-panel{padding:18px}.editorial-place-form-actions{gap:16px}}
+@media(max-width:1000px){.editorial-place-profile-grid{grid-template-columns:minmax(0,1.2fr) minmax(250px,.8fr);gap:30px}.editorial-place-facts-panel{position:static}}
+@media(max-width:850px){.editorial-place-intro,.editorial-place-profile-head{display:block}.editorial-place-profile-head .editorial-place-mark{display:inline-block;margin-top:18px}.editorial-place-profile-grid{grid-template-columns:1fr;gap:32px}.editorial-place-form-section{grid-template-columns:1fr;gap:18px}.editorial-place-checks{grid-column:1}.editorial-place-section-head h2{font-size:26px}}
+@media(max-width:480px){.editorial-place-intro h1,.editorial-place-profile-head h1,.editorial-place-editor h1{font-size:32px}.editorial-place-fields{grid-template-columns:1fr}.editorial-place-field.is-wide{grid-column:auto}.editorial-place-packet-head{display:block}.editorial-place-packet-open{display:inline-block;margin-top:6px}.editorial-place-facts-panel{padding:18px}.editorial-place-form-actions{gap:16px}}
 
-@media (min-width: 1700px) { .editorial-place-grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+/* Places directory: one scannable, sortable table across the full collection. */
+.places-filters { margin: 24px 0 17px; }
+.places-search-row { display: flex; align-items: end; gap: 19px; margin-bottom: 17px; }
+.places-search { display: block; flex: 1 1 380px; min-width: min(100%, 260px); color: var(--corr-muted); font-size: 14px; }
+.places-search input { display: block; width: 100%; min-height: 45px; margin-top: 5px; padding: 9px 2px; border: 0; border-bottom: 1px solid var(--corr-line); border-radius: 0; background: transparent; color: var(--corr-ink); font: 17px/1.4 var(--sans); }
+.places-search input::placeholder { color: var(--corr-faint); }
+.places-search small { display: block; margin-top: 5px; color: var(--corr-muted); font-size: 13px; }
+.places-search-row > .corr-text-link { flex: 0 0 auto; padding: 10px 0; }
+.places-filter-row { display: flex; flex-wrap: wrap; align-items: end; gap: 11px 15px; }
+.places-filter { display: block; flex: 1 1 145px; min-width: 125px; color: var(--corr-muted); font-size: 13px; }
+.places-filter select { display: block; width: 100%; min-height: 41px; margin-top: 5px; padding: 7px 28px 7px 9px; border: 1px solid var(--corr-line); border-radius: 2px; background: var(--corr-bg); color: var(--corr-ink); font: 14px/1.4 var(--sans); }
+.places-result-count { margin: 0; padding: 9px 0 10px; color: var(--corr-muted); font-size: 13px; }
+.places-table-scroll { max-width: 100%; overflow-x: auto; border-top: 1px solid var(--corr-line); border-bottom: 1px solid var(--corr-line); scrollbar-color: var(--corr-line) transparent; }
+.places-table { width: 100%; min-width: 1080px; border-collapse: collapse; table-layout: fixed; color: var(--corr-ink); font-size: 14px; }
+.places-table .places-col-name { width: 30%; }
+.places-table .places-col-reach { width: 13%; }
+.places-table .places-col-simultaneous { width: 13%; }
+.places-table .places-col-window { width: 14%; }
+.places-table .places-col-history { width: 15%; }
+.places-table .places-col-nearby { width: 15%; }
+.places-table th:nth-child(4):not(.places-col-window) { width: 14%; }
+.places-table thead { background: color-mix(in srgb, var(--corr-panel) 72%, transparent); }
+.places-table th { padding: 11px; border-bottom: 1px solid var(--corr-line); color: var(--corr-muted); font-size: 12px; font-weight: 500; letter-spacing: .045em; text-align: left; text-transform: uppercase; }
+.places-table th:has(.places-sort) { padding: 0; }
+.places-table th button.places-sort { display: flex; width: 100%; min-height: 42px; align-items: center; justify-content: space-between; gap: 7px; border: 0; padding: 8px 11px; background: transparent; color: inherit; font: inherit; text-align: left; text-transform: inherit; }
+.places-sort span { flex: 0 0 auto; color: var(--corr-blue); font-size: 13px; letter-spacing: 0; }
+.places-table th button:hover { color: var(--corr-ink); }
+.places-table td { min-width: 0; padding: 13px 11px; border-bottom: 1px solid color-mix(in srgb, var(--corr-line) 75%, transparent); vertical-align: top; }
+.places-table tr:last-child td { border-bottom: 0; }
+.places-table tbody tr { transition: background-color .12s ease; }
+.places-table tbody tr:hover { background: color-mix(in srgb, var(--corr-panel) 55%, transparent); }
+.places-name-cell { min-width: 320px; }
+.places-name-cell .place-name-with-icon { align-items: flex-start; gap: 9px; }
+.places-name-cell .place-icon { flex-basis: 28px; width: 28px; height: 28px; border-radius: 3px; font-size: 15px; }
+.places-name-cell .place-icon img { padding: 3px; }
+.places-name { display: inline; font: 400 18px/1.28 Georgia, "Iowan Old Style", serif; letter-spacing: -.015em; }
+.places-name-cell .places-name { min-width: 0; overflow-wrap: anywhere; }
+.places-description, .places-notes { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; margin: 4px 0 0; color: var(--corr-muted); font: 13px/1.4 Georgia, "Iowan Old Style", serif; }
+.places-state { display: inline-block; margin: 5px 0 0; border: 1px solid var(--corr-line); border-radius: 2px; padding: 1px 6px; color: var(--corr-muted); font-size: 11px; }
+.places-secondary { display: block; margin-top: 4px; color: var(--corr-muted); font-size: 12px; line-height: 1.35; }
+.places-table button.places-nearby { border: 1px solid var(--corr-line); border-radius: 2px; padding: 5px 8px; background: transparent; color: var(--corr-muted); font: 13px/1.35 var(--sans); }
+.places-table button.places-nearby[aria-pressed="true"] { border-color: var(--corr-blue); color: var(--corr-blue); background: color-mix(in srgb, var(--corr-blue) 8%, transparent); }
+.places-history { color: var(--corr-ink); font-size: 13px; line-height: 1.4; }
+.places-history .places-secondary { margin-top: 3px; }
+.places-table-scroll:focus-visible, .places-table :is(button,a):focus-visible, .places-filters :is(input,select,a):focus-visible { outline: 2px solid var(--focus-color); outline-offset: 3px; }
+.places-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 13px 24px; margin-top: 17px; color: var(--corr-muted); font-size: 14px; }
+.places-pagination button { border: 0; padding: 7px 0; background: transparent; color: var(--corr-blue); font: inherit; cursor: pointer; }
+.places-pagination button:disabled { color: var(--corr-faint); cursor: default; }
+.places-table caption.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; clip-path: inset(50%); }
+@media (min-width: 1700px) {
+  .places-table { min-width: 0; }
+  .places-table td { padding: 15px 13px; }
+  .places-name { font-size: 19px; }
+}
+@media (max-width: 850px) {
+  .places-search-row { align-items: start; flex-wrap: wrap; }
+  .places-search { flex-basis: min(100%, 460px); }
+  .places-filter { flex-basis: 180px; }
+}
+@media (prefers-reduced-motion: reduce) { .places-table tbody tr { transition: none; } }
 
 .corr-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--corr-line); }
 .corr-page-heading h1 { margin: 0; font: 400 30px/1.2 Georgia, "Iowan Old Style", serif; letter-spacing: -.02em; }
@@ -481,7 +521,6 @@
 .corr-place-directory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 28px; }
 .corr-place-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 24px; margin: 20px 0; color: var(--corr-muted); }
 .corr-place-status p { flex: 1 1 420px; margin: 0; }
-.corr-inactive-places { margin-top: 40px; padding-top: 22px; border-top: 1px solid var(--corr-line); color: var(--corr-muted); }
 .corr-place-import { max-width: 840px; }
 .corr-place-import h1 { font: 32px/1.2 Georgia, 'Iowan Old Style', serif; font-weight: 400; }
 .corr-place-import p { color: var(--corr-muted); }

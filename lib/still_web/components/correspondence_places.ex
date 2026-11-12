@@ -3,22 +3,10 @@ defmodule StillWeb.CorrespondencePlaces do
   use StillWeb, :html
   alias Still.{Correspondence, Poems}
 
-  attr :journals, :list, required: true
+  attr :directory, :map, required: true
   attr :icons, :map, default: %{}
 
   def directory(assigns) do
-    assigns =
-      assigns
-      |> assign(:active, Enum.filter(assigns.journals, &Correspondence.active_journal?/1))
-      |> assign(:inactive, Enum.reject(assigns.journals, &Correspondence.active_journal?/1))
-      |> assign(
-        :shortlisted,
-        Enum.filter(
-          assigns.journals,
-          &(Correspondence.active_journal?(&1) && truthy?(&1.shortlisted))
-        )
-      )
-
     ~H"""
     <section id="places-directory" class="editorial-place-directory" aria-labelledby="places-heading">
       <header class="editorial-place-intro">
@@ -30,105 +18,305 @@ defmodule StillWeb.CorrespondencePlaces do
         </div>
       </header>
 
-      <section
-        :if={@shortlisted != []}
-        class="editorial-place-shortlist"
-        aria-labelledby="shortlist-heading"
+      <.form
+        for={%{}}
+        id="places-filters"
+        class="places-filters"
+        phx-change="filter_places"
+        phx-submit="filter_places"
       >
-        <div class="editorial-place-section-head">
-          <h2 id="shortlist-heading">Kept nearby</h2>
+        <div class="places-search-row">
+          <div class="places-search">
+            <label for="places-query">Search places</label>
+            <input
+              id="places-query"
+              type="search"
+              name="places[q]"
+              value={@directory.filters["q"]}
+              placeholder="Name, keywords, or notes"
+              phx-debounce="250"
+              autocomplete="off"
+            />
+            <small>Search includes descriptions, guidelines, submission details, and your notes.</small>
+          </div>
+          <.link id="reset-places" patch={~p"/correspondence/journals"} class="corr-text-link">Reset view</.link>
         </div>
-        <ul class="editorial-place-shortcuts">
-          <li :for={journal <- @shortlisted}>
-            <.link patch={~p"/correspondence/journals/#{journal.id}"}>{journal.name}</.link>
-            <span>Kept nearby</span>
-          </li>
-        </ul>
-      </section>
-
-      <section class="editorial-place-all" aria-labelledby="all-places-heading">
-        <div class="editorial-place-section-head">
-          <h2 id="all-places-heading">Active places</h2>
-        </div>
-        <div :if={@active != []} class="editorial-place-grid">
-          <.journal_card
-            :for={journal <- @active}
-            journal={journal}
-            icon={Map.get(@icons, journal.id)}
+        <div class="places-filter-row">
+          <.directory_filter
+            id="places-status"
+            label="Status"
+            name="status"
+            value={@directory.filters["status"]}
+            options={[
+              {"Active places", "active"},
+              {"All places", "all"},
+              {"Inactive places", "inactive"}
+            ]}
+          />
+          <.directory_filter
+            id="places-nearby"
+            label="Kept nearby"
+            name="nearby"
+            value={@directory.filters["nearby"]}
+            options={[{"All", "all"}, {"Kept nearby", "nearby"}, {"Not kept nearby", "not_nearby"}]}
+          />
+          <.directory_filter
+            id="places-reach"
+            label="Reach · your impression"
+            name="reach"
+            value={@directory.filters["reach"]}
+            options={[
+              {"Any reach", "all"},
+              {"Approachable", "approachable"},
+              {"A stretch", "stretch"},
+              {"A long shot", "long_shot"},
+              {"Unknown", "unknown"}
+            ]}
+          />
+          <.directory_filter
+            id="places-simultaneous"
+            label="Simultaneous submissions"
+            name="simultaneous"
+            value={@directory.filters["simultaneous"]}
+            options={[
+              {"Any policy", "all"},
+              {"Allowed", "allowed"},
+              {"Not allowed", "not_allowed"},
+              {"Unknown", "unknown"}
+            ]}
+          />
+          <.directory_filter
+            id="places-history"
+            label="Submission history"
+            name="history"
+            value={@directory.filters["history"]}
+            options={[
+              {"Any history", "all"},
+              {"Never sent", "never_sent"},
+              {"Awaiting reply", "awaiting"},
+              {"Sent before", "sent"}
+            ]}
           />
         </div>
-        <div :if={@active == []} class="editorial-place-empty">
-          <p class="editorial-place-empty-title">The directory is open.</p>
-          <p>
-            Add a publication when one comes to mind. Its details and your notes can stay together here.
-          </p>
-          <.link patch={~p"/correspondence/journals/new"} class="corr-text-link">Add your first place
-          <span>→</span></.link>
-        </div>
-      </section>
-      <details :if={@inactive != []} id="inactive-places" class="corr-inactive-places">
-        <summary>Inactive places ({length(@inactive)})</summary>
-        <p>Notes and past submissions are kept. Open a place to reactivate it.</p>
-        <ul>
-          <li :for={journal <- @inactive}>
-            <.link patch={~p"/correspondence/journals/#{journal.id}"}>{journal.name}</.link>
-          </li>
-        </ul>
-      </details>
+      </.form>
+
+      <p id="places-result-count" class="places-result-count" role="status" aria-live="polite">
+        <%= if @directory.matched > 0 do %>
+          {(@directory.page - 1) * @directory.per_page + 1}–{(@directory.page - 1) *
+            @directory.per_page + length(@directory.rows)} of {@directory.matched} {if @directory.matched ==
+                                                                                         1,
+                                                                                       do: "place",
+                                                                                       else: "places"}
+        <% else %>
+          No places match this view
+        <% end %>
+        <span> · {@directory.total} total</span>
+      </p>
+
+      <div
+        :if={@directory.rows != []}
+        class="places-table-scroll"
+        role="region"
+        aria-label="Places table"
+        tabindex="0"
+      >
+        <table id="places-table" class="places-table">
+          <caption class="sr-only">Places and the submission details you have recorded</caption>
+          <thead>
+            <tr>
+              <.sort_header
+                field="name"
+                label="Place"
+                filters={@directory.filters}
+                class="places-col-name"
+              />
+              <.sort_header
+                field="reach"
+                label="Reach"
+                filters={@directory.filters}
+                class="places-col-reach"
+              />
+              <th scope="col" class="places-col-simultaneous">Simultaneous</th>
+              <.sort_header
+                field="window"
+                label="Submission window"
+                filters={@directory.filters}
+                class="places-col-window"
+              />
+              <.sort_header
+                field="last_sent"
+                label="History"
+                filters={@directory.filters}
+                class="places-col-history"
+              />
+              <th scope="col" class="places-col-nearby">Keep nearby</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={row <- @directory.rows} id={"place-row-#{row.journal.id}"}>
+              <td class="places-name-cell">
+                <div class="place-name-with-icon">
+                  <.icon journal={row.journal} src={Map.get(@icons, row.journal.id)} />
+                  <.link patch={~p"/correspondence/journals/#{row.journal.id}"} class="places-name">{row.journal.name}</.link>
+                </div>
+                <span :if={truthy?(value(row.journal, :verified))} class="places-state">Source checked by you</span>
+                <span :if={!Correspondence.active_journal?(row.journal)} class="places-state">Inactive</span>
+                <p :if={has_text?(value(row.journal, :description))} class="places-description">
+                  {excerpt(value(row.journal, :description), 150)}
+                </p>
+                <p :if={has_text?(row.journal.notes)} class="places-notes">
+                  <span>Notes:</span> {excerpt(row.journal.notes, 150)}
+                </p>
+                <p :if={has_text?(value(row.journal, :keywords))} class="places-secondary">
+                  {excerpt(value(row.journal, :keywords), 100)}
+                </p>
+              </td>
+              <td>{Correspondence.reach_label(value(row.journal, :reach))}</td>
+              <td>{policy(row.journal.simultaneous_policy)}</td>
+              <td>
+                <div>{known_or_unknown(row.journal.windows)}</div>
+                <p :if={has_text?(row.journal.fee)} class="places-secondary">
+                  Fee: {excerpt(row.journal.fee, 90)}
+                </p>
+              </td>
+              <td class="places-history">
+                <%= cond do %>
+                  <% row.sent_count == 0 -> %>
+                    <span>Never sent</span>
+                  <% row.last_sent_at -> %>
+                    <span>Last sent
+                    <time datetime={String.slice(row.last_sent_at, 0, 10)}>{display_date(
+                      row.last_sent_at
+                    )}</time></span>
+                  <% true -> %>
+                    <span>Sent · date not recorded</span>
+                <% end %>
+                <p :if={row.awaiting_count > 0} class="places-secondary">
+                  {row.awaiting_count} awaiting reply
+                </p>
+                <p :if={row.packet_count > 0} class="places-secondary">
+                  {row.packet_count} {if row.packet_count == 1, do: "packet", else: "packets"}
+                </p>
+              </td>
+              <td>
+                <button
+                  type="button"
+                  class="places-nearby"
+                  phx-click="toggle_shortlist"
+                  phx-value-id={row.journal.id}
+                  aria-label={"#{if truthy?(row.journal.shortlisted), do: "Stop keeping", else: "Keep"} #{row.journal.name} nearby"}
+                  aria-pressed={to_string(truthy?(row.journal.shortlisted))}
+                  phx-disable-with="Saving…"
+                >{if truthy?(row.journal.shortlisted), do: "Kept nearby", else: "Keep nearby"}</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div :if={@directory.total == 0} class="editorial-place-empty">
+        <p class="editorial-place-empty-title">The directory is open.</p>
+        <p>
+          Add a publication when one comes to mind. Its details and your notes can stay together here.
+        </p>
+        <.link patch={~p"/correspondence/journals/new"} class="corr-text-link">Add your first place →</.link>
+      </div>
+      <p :if={@directory.total > 0 && @directory.matched == 0} class="editorial-place-empty-note">
+        Try another search or reset the view. Inactive places are available under Status.
+      </p>
+      <nav :if={@directory.pages > 1} class="places-pagination" aria-label="Places pages">
+        <button
+          type="button"
+          phx-click="places_page"
+          phx-value-page={@directory.page - 1}
+          disabled={@directory.page == 1}
+          class="corr-text-link"
+        >Previous page</button>
+        <span>Page {@directory.page} of {@directory.pages}</span>
+        <button
+          type="button"
+          phx-click="places_page"
+          phx-value-page={@directory.page + 1}
+          disabled={@directory.page == @directory.pages}
+          class="corr-text-link"
+        >Next page</button>
+      </nav>
     </section>
     """
   end
 
-  attr :journal, :map, required: true
+  attr :id, :string, required: true
+  attr :label, :string, required: true
+  attr :name, :string, required: true
+  attr :value, :string, required: true
+  attr :options, :list, required: true
 
-  attr :icon, :string, default: nil
+  defp directory_filter(assigns) do
+    ~H"""
+    <div class="places-filter">
+      <label for={@id}>{@label}</label>
+      <select id={@id} name={"places[#{@name}]"}>
+        <option :for={{label, value} <- @options} value={value} selected={value == @value}>
+          {label}
+        </option>
+      </select>
+    </div>
+    """
+  end
 
-  defp journal_card(assigns) do
+  attr :field, :string, required: true
+  attr :label, :string, required: true
+  attr :filters, :map, required: true
+  attr :class, :string, default: nil
+
+  defp sort_header(assigns) do
     assigns =
       assigns
-      |> assign(:has_notes, has_text?(assigns.journal.notes))
-      |> assign(:has_interests, has_text?(assigns.journal.interests))
-      |> assign(:windows, known_or_unknown(assigns.journal.windows))
-      |> assign(:policy, policy(assigns.journal.simultaneous_policy))
-      |> assign(:verified, truthy?(assigns.journal.verified))
+      |> assign(:selected, assigns.filters["sort"] == assigns.field)
+      |> assign(
+        :sort_label,
+        case assigns.field do
+          "last_sent" -> "Sort by last sent date"
+          "window" -> "Sort by recorded submission window text"
+          _ -> "Sort by " <> assigns.label
+        end
+      )
 
     ~H"""
-    <article class="editorial-place-card">
-      <div class="editorial-place-card-top">
-        <span class="editorial-place-source">{if @verified,
-          do: "You marked source checked",
-          else: "Personal record"}</span>
-      </div>
-      <div class="place-name-with-icon">
-        <.icon journal={@journal} src={@icon} />
-        <h3><.link patch={~p"/correspondence/journals/#{@journal.id}"}>{@journal.name}</.link></h3>
-      </div>
-      <p :if={has_text?(value(@journal, :description))} class="place-description">
-        {value(@journal, :description)}
-      </p>
-      <p :if={@has_interests} class="editorial-place-interest">{@journal.interests}</p>
-      <p :if={@has_notes} class="editorial-place-note">{@journal.notes}</p>
-      <p :if={has_text?(value(@journal, :keywords))} class="corr-meta">
-        Keywords: {value(@journal, :keywords)}
-      </p>
-      <p class="corr-meta">Reach: {Correspondence.reach_label(value(@journal, :reach))}</p>
-      <div class="editorial-place-facts">
-        <span>Simultaneous: {@policy}</span>
-        <span>Window: {@windows}</span>
-      </div>
-      <div class="corr-place-actions">
-        <.link patch={~p"/correspondence/journals/#{@journal.id}"} class="editorial-place-open">Open place
-        <span aria-hidden="true">→</span></.link>
-        <button
-          type="button"
-          class="corr-text-link corr-desk-action"
-          phx-click="toggle_shortlist"
-          phx-value-id={@journal.id}
-          aria-pressed={to_string(truthy?(@journal.shortlisted))}
-        >{if truthy?(@journal.shortlisted), do: "Stop keeping nearby", else: "Keep nearby"}</button>
-      </div>
-    </article>
+    <th
+      scope="col"
+      class={@class}
+      aria-sort={
+        if @selected,
+          do: if(@filters["direction"] == "desc", do: "descending", else: "ascending"),
+          else: "none"
+      }
+    >
+      <button
+        type="button"
+        class="places-sort"
+        phx-click="sort_places"
+        phx-value-column={@field}
+        aria-label={@sort_label}
+        title={@sort_label}
+      >
+        {@label}<span aria-hidden="true">{if @selected,
+          do: if(@filters["direction"] == "desc", do: "↓", else: "↑"),
+          else: "↕"}</span>
+      </button>
+    </th>
     """
+  end
+
+  defp excerpt(text, limit) do
+    text = text |> String.replace(~r/\s+/u, " ") |> String.trim()
+    if String.length(text) > limit, do: String.slice(text, 0, limit) <> "…", else: text
+  end
+
+  defp display_date(value) do
+    case Date.from_iso8601(String.slice(value, 0, 10)) do
+      {:ok, date} -> Calendar.strftime(date, "%b %-d, %Y")
+      _ -> "date not recorded"
+    end
   end
 
   attr :journal, :map, required: true
@@ -137,6 +325,7 @@ defmodule StillWeb.CorrespondencePlaces do
   attr :form, :map, required: true
 
   attr :icon, :string, default: nil
+  attr :directory_path, :string, default: "/correspondence/journals"
 
   def details(assigns) do
     assigns =
@@ -152,7 +341,7 @@ defmodule StillWeb.CorrespondencePlaces do
 
     ~H"""
     <section class="editorial-place-detail" aria-labelledby="place-title">
-      <.link patch={~p"/correspondence/journals"} class="editorial-place-back">← All places</.link>
+      <.link patch={@directory_path} class="editorial-place-back">← All places</.link>
       <header class="editorial-place-profile-head">
         <div>
           <div class="place-name-with-icon is-profile">

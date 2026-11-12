@@ -42,8 +42,18 @@ notes and previous correspondence. **Keep nearby** controls in Places and on hom
 only that personal marker; they do not represent an editorial decision from a journal. Home shows recorded windows and policies only when you
 have marked the source checked; this is your record, not live confirmation of availability.
 
-**Places** keeps the places you have kept nearby above the complete directory. Open a place to
-read its notes, requirements, and linked packets and pieces. **Edit place details**
+**Places** is a single searchable table. Search names, keywords, descriptions, guidelines,
+and your notes. Combine filters for active or inactive places, kept nearby, reach,
+simultaneous-submission policy, and submission history. Click the Place, Reach,
+Submission window, or History heading to sort; click again to reverse it. Windows
+remain the text you recorded, without guessing whether a place is open. History uses
+the date you marked a packet sent, with unknown dates kept last.
+
+The table shows 40 places per page. Search and filters cover the full directory;
+opening a place and returning to **All places** keeps your view. **Reset view** clears
+the search, filters, sorting, and page. Keep nearby is a personal marker in the same
+table, rather than a second copy of the place. Open a place to read its complete notes,
+requirements, and linked packets and pieces. **Edit place details**
 opens the manual record; **Prepare a packet** starts with that saved destination selected.
 Packet preparation separates the saved-writing chooser, ordered manuscript, and
 destination. The chooser can be searched and scrolled with the keyboard. Reordering

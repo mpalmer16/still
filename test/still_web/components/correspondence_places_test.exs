@@ -3,37 +3,42 @@ defmodule StillWeb.CorrespondencePlacesTest do
 
   import Phoenix.LiveViewTest
 
+  alias Still.Correspondence.PlaceDirectory
   alias StillWeb.CorrespondencePlaces
 
   test "directory invites a first place and keeps source-check status manual" do
-    empty = render_component(&CorrespondencePlaces.directory/1, %{journals: []})
+    empty = directory_html([], [])
     assert empty =~ ~s(id="places-directory")
     assert empty =~ ~s(href="/correspondence/journals/new")
     assert empty =~ "Add a place"
     assert empty =~ ~s(<h1 id="places-heading">Places</h1>)
-    assert empty =~ ~s(<h2 id="all-places-heading">Active places</h2>)
+    assert empty =~ ~s(id="places-filters")
+    refute empty =~ ~s(id="places-table")
     refute empty =~ "editorial-place-count"
     refute empty =~ "A PERSONAL DIRECTORY"
     refute empty =~ "Places to send work."
     refute empty =~ "Publication details, your own notes"
 
-    html =
-      render_component(&CorrespondencePlaces.directory/1, %{
-        journals: [
-          journal("Checked by writer", %{verified: true}),
-          journal("Not checked", %{verified: false})
-        ]
-      })
+    journals = [
+      journal("Checked by writer", %{id: "checked", verified: true}),
+      journal("Not checked", %{id: "unchecked", verified: false})
+    ]
+
+    html = directory_html(journals, [])
+    doc = LazyHTML.from_fragment(html)
 
     assert html =~ "Checked by writer"
-    assert html =~ "You marked source checked"
-    assert html =~ "Personal record"
+    assert LazyHTML.query(doc, "#place-row-checked") |> LazyHTML.text() =~ "Source checked by you"
+
+    refute LazyHTML.query(doc, "#place-row-unchecked") |> LazyHTML.text() =~
+             "Source checked by you"
+
     assert html =~ "Kept nearby"
-    assert length(Regex.scan(~r/class="editorial-place-shortcuts"/, html)) == 1
-    assert length(Regex.scan(~r/class="editorial-place-card"/, html)) == 2
-    refute html =~ "class=\"editorial-place-card is-shortlisted"
+    assert length(Regex.scan(~r/id="place-row-/, html)) == 2
+    assert html =~ ~s(aria-label="Sort by Place")
+    assert html =~ ~s(name="places[nearby]")
     refute html =~ "Not recorded."
-    assert html =~ "Simultaneous: Unknown"
+    assert html =~ "Unknown"
   end
 
   test "profile states unknown details and links packets to their pieces" do
@@ -155,5 +160,10 @@ defmodule StillWeb.CorrespondencePlacesTest do
       },
       overrides
     )
+  end
+
+  defp directory_html(journals, packets) do
+    directory = PlaceDirectory.browse(journals, packets, %{})
+    render_component(&CorrespondencePlaces.directory/1, %{directory: directory, icons: %{}})
   end
 end

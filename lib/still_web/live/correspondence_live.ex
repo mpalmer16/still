@@ -2,7 +2,16 @@ defmodule StillWeb.CorrespondenceLive do
   use StillWeb, :live_view
 
   alias Still.{Correspondence, Poems, Storage}
-  alias Still.Correspondence.{Appearance, Icons, PacketExports, PacketNotes, PlaceImport, Proofs}
+
+  alias Still.Correspondence.{
+    Appearance,
+    Icons,
+    PacketExports,
+    PacketNotes,
+    PlaceDirectory,
+    PlaceImport,
+    Proofs
+  }
 
   alias StillWeb.{
     CorrespondenceHome,
@@ -27,6 +36,9 @@ defmodule StillWeb.CorrespondenceLive do
        works_limit: 40,
        submission_focus: false,
        place_icons: %{},
+       places_filters: PlaceDirectory.browse([], [], %{}).filters,
+       places_directory: nil,
+       places_page_active?: false,
        form: %{},
        revisions: [],
        journal_packets: [],
@@ -53,42 +65,80 @@ defmodule StillWeb.CorrespondenceLive do
   def handle_params(params, _uri, socket) do
     location = Storage.collection_location()
     action = socket.assigns.live_action
-    socket = refresh_desk(socket, location)
 
-    {:noreply, socket} =
-      cond do
-        !location.configured || !location.available ->
-          {:noreply,
-           assign(socket,
-             location: location,
-             page_title: "Correspondence",
-             problem: collection_problem(location),
-             overview: %{journals: [], packets: [], pieces: []},
-             piece: nil,
-             journal: nil,
-             packet: nil,
-             history: [],
-             overlap: [],
-             form: %{}
-           )}
+    previous_location = socket.assigns[:location]
 
-        action in [:home, :collection, :journals, :import_journals, :packets] ->
-          load_overview(socket, location, action)
+    same_directory? =
+      action == :journals && socket.assigns.places_page_active? &&
+        location.available && location.configured && previous_location &&
+        previous_location.available &&
+        is_nil(socket.assigns.problem) && previous_location.scope == location.scope &&
+        previous_location.folder == location.folder
 
-        action == :piece ->
-          load_piece(socket, location, params["id"], params)
+    if same_directory? do
+      {:noreply, put_places_directory(socket, params)}
+    else
+      socket = refresh_desk(socket, location)
 
-        action in [:new_journal, :journal] ->
-          load_journal(socket, location, params["id"])
+      {:noreply, socket} =
+        cond do
+          !location.configured || !location.available ->
+            {:noreply,
+             assign(socket,
+               location: location,
+               page_title: "Correspondence",
+               problem: collection_problem(location),
+               overview: %{journals: [], packets: [], pieces: []},
+               piece: nil,
+               journal: nil,
+               packet: nil,
+               history: [],
+               overlap: [],
+               form: %{}
+             )}
 
-        action in [:new_packet, :packet] ->
-          load_packet(socket, location, params["id"], params)
+          action in [:home, :collection, :journals, :import_journals, :packets] ->
+            load_overview(socket, location, action)
 
-        true ->
-          {:noreply, socket}
-      end
+          action == :piece ->
+            load_piece(socket, location, params["id"], params)
 
-    {:noreply, load_place_icons(socket)}
+          action in [:new_journal, :journal] ->
+            load_journal(socket, location, params["id"])
+
+          action in [:new_packet, :packet] ->
+            load_packet(socket, location, params["id"], params)
+
+          true ->
+            {:noreply, socket}
+        end
+
+      socket = assign(socket, places_page_active?: action == :journals)
+      socket = if action == :journals, do: put_places_directory(socket, params), else: socket
+      {:noreply, load_place_icons(socket)}
+    end
+  end
+
+  defp put_places_directory(socket, params) do
+    directory =
+      PlaceDirectory.browse(
+        socket.assigns.overview.journals,
+        socket.assigns.overview.packets,
+        params
+      )
+
+    assign(socket, places_directory: directory, places_filters: directory.filters)
+  end
+
+  defp places_path(filters) do
+    defaults = PlaceDirectory.browse([], [], %{}).filters
+
+    params =
+      Map.reject(filters, fn {key, value} -> to_string(value) == to_string(defaults[key]) end)
+
+    if map_size(params) == 0,
+      do: ~p"/correspondence/journals",
+      else: ~p"/correspondence/journals?#{params}"
   end
 
   defp load_place_icons(socket) do
@@ -592,12 +642,64 @@ defmodule StillWeb.CorrespondenceLive do
                   ),
                 else: socket
 
+            socket =
+              if socket.assigns.live_action == :journals,
+                do: put_places_directory(socket, socket.assigns.places_filters),
+                else: socket
+
             {:noreply, socket}
 
           {:error, message} ->
             {:noreply, assign(socket, problem: message, notice: nil)}
         end
     end
+  end
+
+  def handle_event("filter_places", %{"places" => params}, socket) do
+    filters = socket.assigns.places_filters |> Map.merge(params) |> Map.put("page", "1")
+
+    directory =
+      PlaceDirectory.browse(
+        socket.assigns.overview.journals,
+        socket.assigns.overview.packets,
+        filters
+      )
+
+    {:noreply, push_patch(socket, to: places_path(directory.filters), replace: true)}
+  end
+
+  def handle_event("sort_places", %{"column" => column}, socket) do
+    filters = socket.assigns.places_filters
+
+    direction =
+      cond do
+        filters["sort"] == column && filters["direction"] == "asc" -> "desc"
+        filters["sort"] == column -> "asc"
+        column == "last_sent" -> "desc"
+        true -> "asc"
+      end
+
+    filters = Map.merge(filters, %{"sort" => column, "direction" => direction, "page" => "1"})
+
+    directory =
+      PlaceDirectory.browse(
+        socket.assigns.overview.journals,
+        socket.assigns.overview.packets,
+        filters
+      )
+
+    {:noreply, push_patch(socket, to: places_path(directory.filters), replace: true)}
+  end
+
+  def handle_event("places_page", %{"page" => page}, socket) do
+    directory =
+      PlaceDirectory.browse(
+        socket.assigns.overview.journals,
+        socket.assigns.overview.packets,
+        Map.put(socket.assigns.places_filters, "page", page)
+      )
+
+    {:noreply, push_patch(socket, to: places_path(directory.filters))}
   end
 
   def handle_event("search", %{"search" => value}, socket),
@@ -1143,7 +1245,7 @@ defmodule StillWeb.CorrespondenceLive do
               class={if @live_action in [:collection, :piece], do: "active", else: nil}
             >Works</.link>
             <.link
-              patch={~p"/correspondence/journals"}
+              patch={places_path(@places_filters)}
               class={
                 if @live_action in [:journals, :journal, :new_journal, :import_journals],
                   do: "active",
@@ -1275,7 +1377,7 @@ defmodule StillWeb.CorrespondenceLive do
           :if={@live_action == :journals && @location.configured && @location.available}
           class="corr-page"
         >
-          <CorrespondencePlaces.directory journals={@overview.journals} icons={@place_icons} />
+          <CorrespondencePlaces.directory directory={@places_directory} icons={@place_icons} />
         </section>
         <section
           :if={@live_action == :import_journals && @location.configured && @location.available}
@@ -1289,6 +1391,7 @@ defmodule StillWeb.CorrespondenceLive do
         </section>
         <section :if={@live_action == :journal && @journal} class="corr-page">
           <CorrespondencePlaces.details
+            directory_path={places_path(@places_filters)}
             icon={Map.get(@place_icons, @journal.id)}
             journal={@journal}
             packets={@journal_packets}

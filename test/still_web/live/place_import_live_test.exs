@@ -97,9 +97,9 @@ defmodule StillWeb.PlaceImportLiveTest do
     assert {:ok, inactive} = Correspondence.journal(location, place.id)
     assert inactive.inactive
     assert inactive.notes == "Kept while inactive"
-    {:ok, directory, _} = live(conn, ~p"/correspondence/journals")
-    assert has_element?(directory, "#inactive-places a", "Synthetic Place")
-    refute has_element?(directory, ".editorial-place-card", "Synthetic Place")
+    {:ok, directory, _} = live(conn, ~p"/correspondence/journals?status=inactive")
+    assert has_element?(directory, "#place-row-#{place.id}", "Synthetic Place")
+    assert has_element?(directory, "#places-result-count", "1–1 of 1 place")
     {:ok, home, _} = live(conn, ~p"/correspondence")
     refute has_element?(home, ".editorial-home-place", "Synthetic Place")
     {:ok, packet, _} = live(conn, ~p"/correspondence/packets/new")
@@ -108,9 +108,9 @@ defmodule StillWeb.PlaceImportLiveTest do
     assert has_element?(reopened, "#toggle-place-active", "Reactivate place")
     render_click(element(reopened, "#toggle-place-active"))
     assert has_element?(reopened, "#toggle-place-active", "Deactivate place")
-    {:ok, directory, _} = live(conn, ~p"/correspondence/journals")
-    assert has_element?(directory, ".editorial-place-card", "Synthetic Place")
-    refute has_element?(directory, "#inactive-places")
+    {:ok, directory, _} = live(conn, ~p"/correspondence/journals?status=active")
+    assert has_element?(directory, "#place-row-#{place.id}", "Synthetic Place")
+    refute has_element?(directory, "#places-result-count", "No places match")
   end
 
   test "place suggestions and personal connections appear on both sides, survive editing, and reject stale tabs",
@@ -205,7 +205,7 @@ defmodule StillWeb.PlaceImportLiveTest do
     render_async(view)
     assert_received {:icon_fetch, "https://review.example/favicon.ico"}
     assert has_element?(view, ".place-icon img[src^='data:image/png;base64,']")
-    assert has_element?(view, ".place-description", "<script>A small journal</script>")
+    assert has_element?(view, ".places-description", "<script>A small journal</script>")
     refute has_element?(view, "script", "A small journal")
     assert {:ok, ^journal} = Correspondence.journal(location, journal.id)
     {:ok, place, _} = live(conn, ~p"/correspondence/journals/#{journal.id}")
