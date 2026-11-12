@@ -502,6 +502,19 @@ defmodule Still.Writing.Files do
     }
   end
 
+  def notebook_save_location(location, id) do
+    notebook = if is_integer(number(id)), do: Repo.get(Notebook, number(id))
+
+    if notebook && notebook.collection_scope == location.scope do
+      case NotebookSections.destination(notebook) do
+        folder when is_binary(folder) -> save_location(location, Path.join(folder, "page.txt"))
+        _ -> save_location(location)
+      end
+    else
+      save_location(location)
+    end
+  end
+
   def proposed_path(location, body) do
     filename = filename_from_label(first_filename_line(body))
     filename = if location.number, do: location.number <> "_" <> filename, else: filename

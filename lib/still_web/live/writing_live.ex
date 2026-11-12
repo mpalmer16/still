@@ -245,24 +245,18 @@ defmodule StillWeb.WritingLive do
   def handle_event("writing_changed", %{"writing" => attrs}, socket) do
     draft = draft_words(attrs, socket.assigns.piece)
 
-    socket =
-      if is_nil(socket.assigns.piece.token) and draft.unplaced == "true" do
-        assign(socket,
-          unplaced_requested?: true,
-          save_location:
-            Still.Writing.Files.unplaced_location(socket.assigns.location, draft.notebook_id)
-        )
-      else
-        socket
-      end
+    draft =
+      if is_nil(socket.assigns.piece.token) and draft.unplaced != socket.assigns.draft.unplaced,
+        do: %{draft | relative_path: ""},
+        else: draft
 
     socket =
-      if is_nil(socket.assigns.piece.token) &&
-           draft.unplaced != "true" && draft.relative_path != socket.assigns.draft.relative_path do
-        assign(
-          socket,
-          :save_location,
-          Still.Writing.Files.save_location(socket.assigns.location, draft.relative_path)
+      if is_nil(socket.assigns.piece.token) and
+           Map.take(draft, [:unplaced, :relative_path, :notebook_id]) !=
+             Map.take(socket.assigns.draft, [:unplaced, :relative_path, :notebook_id]) do
+        assign(socket,
+          unplaced_requested?: draft.unplaced == "true",
+          save_location: draft_save_location(socket.assigns.location, draft)
         )
       else
         socket
@@ -456,8 +450,7 @@ defmodule StillWeb.WritingLive do
 
     unplaced_save? =
       is_nil(socket.assigns.piece.token) and
-        (params["unplaced"] in [true, "true"] or draft.unplaced == "true" or
-           socket.assigns.unplaced_requested?)
+        (params["unplaced"] in [true, "true"] or draft.unplaced == "true")
 
     save =
       cond do
@@ -1089,6 +1082,15 @@ defmodule StillWeb.WritingLive do
     end
   end
 
+  defp draft_save_location(location, %{unplaced: "true"} = draft),
+    do: Still.Writing.Files.unplaced_location(location, draft.notebook_id)
+
+  defp draft_save_location(location, %{relative_path: path}) when path not in [nil, ""],
+    do: Still.Writing.Files.save_location(location, path)
+
+  defp draft_save_location(location, draft),
+    do: Still.Writing.Files.notebook_save_location(location, draft.notebook_id)
+
   defp save_destination(%{notebook: notebook, section: section, number: number}) do
     if notebook do
       "#{notebook} · #{section || "Notebook"} · Next List #{number || "not yet numbered"}"
@@ -1259,6 +1261,15 @@ defmodule StillWeb.WritingLive do
           <p :if={@piece.token && Map.get(@piece, :unplaced, false)} class="file-note">
             {notebook_label(@draft.notebook_id, @notebooks)} · Unplaced · Not yet numbered
           </p>
+          <div :if={is_nil(@piece.token) && numbered_notebook?(@draft.notebook_id, @notebooks)}>
+            <label for="new-writing-destination">Save this writing as</label>
+            <select id="new-writing-destination" form="file-writing-form" name="writing[unplaced]">
+              <option value="" selected={@draft.unplaced != "true"}>Next numbered List</option>
+              <option value="true" selected={@draft.unplaced == "true"}>
+                Unplaced · Not yet numbered
+              </option>
+            </select>
+          </div>
           <p
             :if={is_nil(@piece.token) && numbered_notebook?(@draft.notebook_id, @notebooks)}
             id="unplaced-save-destination"
@@ -1267,10 +1278,7 @@ defmodule StillWeb.WritingLive do
             <%= if @unplaced_requested? do %>
               Save: {notebook_label(@draft.notebook_id, @notebooks)} · Unplaced · Not yet numbered
             <% else %>
-              Save: {save_destination(@save_location)}. Save to Unplaced: {notebook_label(
-                @draft.notebook_id,
-                @notebooks
-              )} · Unplaced · Not yet numbered
+              Save: {save_destination(@save_location)}
             <% end %>
           </p>
           <p :if={is_nil(@piece.token) && @draft.notebook_id == ""} class="file-note">
@@ -1470,6 +1478,7 @@ defmodule StillWeb.WritingLive do
             value={@draft.title_line}
           />
           <input
+            :if={@piece.token || !numbered_notebook?(@draft.notebook_id, @notebooks)}
             form="file-writing-form"
             type="hidden"
             name="writing[unplaced]"

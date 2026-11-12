@@ -62,6 +62,58 @@ defmodule StillWeb.UnplacedWritingLiveTest do
     assert saved.list_label == nil
   end
 
+  test "choosing Unplaced updates the filename before ordinary Save", %{
+    conn: conn,
+    location: location,
+    notebook: notebook
+  } do
+    {:ok, _} = Still.Writing.Notebooks.choose_current(notebook.id)
+    {:ok, view, _} = live(conn, "/?new=1")
+    assert has_element?(view, "#rename-menu-name[value='1_Untitled.txt']")
+
+    view |> form("#file-writing-form", writing: %{body: "", unplaced: "true"}) |> render_change()
+    assert has_element?(view, "#new-writing-destination option[value='true'][selected]")
+    assert has_element?(view, "#rename-menu-name[value='Untitled.txt']")
+    assert has_element?(view, "#unplaced-save-destination", "Not yet numbered")
+    refute has_element?(view, "#unplaced-save-destination", "Next List")
+
+    render_submit(view, "save_file", %{
+      "writing" => %{
+        "body" => "A transcription",
+        "unplaced" => "true",
+        "notebook_id" => to_string(notebook.id)
+      }
+    })
+
+    assert {:ok, [saved]} = Files.list(location)
+    assert saved.relative_path == "Notebook 1/Unplaced/A_transcription.txt"
+    assert is_nil(saved.list_label)
+    assert has_element?(view, "#rename-menu-name[value='A_transcription.txt']")
+  end
+
+  test "switching back to the numbered destination does not retain Unplaced", %{
+    conn: conn,
+    location: location,
+    notebook: notebook
+  } do
+    {:ok, view, _} = live(conn, "/?notebook=#{notebook.id}&unplaced=true")
+    view |> form("#file-writing-form", writing: %{body: "", unplaced: ""}) |> render_change()
+    assert has_element?(view, "#rename-menu-name[value='1_Untitled.txt']")
+    assert has_element?(view, "#unplaced-save-destination", "Next List 1")
+
+    render_submit(view, "save_file", %{
+      "writing" => %{
+        "body" => "A numbered piece",
+        "unplaced" => "",
+        "notebook_id" => to_string(notebook.id)
+      }
+    })
+
+    assert {:ok, [saved]} = Files.list(location)
+    refute saved.unplaced
+    assert saved.list_label == "1"
+  end
+
   test "placement previews duplicate numbers and saves the latest editor words before requiring confirmation",
        %{conn: conn, location: location, notebook: notebook} do
     {:ok, first} =
