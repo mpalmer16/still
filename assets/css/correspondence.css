@@ -580,3 +580,89 @@
   .corr-workspace .corr-packet-grid { grid-template-columns: minmax(0,1.4fr) minmax(290px,.9fr); }
   .corr-workspace .editorial-packet-library { grid-column: 1/-1; }
 }
+
+/* Calendar shares the correspondence room's quiet controls and table language. */
+.corr-calendar-heading { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 18px; }
+.corr-calendar-heading > div:first-child { display: flex; align-items: center; gap: 26px; }
+.corr-calendar-heading h1 { margin: 0; font: 400 30px/1.2 Georgia, 'Iowan Old Style', serif; }
+.corr-calendar-actions { display: flex; align-items: center; gap: 12px; }
+.corr-calendar-view-switch { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--corr-line); border-radius: 6px; }
+.corr-calendar-view-switch a { padding: 4px 12px; border-radius: 3px; color: var(--corr-muted); font-size: 13px; }
+.corr-calendar-view-switch a[aria-current], .corr-calendar-view-switch a.active { background: var(--corr-surface); color: var(--corr-ink); }
+.corr-calendar-cancelled, .corr-calendar-hidden { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.corr-calendar .corr-directory-toolbar { margin-bottom: 20px; }
+.corr-calendar-range { display: flex; align-items: center; gap: 9px; margin-left: auto; }
+.corr-calendar-range select { min-height: 36px; border: 1px solid var(--corr-line); border-radius: 5px; padding: 6px 10px; background: var(--corr-panel); color: var(--corr-ink); font: 14px var(--sans); }
+.corr-calendar-month-nav { display: flex; align-items: center; gap: 16px; margin: 20px 0 16px; }
+.corr-calendar-month-nav h2 { font: 400 24px/1.3 Georgia, 'Iowan Old Style', serif; margin: 0; min-width: 190px; text-align: center; }
+.corr-calendar-month-nav > a:not(.corr-text-link) { width: 32px; height: 32px; display: grid; place-items: center; font-size: 24px; border: 1px solid var(--corr-line); border-radius: 4px; }
+.corr-calendar-layout { display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(280px, 1fr); gap: 30px; align-items: start; }
+.corr-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); border-top: 1px solid var(--corr-line); border-left: 1px solid var(--corr-line); }
+.corr-calendar-weekday { padding: 8px; border-right: 1px solid var(--corr-line); background: var(--corr-panel); color: var(--corr-muted); font-size: 12px; text-align: right; }
+.corr-calendar-day { min-height: 88px; padding: 7px; border-right: 1px solid var(--corr-line); border-bottom: 1px solid var(--corr-line); background: var(--corr-bg); }
+.corr-calendar-day.is-outside { background: color-mix(in srgb, var(--corr-panel) 55%, transparent); }
+.corr-calendar-day.is-outside > .corr-calendar-day-link { color: var(--corr-faint); }
+.corr-calendar-day.is-today { background: color-mix(in srgb, var(--corr-blue) 6%, var(--corr-bg)); }
+.corr-calendar-day.is-selected { box-shadow: inset 0 0 0 2px var(--corr-blue); }
+.corr-calendar-day-link { display: block; width: fit-content; min-width: 23px; margin-left: auto; color: var(--corr-muted) !important; text-align: center; font-size: 12px; border-radius: 50%; }
+.corr-calendar-day.is-today .corr-calendar-day-link { color: var(--corr-bg) !important; background: var(--corr-blue); }
+.corr-calendar-day-events { margin-top: 5px; display: grid; gap: 3px; }
+.corr-calendar-day-event { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; padding: 3px 5px; border-left: 2px solid var(--corr-sage-dim); border-radius: 2px; background: var(--corr-panel); font-size: 11px; line-height: 1.4; }
+.corr-calendar-day-event.status-cancelled { text-decoration: line-through; opacity: .65; }
+.corr-calendar-more { color: var(--corr-blue) !important; font-size: 11px; padding-left: 5px; }
+.corr-calendar-agenda { border-top: 1px solid var(--corr-line); padding-top: 12px; }
+.corr-calendar-agenda h2 { margin: 0 0 8px; font: 400 25px/1.3 Georgia, 'Iowan Old Style', serif; }
+.corr-calendar-all-upcoming { color: var(--corr-blue) !important; font-size: 13px; }
+.corr-calendar-agenda-day h3 { margin: 22px 0 6px; color: var(--corr-muted); font-size: 13px; font-weight: 500; }
+.corr-calendar-event { padding: 14px 0; border-bottom: 1px solid var(--corr-line); }
+.corr-calendar-event h4 { margin: 3px 0 7px; font: 400 22px/1.3 Georgia, 'Iowan Old Style', serif; }
+.corr-calendar-event-time, .corr-calendar-event-range, .corr-calendar-recurrence { display: block; color: var(--corr-blue); font-size: 12px; }
+.corr-calendar-event p { margin: 5px 0; color: var(--corr-muted); font-size: 13px; }
+.corr-calendar-event .corr-calendar-notes { white-space: pre-wrap; margin: 10px 0; }
+.corr-calendar-event > a { color: var(--corr-blue); font-size: 13px; }
+.corr-calendar-category { display: inline; }
+.corr-calendar-event .corr-calendar-timezone { display: inline; margin-left: 8px; font-size: 11px; }
+.corr-calendar-event.status-cancelled h4 { text-decoration: line-through; }
+.corr-calendar-cancelled-label, .corr-calendar-hidden-label { color: var(--corr-muted); font-size: 12px; }
+.corr-calendar-event-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 12px; }
+.corr-calendar-event-actions :is(button,a) { border: 0; padding: 0; background: none; color: var(--corr-blue); font: 12px/1.5 var(--sans); cursor: pointer; }
+.corr-calendar-event-actions button:hover { text-decoration: underline; }
+.corr-calendar-list-view { overflow-x: auto; }
+.corr-calendar-events-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.corr-calendar-events-table th { border-block: 1px solid var(--corr-line); padding: 10px 12px; color: var(--corr-muted); background: var(--corr-panel); text-align: left; font-size: 12px; font-weight: 500; }
+.corr-calendar-events-table td { padding: 14px 12px; border-bottom: 1px solid var(--corr-line); vertical-align: top; }
+.corr-calendar-events-table td strong { font: 400 20px/1.35 Georgia, 'Iowan Old Style', serif; }
+.corr-calendar-events-table .corr-calendar-event-actions { display: table-cell; margin: 0; }
+.corr-calendar-events-table .corr-calendar-event-actions :is(a,button) { display: inline-block; margin: 0 10px 5px 0; }
+.corr-calendar-events-table .is-hidden { color: var(--corr-faint); }
+.corr-calendar-range-note, .corr-calendar-empty { color: var(--corr-muted); font-size: 13px; }
+#calendar-event-editor { max-width: 1000px; }
+#calendar-event-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px 24px; margin-top: 24px; }
+#calendar-event-form > label, #calendar-event-form label { display: block; margin: 0; color: var(--corr-muted); font-size: 13px; }
+#calendar-event-form :is(input,select,textarea) { margin-top: 6px; width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--corr-line); border-radius: 4px; background: var(--corr-panel); color: var(--corr-ink); font: 14px/1.5 var(--sans); }
+#calendar-event-form .is-wide, #calendar-event-form .corr-button-row { grid-column: 1/-1; }
+#calendar-event-form fieldset { padding: 18px; border: 1px solid var(--corr-line); border-radius: 5px; }
+#calendar-event-form fieldset > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin-top: 16px; }
+#calendar-event-form fieldset .corr-meta { grid-column: 1/-1; }
+#calendar-event-form .corr-button-row { display: flex; gap: 24px; align-items: center; }
+#calendar-import-preview dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px 24px; font-size: 13px; }
+#calendar-import-preview dt { color: var(--corr-muted); }
+#calendar-import-preview dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+#calendar-import-preview dd code { white-space: pre-wrap; }
+#calendar-import .corr-import-example table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#calendar-import .corr-import-example :is(td,th) { padding: 9px; border-bottom: 1px solid var(--corr-line); text-align: left; vertical-align: top; }
+@media (max-width: 1100px) {
+  .corr-calendar-layout { grid-template-columns: minmax(0,1.7fr) minmax(250px,1fr); gap: 22px; }
+  .corr-calendar-day { min-height: 78px; padding: 4px; }
+}
+
+.corr-calendar-header-actions { display: flex; align-items: center; gap: 12px; }
+.corr-calendar-header-actions .corr-button { min-height: 36px; padding: 7px 12px; border-radius: 5px; }
+.corr-calendar-agenda { max-height: 565px; overflow-y: auto; padding-right: 12px; scrollbar-color: var(--corr-line) transparent; }
+.corr-calendar-agenda > h2 { position: sticky; top: -1px; background: var(--corr-bg); padding-block: 4px 8px; z-index: 1; }
+.corr-calendar-events-table .corr-calendar-timezone { display: block; color: var(--corr-muted); font-size: 12px; margin-top: 4px; }
+
+.corr-calendar .corr-directory-toolbar .corr-calendar-range { flex: 0 0 auto; white-space: nowrap; }
+.corr-calendar .corr-directory-toolbar .corr-calendar-range select { width: auto; margin: 0; }
+.corr-calendar-range > span { flex-shrink: 0; }
+.corr-calendar-list-title { font: 400 20px/1.35 Georgia, 'Iowan Old Style', serif; }

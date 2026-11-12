@@ -140,6 +140,19 @@ if scenario != "empty" do
       })
   end
 
+  today = NaiveDateTime.local_now() |> NaiveDateTime.to_date()
+  {:ok, _} = Still.Correspondence.Calendar.save(location, %{
+    external_id: "preview-reading", title: "Bookshop reading · example",
+    date: Date.add(today, 3) |> Date.to_iso8601(), start_time: "19:00", end_time: "20:30",
+    venue: "Example Bookshop", address: "123 Example Street", timezone: "America/Chicago",
+    notes: "Disposable calendar example. No real event is represented.", category: "reading"
+  })
+  {:ok, _} = Still.Correspondence.Calendar.save(location, %{
+    external_id: "preview-weekly", title: "Writing circle · example",
+    date: Date.add(today, 5) |> Date.to_iso8601(), start_time: "18:00",
+    venue: "The reading room", recurrence: %{"frequency" => "weekly"}, category: "workshop"
+  })
+
   # This is an explicit choice in a disposable fixture, not automatic readiness.
   {:ok, _} = Correspondence.place_on_desk(location, p3.id, nil)
 end

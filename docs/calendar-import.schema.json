@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:still:calendar-import-schema:1",
+  "title": "Still calendar import",
+  "description": "A reviewed list of local calendar events. Duplicate external_id values in one file are rejected by Still. Cross-field date and duration checks are also enforced by Still. Optional date, time and descriptive fields may be omitted, null, or empty; omit unconfirmed details. Each series is stored once; hidden visibility is local and cannot be set by an import.",
+  "type": "array",
+  "minItems": 1,
+  "maxItems": 200,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "external_id",
+      "title",
+      "date"
+    ],
+    "properties": {
+      "external_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "pattern": "\\S",
+        "description": "Stable source identifier. Reusing it proposes an update to the same event."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 300,
+        "pattern": "\\S"
+      },
+      "date": {
+        "type": "string",
+        "format": "date",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+        "description": "Anchor date. A monthly weekday/week-of-month recurrence pattern must match this date."
+      },
+      "start_time": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "Optional 24-hour local time. Omitting it means unconfirmed, not all-day.",
+        "pattern": "^(?:$|(?:[01]\\d|2[0-3]):[0-5]\\d)$"
+      },
+      "end_time": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "Requires start_time. On the same date it must not be before start_time.",
+        "pattern": "^(?:$|(?:[01]\\d|2[0-3]):[0-5]\\d)$"
+      },
+      "end_date": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date",
+        "description": "Optional inclusive end date, on or after date. Event duration may not exceed 366 days.",
+        "pattern": "^(?:$|\\d{4}-\\d{2}-\\d{2})$"
+      },
+      "timezone": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 500,
+        "description": "Optional display label, for example America/Chicago."
+      },
+      "venue": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 500
+      },
+      "address": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 500
+      },
+      "url": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 500,
+        "description": "Optional complete HTTP or HTTPS URL with a hostname. Empty string or null means not supplied.",
+        "pattern": "^(?:$|[hH][tT][tT][pP][sS]?://)$"
+      },
+      "notes": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 10000
+      },
+      "category": {
+        "type": "string",
+        "enum": [
+          "reading",
+          "workshop",
+          "deadline",
+          "other"
+        ],
+        "default": "other"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "scheduled",
+          "cancelled"
+        ],
+        "default": "scheduled"
+      },
+      "recurrence": {
+        "description": "Omit or set null for a one-time event. Until is inclusive and must be on or after the event date.",
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "frequency"
+            ],
+            "properties": {
+              "frequency": {
+                "type": "string",
+                "enum": [
+                  "daily",
+                  "weekly",
+                  "monthly",
+                  "yearly"
+                ]
+              },
+              "interval": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "default": 1
+              },
+              "until": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date",
+                "pattern": "^(?:\\d{4}-\\d{2}-\\d{2})?$"
+              },
+              "weekday": {
+                "type": "string",
+                "enum": [
+                  "monday",
+                  "tuesday",
+                  "wednesday",
+                  "thursday",
+                  "friday",
+                  "saturday",
+                  "sunday"
+                ]
+              },
+              "week_of_month": {
+                "type": "integer",
+                "enum": [
+                  -1,
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ],
+                "description": "-1 means the last matching weekday in a month."
+              },
+              "excluded_dates": {
+                "type": "array",
+                "maxItems": 500,
+                "items": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "description": "Duplicate dates are normalized to one exclusion."
+              }
+            },
+            "dependentRequired": {
+              "weekday": [
+                "week_of_month"
+              ],
+              "week_of_month": [
+                "weekday"
+              ]
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "frequency": {
+                      "const": "monthly"
+                    }
+                  },
+                  "required": [
+                    "frequency"
+                  ]
+                },
+                "then": {},
+                "else": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "weekday"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "week_of_month"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "allOf": [
+      {
+        "if": {
+          "required": [
+            "end_time"
+          ],
+          "properties": {
+            "end_time": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "start_time"
+          ],
+          "properties": {
+            "start_time": {
+              "type": "string",
+              "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

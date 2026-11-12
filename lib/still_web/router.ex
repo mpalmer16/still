@@ -37,6 +37,10 @@ defmodule StillWeb.Router do
       live "/correspondence/journals/new", CorrespondenceLive, :new_journal
       live "/correspondence/journals/import", CorrespondenceLive, :import_journals
       live "/correspondence/journals/:id", CorrespondenceLive, :journal
+      live "/correspondence/calendar", CorrespondenceLive, :calendar
+      live "/correspondence/calendar/import", CorrespondenceLive, :import_calendar
+      live "/correspondence/calendar/events/new", CorrespondenceLive, :new_calendar_event
+      live "/correspondence/calendar/events/:id/edit", CorrespondenceLive, :edit_calendar_event
       live "/correspondence/packets", CorrespondenceLive, :packets
       live "/correspondence/packets/new", CorrespondenceLive, :new_packet
       live "/correspondence/packets/:id", CorrespondenceLive, :packet
@@ -50,6 +54,7 @@ defmodule StillWeb.Router do
       live "/poems/:id", WritingLive, :show
     end
 
+    get "/correspondence/calendar/schema", CalendarSchemaController, :show
     get "/correspondence/packets/:id/export/:format", ManuscriptController, :show
     get "/healthz", HealthController, :index
   end

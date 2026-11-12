@@ -37,6 +37,12 @@ for publications you want to return to in Places. Home follows preparations,
 outstanding submissions, and recent responses. Works, Places, and Packets share searchable,
 filterable tables. Duplicate a packet for another destination while retaining the original send.
 
+Correspondence also has a local calendar and an event list. Add or edit your own
+events, repeat them, hide individual dates or a whole series, and review curated
+JSON imports before applying them. The [calendar import schema](docs/calendar-import.schema.json)
+defines the fields and repeat rules for a curated list. Times remain as provided;
+Still does not fetch events or contact a calendar service.
+
 ### Let the past come near
 
 Echoes gather at the edges when your language meets words you have written before.

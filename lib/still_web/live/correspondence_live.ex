@@ -5,6 +5,9 @@ defmodule StillWeb.CorrespondenceLive do
 
   alias Still.Correspondence.{
     Appearance,
+    Calendar,
+    CalendarImport,
+    Recurrence,
     Icons,
     PacketExports,
     PacketNotes,
@@ -17,6 +20,7 @@ defmodule StillWeb.CorrespondenceLive do
 
   alias StillWeb.{
     CorrespondenceHome,
+    CorrespondenceCalendar,
     CorrespondenceDirectories,
     CorrespondenceImport,
     CorrespondencePlaces,
@@ -30,6 +34,7 @@ defmodule StillWeb.CorrespondenceLive do
     {:ok,
      socket
      |> allow_upload(:places, accept: ~w(.json), max_entries: 1, max_file_size: 1_048_576)
+     |> allow_upload(:events, accept: ~w(.json), max_entries: 1, max_file_size: 1_048_576)
      |> assign(
        notice: nil,
        problem: nil,
@@ -52,6 +57,21 @@ defmodule StillWeb.CorrespondenceLive do
        packet_search: "",
        import_plan: nil,
        import_result: nil,
+       calendar_events: [],
+       calendar_today: NaiveDateTime.local_now() |> NaiveDateTime.to_date(),
+       calendar_month:
+         NaiveDateTime.local_now() |> NaiveDateTime.to_date() |> Date.beginning_of_month(),
+       calendar_selected: nil,
+       calendar_query: "",
+       calendar_cancelled: false,
+       calendar_hidden: false,
+       calendar_view: "calendar",
+       calendar_page: 1,
+       calendar_range: "upcoming",
+       calendar_event: nil,
+       calendar_event_form: %{},
+       calendar_import_plan: nil,
+       calendar_import_result: nil,
        correspondence_light?: appearance.light?,
        correspondence_color: appearance.color,
        proof_sources: [],
@@ -105,6 +125,12 @@ defmodule StillWeb.CorrespondenceLive do
           action in [:home, :collection, :journals, :import_journals, :packets] ->
             load_overview(socket, location, action)
 
+          action in [:new_calendar_event, :edit_calendar_event] ->
+            load_calendar_event(socket, location, params["id"])
+
+          action in [:calendar, :import_calendar] ->
+            load_calendar(socket, location, params)
+
           action == :piece ->
             load_piece(socket, location, params["id"], params)
 
@@ -127,6 +153,165 @@ defmodule StillWeb.CorrespondenceLive do
 
       {:noreply, load_place_icons(socket)}
     end
+  end
+
+  defp load_calendar(socket, location, params) do
+    today = NaiveDateTime.local_now() |> NaiveDateTime.to_date()
+
+    month =
+      case Date.from_iso8601(to_string(params["month"] || "") <> "-01") do
+        {:ok, date} -> date
+        _ -> Date.beginning_of_month(today)
+      end
+
+    selected =
+      case Date.from_iso8601(to_string(params["date"] || "")) do
+        {:ok, date} -> date
+        _ -> nil
+      end
+
+    query =
+      if is_binary(params["q"]),
+        do: params["q"] |> String.trim() |> String.slice(0, 300),
+        else: ""
+
+    socket =
+      assign(socket,
+        location: location,
+        overview: empty_overview(),
+        piece: nil,
+        journal: nil,
+        packet: nil,
+        calendar_today: today,
+        calendar_month: month,
+        calendar_selected: selected,
+        calendar_query: query,
+        calendar_cancelled: params["cancelled"] == "true",
+        calendar_hidden: params["hidden"] == "true",
+        calendar_view: if(params["view"] == "list", do: "list", else: "calendar"),
+        calendar_range: if(params["range"] == "all", do: "all", else: "upcoming"),
+        calendar_page:
+          case Integer.parse(to_string(params["page"] || "1")) do
+            {page, ""} when page > 0 -> min(page, 100_000)
+            _ -> 1
+          end,
+        page_title:
+          if(socket.assigns.live_action == :import_calendar,
+            do: "Import events",
+            else: "Calendar"
+          )
+      )
+
+    case Calendar.list(location) do
+      {:ok, events} -> {:noreply, assign(socket, calendar_events: events, problem: nil)}
+      {:error, message} -> {:noreply, assign(socket, calendar_events: [], problem: message)}
+    end
+  end
+
+  defp load_calendar_event(socket, location, id) do
+    today = NaiveDateTime.local_now() |> NaiveDateTime.to_date()
+    result = if id, do: Calendar.get(location, id), else: {:ok, nil}
+
+    case result do
+      {:ok, event} ->
+        {:noreply,
+         assign(socket,
+           location: location,
+           overview: empty_overview(),
+           piece: nil,
+           journal: nil,
+           packet: nil,
+           calendar_event: event,
+           calendar_event_form: calendar_event_form(event, today),
+           page_title: if(event, do: "Edit event", else: "New event"),
+           problem: nil
+         )}
+
+      {:error, message} ->
+        {:noreply,
+         assign(socket,
+           location: location,
+           overview: empty_overview(),
+           calendar_event: nil,
+           calendar_event_form: %{},
+           page_title: "Calendar",
+           problem: message
+         )}
+    end
+  end
+
+  defp calendar_event_form(event, today) do
+    fields =
+      ~w(external_id title date start_time end_time end_date timezone venue address url notes category status)
+
+    form =
+      Map.new(fields, fn key ->
+        {key,
+         if(event,
+           do: Map.get(event, key, Map.get(event, String.to_existing_atom(key))) || "",
+           else: ""
+         )}
+      end)
+
+    recurrence = if event, do: Map.get(event, :recurrence, Map.get(event, "recurrence"))
+
+    form
+    |> Map.put(
+      "external_id",
+      if(event, do: form["external_id"], else: "still-" <> Ecto.UUID.generate())
+    )
+    |> Map.put("date", if(event, do: form["date"], else: Date.to_iso8601(today)))
+    |> Map.put("category", if(form["category"] == "", do: "other", else: form["category"]))
+    |> Map.put("status", if(form["status"] == "", do: "scheduled", else: form["status"]))
+    |> Map.put("repeat_frequency", if(recurrence, do: recurrence["frequency"], else: "none"))
+    |> Map.put(
+      "repeat_interval",
+      if(recurrence, do: to_string(recurrence["interval"] || 1), else: "1")
+    )
+    |> Map.put("repeat_until", (recurrence && recurrence["until"]) || "")
+    |> Map.put("repeat_weekday", (recurrence && recurrence["weekday"]) || "")
+    |> Map.put(
+      "repeat_week_of_month",
+      if(recurrence && recurrence["week_of_month"],
+        do: to_string(recurrence["week_of_month"]),
+        else: ""
+      )
+    )
+    |> Map.put(
+      "repeat_excluded_dates",
+      if(recurrence, do: Enum.join(recurrence["excluded_dates"] || [], ", "), else: "")
+    )
+  end
+
+  defp calendar_occurrences(assigns) do
+    grid_start =
+      assigns.calendar_month
+      |> Date.beginning_of_month()
+      |> then(&Date.add(&1, 1 - Date.day_of_week(&1)))
+
+    agenda_start = assigns.calendar_selected || assigns.calendar_today
+    agenda_end = if assigns.calendar_selected, do: agenda_start, else: Date.add(agenda_start, 366)
+
+    windows =
+      Recurrence.occurrences(assigns.calendar_events, grid_start, Date.add(grid_start, 41)) ++
+        Recurrence.occurrences(assigns.calendar_events, agenda_start, agenda_end)
+
+    # The list's All dates view also keeps old one-off events available without expanding unbounded repeat series.
+    one_off =
+      if assigns.calendar_view == "list",
+        do:
+          Enum.flat_map(assigns.calendar_events, fn event ->
+            if assigns.calendar_range == "all" or
+                 is_nil(Map.get(event, :recurrence, Map.get(event, "recurrence"))) do
+              {:ok, date} = Date.from_iso8601(value(event, :date))
+              Recurrence.occurrences([event], date, date)
+            else
+              []
+            end
+          end),
+        else: []
+
+    (windows ++ one_off) |> Enum.uniq_by(& &1.occurrence_key)
   end
 
   defp put_directory(socket, :journals, params), do: put_places_directory(socket, params)
@@ -592,6 +777,151 @@ defmodule StillWeb.CorrespondenceLive do
   def handle_event("import_places", _, socket) do
     result = PlaceImport.commit(socket.assigns.import_plan)
     {:noreply, assign(socket, import_plan: nil, import_result: result, problem: nil)}
+  end
+
+  def handle_event("filter_calendar", %{"calendar" => params}, socket) do
+    filters = %{
+      "month" => Elixir.Calendar.strftime(socket.assigns.calendar_month, "%Y-%m"),
+      "q" => params["q"] || "",
+      "cancelled" => to_string(params["cancelled"] in [true, "true"]),
+      "hidden" => to_string(params["hidden"] in [true, "true"]),
+      "view" => socket.assigns.calendar_view,
+      "range" => params["range"] || socket.assigns.calendar_range
+    }
+
+    filters =
+      if socket.assigns.calendar_selected,
+        do: Map.put(filters, "date", Date.to_iso8601(socket.assigns.calendar_selected)),
+        else: filters
+
+    {:noreply, push_patch(socket, to: ~p"/correspondence/calendar?#{filters}", replace: true)}
+  end
+
+  def handle_event("calendar_event_changed", %{"event" => attrs}, socket),
+    do:
+      {:noreply,
+       assign(socket, calendar_event_form: Map.merge(socket.assigns.calendar_event_form, attrs))}
+
+  def handle_event("save_calendar_event", %{"event" => attrs}, socket) do
+    form = Map.merge(socket.assigns.calendar_event_form, attrs)
+    event = socket.assigns.calendar_event
+
+    with {:ok, recurrence} <- calendar_rule(form),
+         attrs =
+           Map.take(
+             form,
+             ~w(title date start_time end_time end_date timezone venue address url notes category status)
+           )
+           |> Map.put("external_id", socket.assigns.calendar_event_form["external_id"])
+           |> Map.put("recurrence", recurrence),
+         {:ok, _saved} <-
+           Calendar.save(socket.assigns.location, attrs, event && event.id, event && event.token) do
+      {:noreply,
+       socket
+       |> assign(notice: "Event saved.", problem: nil)
+       |> push_patch(
+         to:
+           ~p"/correspondence/calendar?#{%{"month" => String.slice(form["date"], 0, 7), "date" => form["date"]}}"
+       )}
+    else
+      {:error, message} -> {:noreply, assign(socket, calendar_event_form: form, problem: message)}
+    end
+  end
+
+  def handle_event(action, %{"id" => id} = params, socket)
+      when action in [
+             "hide_calendar_event",
+             "restore_calendar_event",
+             "hide_calendar_series",
+             "restore_calendar_series"
+           ] do
+    event = Enum.find(socket.assigns.calendar_events, &(&1.id == id))
+
+    if event do
+      date =
+        if action in ["hide_calendar_event", "restore_calendar_event"] and
+             Map.get(event, :recurrence, Map.get(event, "recurrence")),
+           do: params["date"]
+
+      hidden = action in ["hide_calendar_event", "hide_calendar_series"]
+
+      case Calendar.set_hidden(socket.assigns.location, id, event.token, hidden, date) do
+        {:ok, saved} ->
+          {:noreply,
+           assign(socket,
+             calendar_events:
+               Enum.map(socket.assigns.calendar_events, &if(&1.id == id, do: saved, else: &1)),
+             notice:
+               if(hidden,
+                 do: "Event hidden. Use Include hidden to show it again.",
+                 else: "Event shown again."
+               ),
+             problem: nil
+           )}
+
+        {:error, message} ->
+          {:noreply, assign(socket, problem: message)}
+      end
+    else
+      {:noreply, assign(socket, problem: "Reopen the calendar before changing this event.")}
+    end
+  end
+
+  def handle_event("validate_calendar_upload", _, socket),
+    do:
+      {:noreply,
+       assign(socket, calendar_import_plan: nil, calendar_import_result: nil, problem: nil)}
+
+  def handle_event("preview_calendar_import", _, socket) do
+    {completed, pending} = uploaded_entries(socket, :events)
+
+    if length(completed) == 1 && pending == [] &&
+         upload_errors(socket.assigns.uploads.events) == [] do
+      [result] =
+        consume_uploaded_entries(socket, :events, fn %{path: path}, _entry ->
+          result =
+            with {:ok, bytes} <- File.read(path),
+                 do: CalendarImport.preview(socket.assigns.location, bytes)
+
+          {:ok, result}
+        end)
+
+      case result do
+        {:ok, plan} ->
+          {:noreply,
+           assign(socket, calendar_import_plan: plan, calendar_import_result: nil, problem: nil)}
+
+        {:error, reason} ->
+          {:noreply,
+           assign(socket,
+             calendar_import_plan: nil,
+             calendar_import_result: nil,
+             problem: import_problem(reason)
+           )}
+      end
+    else
+      {:noreply,
+       assign(socket,
+         calendar_import_plan: nil,
+         calendar_import_result: nil,
+         problem: "Choose one JSON file and wait for its upload to finish."
+       )}
+    end
+  end
+
+  def handle_event("import_calendar", _, %{assigns: %{calendar_import_plan: nil}} = socket),
+    do: {:noreply, socket}
+
+  def handle_event("import_calendar", _, socket) do
+    case CalendarImport.commit(socket.assigns.calendar_import_plan) do
+      {:ok, result} ->
+        {:noreply,
+         assign(socket, calendar_import_plan: nil, calendar_import_result: result, problem: nil)}
+
+      {:error, message} ->
+        {:noreply,
+         assign(socket, calendar_import_plan: nil, calendar_import_result: nil, problem: message)}
+    end
   end
 
   def handle_event("toggle_place_active", %{"id" => id}, socket) do
@@ -1204,6 +1534,40 @@ defmodule StillWeb.CorrespondenceLive do
     do:
       {:noreply, assign(socket, form: Map.merge(socket.assigns.form, packet_form_changes(attrs)))}
 
+  defp calendar_rule(%{"repeat_frequency" => "none"}), do: {:ok, nil}
+
+  defp calendar_rule(form) do
+    with {interval, ""} <- Integer.parse(form["repeat_interval"] || "1") do
+      rule = %{
+        "frequency" => form["repeat_frequency"],
+        "interval" => interval,
+        "until" => if(form["repeat_until"] in [nil, ""], do: nil, else: form["repeat_until"]),
+        "excluded_dates" =>
+          String.split(form["repeat_excluded_dates"] || "", ~r/[\s,]+/, trim: true)
+      }
+
+      rule =
+        if form["repeat_frequency"] == "monthly" and
+             (form["repeat_weekday"] not in [nil, ""] or
+                form["repeat_week_of_month"] not in [nil, ""]),
+           do:
+             rule
+             |> Map.put("weekday", form["repeat_weekday"])
+             |> Map.put(
+               "week_of_month",
+               case Integer.parse(form["repeat_week_of_month"] || "") do
+                 {week, ""} -> week
+                 _ -> nil
+               end
+             ),
+           else: rule
+
+      Recurrence.validate(rule, form["date"])
+    else
+      _ -> {:error, "Choose a whole-number repeat interval between 1 and 100."}
+    end
+  end
+
   defp packet_form_changes(attrs) do
     for key <- [
           :title,
@@ -1371,6 +1735,8 @@ defmodule StillWeb.CorrespondenceLive do
   defp title_for(:import_journals), do: "Import Places"
   defp title_for(:journals), do: "Places"
   defp title_for(:packets), do: "Packets"
+  defp title_for(:calendar), do: "Calendar"
+  defp title_for(:import_calendar), do: "Import events"
   defp title_for(_), do: "Correspondence"
 
   defp text(value) when is_binary(value), do: value
@@ -1430,6 +1796,26 @@ defmodule StillWeb.CorrespondenceLive do
               aria-current={if @live_action in [:packets, :packet, :new_packet], do: "page"}
               class={if @live_action in [:packets, :packet, :new_packet], do: "active", else: nil}
             >Packets</.link>
+            <.link
+              patch={~p"/correspondence/calendar"}
+              aria-current={
+                if @live_action in [
+                     :calendar,
+                     :import_calendar,
+                     :new_calendar_event,
+                     :edit_calendar_event
+                   ],
+                   do: "page"
+              }
+              class={
+                if @live_action in [
+                     :calendar,
+                     :import_calendar,
+                     :new_calendar_event,
+                     :edit_calendar_event
+                   ], do: "active", else: nil
+              }
+            >Calendar</.link>
           </nav>
           <div class="corr-header-actions">
             <details class="corr-popover corr-appearance">
@@ -1471,6 +1857,44 @@ defmodule StillWeb.CorrespondenceLive do
           icons={@place_icons}
           overview={@overview}
         />
+
+        <section
+          :if={@live_action == :calendar && @location.configured && @location.available}
+          class="corr-page"
+        >
+          <CorrespondenceCalendar.page
+            events={calendar_occurrences(assigns)}
+            today={@calendar_today}
+            month={@calendar_month}
+            selected_date={@calendar_selected}
+            query={@calendar_query}
+            include_cancelled={@calendar_cancelled}
+            include_hidden={@calendar_hidden}
+            view={@calendar_view}
+            range={@calendar_range}
+            page={@calendar_page}
+          />
+        </section>
+        <section
+          :if={@live_action == :import_calendar && @location.configured && @location.available}
+          class="corr-page"
+        >
+          <StillWeb.CalendarImport.page
+            upload={@uploads.events}
+            plan={@calendar_import_plan}
+            result={@calendar_import_result}
+          />
+        </section>
+
+        <section
+          :if={
+            @live_action in [:new_calendar_event, :edit_calendar_event] && @location.configured &&
+              @location.available && @calendar_event_form != %{}
+          }
+          class="corr-page"
+        >
+          <StillWeb.CalendarEventEditor.page form={@calendar_event_form} event={@calendar_event} />
+        </section>
 
         <section
           :if={@live_action == :collection && @location.configured && @location.available}
@@ -2075,10 +2499,10 @@ defmodule StillWeb.CorrespondenceLive do
   defp date(nil), do: "date not recorded"
 
   defp date(%Date{} = date),
-    do: Calendar.strftime(date, "%d %b %Y") |> String.replace_prefix("0", "")
+    do: Elixir.Calendar.strftime(date, "%d %b %Y") |> String.replace_prefix("0", "")
 
   defp date(%DateTime{} = date),
-    do: Calendar.strftime(date, "%d %b %Y") |> String.replace_prefix("0", "")
+    do: Elixir.Calendar.strftime(date, "%d %b %Y") |> String.replace_prefix("0", "")
 
   defp date(value) when is_binary(value) do
     case DateTime.from_iso8601(value) do

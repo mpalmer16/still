@@ -237,3 +237,52 @@ There are no new collection formats or migrations.
 
 Use the disposable Correspondence preview described above to check this workflow;
 it leaves the installed app and personal collection untouched.
+
+## Calendar event import
+
+The Calendar can accept a local JSON event list. Use the field guide on its import page
+and `docs/calendar-import.schema.json` (JSON Schema draft 2020-12). The file is an array of up to 200 events
+and at most 1 MB. Each event requires `external_id`, `title`, and `date` in
+YYYY-MM-DD form. Optional times use 24-hour HH:MM. An omitted time means the time
+is unconfirmed; it does not claim the event is all day. Optional `end_date` is
+inclusive and must be on or after `date`. Other optional fields are `timezone`
+(a display label), `venue`, `address`, `url`, `notes`, `category`, and `status`.
+Category is `reading`, `workshop`, `deadline`, or `other`; status is `scheduled`
+or `cancelled`. Web links must use HTTP or HTTPS. Unknown fields and duplicate
+external IDs in one file are errors.
+
+An event may also include `recurrence`, or omit it or set it to `null` for a
+one-time event. A recurrence object has `frequency` (`daily`, `weekly`, `monthly`,
+or `yearly`), optional `interval`, optional inclusive `until` date, and optional
+`excluded_dates` array. Monthly rules may include `weekday` and `week_of_month`
+to describe a pattern such as the second Thursday or `-1` for the last occurrence
+in a month. When a monthly pattern is supplied, the event's anchor date must
+match it. The schema lists all accepted keys and value limits. The runtime also
+checks relationships between fields, including that an end time has a start time
+and that an event does not span more than 366 days.
+
+**Review events** checks the complete file and shows the proposed new events,
+changed events beside their previous values, and unchanged events that will be
+skipped. Empty values in a proposed update are shown as **Not set**, including
+when an optional field will be cleared. Reusing an `external_id` identifies the
+same event for an update; it never creates a duplicate. Confirming the preview
+commits all proposed additions and updates together. Event details are stored
+locally. Still does not fetch the listed links, contact venues, or send event
+information elsewhere.
+
+
+Switch between **Calendar** and **List**. The month grid opens an agenda for a
+selected date; **All upcoming dates** returns to the coming-up list. **Add event**
+opens a local event form. **Edit** changes the saved event or recurring series.
+The event directory shows one row per series, with its next visible occurrence,
+and supports search, upcoming/all events, and 40-row pages. Recurring dates are
+calculated for the selected month and the next twelve months; one-time future
+events remain available in the list beyond that horizon.
+
+Use **Hide event** for a one-time event, **Hide this date** for one occurrence,
+or **Hide series** for all repeats. **Include hidden** exposes the matching restore
+actions. These choices survive later curated imports. They never change the
+source list or delete event history. Cancelled events have a separate visibility
+filter. Repeats preserve their advertised local clock times; the time-zone field
+is a display label, and Still does not convert times between zones. Monthly dates
+that do not exist and non-leap-year February 29 repeats are skipped without drifting.
