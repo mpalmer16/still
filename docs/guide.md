@@ -15,6 +15,12 @@ The [ordinary-text storage model](storage-model.md) describes the current format
 
 ## Write and return
 
+**Write** means start a new page. Saved pieces stay in their notebooks or Saved
+writing. If the current page has unsaved changes or a recovery copy to review,
+Write returns there so those words remain within reach. Once saved, Write starts
+fresh again. The machine-local cursor records only the page identity and whether
+it is unfinished; the words remain in the existing editor recovery store until Save.
+
 **Menu**, at the bottom right while writing, keeps Save, New, Scratch, Copy,
 Saved writing, Read and the file details together with Light, Letters, Page width
 and **Explore the room**. The controls stay tucked away until you open it. Close

@@ -125,6 +125,11 @@ export const FileRecovery = {
       this.form.dataset.unsaved = String(dirty)
       this.form.dataset.recoverySafe = String(!this.failed)
       this.form.dataset.fileDraftKey = this.key
+      const state = JSON.stringify([this.el.dataset.documentId, this.baseToken || "", dirty])
+      if (state !== this.reportedState) {
+        this.reportedState = state
+        this.pushEvent("file_editing_state", {id: this.el.dataset.documentId, token: this.baseToken || "", dirty})
+      }
     }
     this.problem = () => {
       this.failed = true

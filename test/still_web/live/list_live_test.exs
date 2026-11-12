@@ -1,7 +1,7 @@
 defmodule StillWeb.ListLiveTest do
   use StillWeb.ConnCase
   import Phoenix.LiveViewTest
-  alias Still.{Poems, Storage, Writing}
+  alias Still.{Desk, Poems, Storage, Writing}
 
   @moduletag :tmp_dir
 
@@ -49,7 +49,7 @@ defmodule StillWeb.ListLiveTest do
     assert has_element?(view, "#file-writing-body")
   end
 
-  test "the Now desk resumes its saved file after visiting Find and its earlier words", %{
+  test "a clean saved page starts fresh after visiting Find while earlier words remain intact", %{
     conn: conn
   } do
     {:ok, view, _} = live(conn, ~p"/writing/new")
@@ -72,15 +72,25 @@ defmodule StillWeb.ListLiveTest do
 
     {:ok, _find, _} = live(conn, ~p"/pages")
     {:ok, resumed, _} = live(conn, ~p"/")
-    assert has_element?(resumed, "#file-writing-body")
-    assert has_element?(resumed, "#file-writing-title[value='']")
+    assert has_element?(resumed, "#file-writing-body[data-resume-active='false']")
+    refute has_element?(resumed, "#file-writing-body[data-document-id='#{saved.id}']")
 
-    assert resumed
-           |> element("#file-writing-body")
-           |> render()
-           |> LazyHTML.from_fragment()
-           |> LazyHTML.text() == revised
+    [persisted] =
+      resumed
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#file-writing-body")
+      |> LazyHTML.attribute("data-persisted")
 
+    assert Jason.decode!(persisted)["body"] == ""
+    assert {:ok, cursor} = Desk.current(Storage.collection_location())
+    refute cursor.saved
+    assert cursor.id != saved.id
+    assert Map.get(cursor, :dirty) == false
+    assert {:ok, nil} = Desk.for_write(Storage.collection_location())
     assert Enum.any?(Writing.list_entries(), &(&1.file_id == saved.id and &1.body == revised))
+    assert {:ok, unchanged} = Poems.get(Storage.collection_location(), saved.id)
+    assert unchanged.body == revised
+    assert {:ok, [%{body: ^original}]} = Poems.revisions(Storage.collection_location(), saved.id)
   end
 end

@@ -9,7 +9,8 @@ A poem, a list, a fragment. A title if you want one. Room to begin again.
 
 ### Begin with Write
 
-One blank page. As you write, the controls fall quiet. Your line breaks,
+**Write** starts a new page after saved work. If you have unsaved words, it returns
+to that unfinished page instead. As you write, the controls fall quiet. Your line breaks,
 indentation, and spaces stay yours. Save keeps your words as ordinary text files,
 with earlier versions to return to.
 

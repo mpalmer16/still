@@ -62,4 +62,36 @@ defmodule StillWeb.EchoesTest do
     assert Enum.count(LazyHTML.query(parsed, ".gravity-door[href='/w/12?read=1&approach=left']")) ==
              1
   end
+
+  test "an echo never unfolds an adjacent machine poem reference" do
+    marker = "[[poem: Current Notebooks/Source.txt | 00000000-0000-4000-8000-000000000001]]"
+
+    entry = %{
+      id: 13,
+      title: "A host:",
+      origin: "before",
+      body:
+        "A nearby authored thought\nThe matched line\n" <> marker <> "\nAnother authored thought",
+      source: %{},
+      notebook: "Synthetic"
+    }
+
+    fragment = %{
+      entry: entry,
+      line: "The matched line",
+      side: :left,
+      distance: :near,
+      motion: :settling,
+      departing: false,
+      height: 40,
+      strength: 0.6,
+      delay: 0,
+      place: %{label: "Synthetic"}
+    }
+
+    html = render_component(&Echoes.field/1, %{fragments: [fragment]})
+    unfolded = LazyHTML.from_fragment(html) |> LazyHTML.query(".echo-unfolded") |> LazyHTML.text()
+    assert unfolded =~ "A nearby authored thought"
+    refute unfolded =~ "[[poem:"
+  end
 end

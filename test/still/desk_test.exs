@@ -111,6 +111,33 @@ defmodule Still.DeskTest do
     assert {:ok, nil} = Desk.current(unconfigured())
   end
 
+  test "Write selects only unsaved work, including an unfinished local page behind a clean saved editor" do
+    location = configured("a")
+    clean = %{id: Ecto.UUID.generate(), saved: true, beside: nil, dirty: false}
+    draft = %{id: Ecto.UUID.generate(), saved: false, beside: nil, dirty: true}
+    assert :ok = Desk.remember(location, clean)
+    assert {:ok, nil} = Desk.for_write(location)
+    assert :ok = Desk.remember(location, draft)
+    assert :ok = Desk.remember(location, clean)
+    assert {:ok, ^draft} = Desk.for_write(location)
+    edited = %{clean | dirty: true}
+    assert :ok = Desk.remember(location, edited)
+    assert {:ok, ^edited} = Desk.for_write(location)
+    assert {:ok, ^draft} = Desk.for_write(configured("b"))
+  end
+
+  test "legacy cursors keep unsaved drafts eligible without reopening clean saved pages" do
+    location = configured("a")
+    saved = %{id: Ecto.UUID.generate(), saved: true, beside: nil}
+    draft = %{saved | id: Ecto.UUID.generate(), saved: false}
+    assert :ok = Desk.remember(location, saved)
+    assert {:ok, nil} = Desk.for_write(location)
+    assert :ok = Desk.remember(location, draft)
+    assert {:ok, ^draft} = Desk.for_write(location)
+    assert {:error, _} = Desk.remember(location, Map.put(draft, :dirty, "not a boolean"))
+    assert {:ok, ^draft} = Desk.for_write(location)
+  end
+
   defp unconfigured, do: %{configured: false, scope: String.duplicate("0", 64)}
 
   defp configured(label) do

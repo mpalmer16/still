@@ -249,7 +249,11 @@ defmodule StillWeb.RoomLiveTest do
     parent = before("parent", "Early Notebooks/Lists 3", "The:Words:Before:", "words from before")
     {:ok, previous} = Writing.save_entry(nil, "A different saved page")
     {:ok, _previous_view, _html} = live(conn, ~p"/w/#{previous.id}")
-    {:ok, _beside_view, _html} = live(conn, ~p"/?beside=#{parent.id}")
+    {:ok, beside_view, _html} = live(conn, ~p"/?beside=#{parent.id}")
+
+    render_change(element(beside_view, "#file-writing-form"), %{
+      "writing" => %{"body" => "Unfinished words beside the earlier page"}
+    })
 
     assert {:ok, %{saved: false, beside: beside_id}} =
              Still.Desk.current(Still.Storage.collection_location())

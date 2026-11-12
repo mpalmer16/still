@@ -1,6 +1,7 @@
 defmodule StillWeb.Echoes do
   use StillWeb, :html
   alias Still.Writing.Attention
+  alias Still.Writing.Gravity
 
   def immediate(field), do: Enum.map(field, &Map.merge(&1, %{departing: false, delay: 0}))
 
@@ -10,7 +11,7 @@ defmodule StillWeb.Echoes do
   def field(assigns) do
     fragments =
       Enum.map(assigns.fragments, fn fragment ->
-        excerpt = Attention.excerpt(fragment.entry.body, fragment.line)
+        excerpt = Attention.excerpt(Gravity.echo_text(fragment.entry.body), fragment.line)
         unfolded = excerpt.before <> fragment.line <> excerpt.after
 
         more =
@@ -19,7 +20,11 @@ defmodule StillWeb.Echoes do
 
         Map.merge(fragment, %{
           unfolded: unfolded,
-          unfolds: more
+          unfolds: more,
+          echo_title:
+            if(is_binary(fragment.entry.title),
+              do: Gravity.echo_text(fragment.entry.title) |> String.trim()
+            )
         })
       end)
 
@@ -48,8 +53,8 @@ defmodule StillWeb.Echoes do
             <div><.shaped_words body={fragment.unfolded} trim_terminal_line={true} /></div>
           </div>
         </div>
-        <span :if={fragment.entry.title} class="gravity-title"><.list_title text={
-          fragment.entry.title
+        <span :if={fragment.echo_title not in [nil, ""]} class="gravity-title"><.list_title text={
+          fragment.echo_title
         } /></span>
         <span class="gravity-place">{Still.Writing.Geography.reference_label(
           fragment.place,

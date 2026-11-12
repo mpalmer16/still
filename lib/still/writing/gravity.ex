@@ -2,8 +2,9 @@ defmodule Still.Writing.Gravity do
   @moduledoc "A little living, literal language drawn toward writing and wandering."
   import Ecto.Query
   alias Still.{Repo, Writing}
-  alias Still.Writing.{Entry, Geography}
+  alias Still.Writing.{Entry, Geography, PoemReferences}
 
+  @index_version 2
   @window 140
   @threshold 6.0
   @second_threshold 9.0
@@ -76,6 +77,9 @@ defmodule Still.Writing.Gravity do
     end
   end
 
+  @doc "Masks parser-recognized poem reference lines for echo display and discovery."
+  def echo_text(body) when is_binary(body), do: discovery_text(body)
+
   @doc "One historical companion for a saved page, excluding its own historical source."
   def saved_echo(piece), do: saved_field(piece) |> List.first()
 
@@ -111,10 +115,12 @@ defmodule Still.Writing.Gravity do
 
   defp candidates(body, opts) do
     index = index(opts)
-    query = if is_binary(opts[:title]), do: opts[:title] <> "\n" <> body, else: body
+    searchable_body = discovery_text(body)
+    query_original = if is_binary(opts[:title]), do: opts[:title] <> "\n" <> body, else: body
+    query = discovery_text(query_original)
     query_tokens = tokens(query)
     query_tokens = if opts[:reading], do: query_tokens, else: Enum.take(query_tokens, -@window)
-    formed = if opts[:list], do: formed_words(body), else: MapSet.new()
+    formed = if opts[:list], do: formed_words(searchable_body), else: MapSet.new()
     weights = query_weights(query_tokens, index, formed, opts)
     excluded = MapSet.new(Keyword.get(opts, :exclude_ids, []) ++ List.wrap(opts[:entry_id]))
 
@@ -131,7 +137,7 @@ defmodule Still.Writing.Gravity do
         end)
       end)
 
-    query_phrases = phrases(query_tokens, query)
+    query_phrases = phrases(query_tokens, query_original)
 
     candidates
     |> Enum.filter(fn {_id, matches} ->
@@ -281,7 +287,7 @@ defmodule Still.Writing.Gravity do
           score = line_weight(line, candidate.weights)
           best_score = line_weight(drawn.line, candidate.weights)
 
-          if line in String.split(candidate.entry.body, "\n") and score > 0 and
+          if line in String.split(discovery_text(candidate.entry.body), "\n") and score > 0 and
                score >= best_score * 0.8,
              do: line,
              else: drawn.line
@@ -400,18 +406,22 @@ defmodule Still.Writing.Gravity do
   defp source_line(entry, weights) do
     line =
       entry.body
+      |> discovery_text()
       |> String.split("\n")
       |> Enum.reject(&(String.trim(&1) == ""))
       |> Enum.max_by(&line_weight(&1, weights), fn -> entry.body end)
 
-    if line_weight(line, weights) > 0, do: line, else: entry.title || line
+    if line_weight(line, weights) > 0, do: line, else: discovery_text(entry.title || line)
   end
 
   defp literal_evidence(%{shared: %{literal: literal}}), do: literal
 
   defp literal_evidence(candidate) do
     {word, _weight} = Enum.max_by(candidate.weights, fn {word, weight} -> {weight, word} end)
-    body = candidate.entry.body <> "\n" <> (candidate.entry.title || "")
+
+    body =
+      discovery_text(candidate.entry.body) <> "\n" <> discovery_text(candidate.entry.title || "")
+
     {_word, start, length} = Enum.find(tokens(body), &(elem(&1, 0) == word))
     binary_part(body, start, length)
   end
@@ -443,7 +453,7 @@ defmodule Still.Writing.Gravity do
 
     entries = Repo.all(from(e in query, order_by: e.id))
     stamp = entries
-    cache_key = {__MODULE__, Repo.config()[:database], :index, scope, historical?}
+    cache_key = {__MODULE__, Repo.config()[:database], :index, @index_version, scope, historical?}
 
     case Still.Writing.IndexCache.get(cache_key) do
       {^stamp, index} ->
@@ -487,9 +497,11 @@ defmodule Still.Writing.Gravity do
   end
 
   defp add_entry(entry, index) do
-    body_tokens = tokens(entry.body)
+    body_tokens = tokens(discovery_text(entry.body))
 
-    title_tokens = if is_nil(entry.file_id), do: tokens(entry.title || ""), else: []
+    title_tokens =
+      if is_nil(entry.file_id), do: tokens(discovery_text(entry.title || "")), else: []
+
     words = (body_tokens ++ title_tokens) |> Enum.map(&elem(&1, 0)) |> MapSet.new()
 
     {frequencies, inverted} =
@@ -550,15 +562,49 @@ defmodule Still.Writing.Gravity do
     end)
   end
 
+  # Mask only references accepted by the shared parser, preserving byte offsets
+  # for literal evidence and leaving malformed or inline authored text intact.
+  defp discovery_text(body) do
+    body
+    |> PoemReferences.parse()
+    |> Enum.map(fn
+      %{kind: :reference, raw: raw} -> String.duplicate(" ", byte_size(raw))
+      %{raw: raw} -> raw
+    end)
+    |> IO.iodata_to_binary()
+  end
+
   defp phrases(words, body) do
-    for size <- [2, 3, 4], chunk <- Enum.chunk_every(words, size, 1, :discard), into: %{} do
-      {_word, start, _length} = hd(chunk)
-      {_word, last_start, last_length} = List.last(chunk)
-      words = Enum.map(chunk, &elem(&1, 0))
-      key = Enum.join(words, " ")
-      literal = binary_part(body, start, last_start + last_length - start)
-      {key, %{literal: literal, words: words}}
+    reference_ranges = reference_ranges(body)
+
+    for size <- [2, 3, 4],
+        chunk <- Enum.chunk_every(words, size, 1, :discard),
+        {_word, start, _length} = hd(chunk),
+        {_word, last_start, last_length} = List.last(chunk),
+        finish = last_start + last_length,
+        not Enum.any?(reference_ranges, fn {ref_start, ref_end} ->
+          start < ref_end and finish > ref_start
+        end),
+        into: %{} do
+      phrase_words = Enum.map(chunk, &elem(&1, 0))
+      key = Enum.join(phrase_words, " ")
+      literal = binary_part(body, start, finish - start)
+      {key, %{literal: literal, words: phrase_words}}
     end
+  end
+
+  defp reference_ranges(body) do
+    {ranges, _offset} =
+      Enum.reduce(PoemReferences.parse(body), {[], 0}, fn segment, {ranges, offset} ->
+        length = byte_size(segment.raw)
+
+        ranges =
+          if segment.kind == :reference, do: [{offset, offset + length} | ranges], else: ranges
+
+        {ranges, offset + length}
+      end)
+
+    ranges
   end
 
   defp literal_form(phrase), do: phrase |> String.downcase() |> String.replace(~r/\s+/u, " ")

@@ -11,21 +11,35 @@ defmodule Still.Desk do
 
   @doc "Return the cursor for this local draft or configured collection."
   def current(location) when is_map(location) do
-    with_state(fn state ->
-      key = saved_key(location)
-
-      cursor =
-        if state.active == @local_cursor do
-          Map.get(state.cursors, @local_cursor)
-        else
-          (key && Map.get(state.cursors, key)) || Map.get(state.cursors, @local_cursor)
-        end
-
-      {:ok, decode_cursor(cursor)}
-    end)
+    with_state(fn state -> {:ok, current_cursor(state, location)} end)
   end
 
   def current(_location), do: {:error, "Could not read the current page cursor."}
+
+  @doc "Return only an unfinished page for Write; a saved, clean page starts afresh."
+  def for_write(location) when is_map(location) do
+    with_state(fn state ->
+      current = current_cursor(state, location)
+      local = state.cursors |> Map.get(@local_cursor) |> decode_cursor()
+      {:ok, Enum.find([current, local], &unfinished?/1)}
+    end)
+  end
+
+  def for_write(_), do: {:error, "Could not read the current page cursor."}
+
+  defp current_cursor(state, location) do
+    key = saved_key(location)
+
+    cursor =
+      if state.active == @local_cursor,
+        do: Map.get(state.cursors, @local_cursor),
+        else: (key && Map.get(state.cursors, key)) || Map.get(state.cursors, @local_cursor)
+
+    decode_cursor(cursor)
+  end
+
+  defp unfinished?(nil), do: false
+  defp unfinished?(cursor), do: Map.get(cursor, :dirty, not cursor.saved)
 
   @doc "Remember the open page without storing its words or a filesystem path."
   def remember(location, cursor) when is_map(location) and is_map(cursor) do
@@ -73,11 +87,17 @@ defmodule Still.Desk do
 
   def clear(_location, _id), do: {:error, "Could not clear the current page cursor."}
 
-  defp normalize_cursor(%{id: id, saved: saved, beside: beside})
+  defp normalize_cursor(%{id: id, saved: saved, beside: beside} = cursor)
        when is_binary(id) and is_boolean(saved) and
               (is_nil(beside) or (is_integer(beside) and beside > 0)) do
-    if Regex.match?(@uuid, id) do
-      {:ok, %{id: String.downcase(id), saved: saved, beside: beside}}
+    if Regex.match?(@uuid, id) and (not Map.has_key?(cursor, :dirty) or is_boolean(cursor.dirty)) do
+      normalized = %{id: String.downcase(id), saved: saved, beside: beside}
+
+      {:ok,
+       if(Map.has_key?(cursor, :dirty),
+         do: Map.put(normalized, :dirty, cursor.dirty),
+         else: normalized
+       )}
     else
       {:error, "The page cursor has an invalid id."}
     end
@@ -105,13 +125,17 @@ defmodule Still.Desk do
   defp saved_key(_location), do: nil
   defp valid_scope?(scope), do: Regex.match?(~r/\A(?:[0-9a-f]{64}|[0-9a-f-]{36})\z/i, scope)
 
-  defp encode_cursor(cursor),
-    do: %{"id" => cursor.id, "saved" => cursor.saved, "beside" => cursor.beside}
+  defp encode_cursor(cursor) do
+    data = %{"id" => cursor.id, "saved" => cursor.saved, "beside" => cursor.beside}
+    if Map.has_key?(cursor, :dirty), do: Map.put(data, "dirty", cursor.dirty), else: data
+  end
 
   defp decode_cursor(nil), do: nil
 
-  defp decode_cursor(cursor),
-    do: %{id: cursor["id"], saved: cursor["saved"], beside: cursor["beside"]}
+  defp decode_cursor(cursor) do
+    decoded = %{id: cursor["id"], saved: cursor["saved"], beside: cursor["beside"]}
+    if Map.has_key?(cursor, "dirty"), do: Map.put(decoded, :dirty, cursor["dirty"]), else: decoded
+  end
 
   defp with_state(fun) do
     with_lock(fn ->
@@ -189,10 +213,10 @@ defmodule Still.Desk do
 
   defp valid_stored_cursor?(_), do: false
 
-  defp valid_encoded_cursor?(%{"id" => id, "saved" => saved, "beside" => beside})
+  defp valid_encoded_cursor?(%{"id" => id, "saved" => saved, "beside" => beside} = cursor)
        when is_binary(id) and is_boolean(saved) and
               (is_nil(beside) or (is_integer(beside) and beside > 0)) do
-    Regex.match?(@uuid, id)
+    Regex.match?(@uuid, id) and (not Map.has_key?(cursor, "dirty") or is_boolean(cursor["dirty"]))
   end
 
   defp valid_encoded_cursor?(_), do: false

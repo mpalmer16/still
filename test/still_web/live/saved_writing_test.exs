@@ -141,7 +141,7 @@ defmodule StillWeb.SavedWritingTest do
     assert Writing.get_entry!(legacy_now.id).body == legacy_now.body
   end
 
-  test "a new blank file Save becomes Now without replacing the earlier saved page", %{conn: conn} do
+  test "saving a separate page preserves both files and Write starts fresh", %{conn: conn} do
     {:ok, first, _} = live(conn, ~p"/writing/new")
 
     render_submit(element(first, "#file-writing-form"), %{
@@ -174,7 +174,8 @@ defmodule StillWeb.SavedWritingTest do
 
     {:ok, now, _} = live(conn, ~p"/")
     assert has_element?(now, "#file-writing-title[value='']")
-    assert editor_body(now) == "A separate page\nSeparate blank draft"
+    assert editor_body(now) == ""
+    refute has_element?(now, "#file-writing-body[data-document-id='#{new_saved.id}']")
     assert Enum.any?(Writing.list_entries(), &(&1.file_id == new_saved.id))
   end
 

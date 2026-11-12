@@ -12,7 +12,7 @@ defmodule StillWeb.UnifiedEchoTest do
     %{folder: folder}
   end
 
-  test "composing draws only historical Lists and echo reading leaves the current file desk intact",
+  test "composing draws only historical Lists and clean saved writing starts fresh after echo reading",
        %{conn: conn} do
     historical =
       Repo.insert!(
@@ -48,12 +48,17 @@ defmodule StillWeb.UnifiedEchoTest do
     assert id == saved.id
     {:ok, now, _} = live(conn, ~p"/")
 
-    assert has_element?(
-             now,
-             "#file-writing-body[data-document-id='#{saved.id}'][data-resume-active='true']"
-           )
+    assert has_element?(now, "#file-writing-body[data-resume-active='false']")
+    refute has_element?(now, "#file-writing-body[data-document-id='#{saved.id}']")
+
+    assert {:ok, fresh_cursor} = Desk.current(Storage.collection_location())
+    refute fresh_cursor.saved
+    refute fresh_cursor.id == saved.id
+    assert Map.get(fresh_cursor, :dirty) == false
+    assert {:ok, nil} = Desk.for_write(Storage.collection_location())
 
     assert Poems.get(Storage.collection_location(), id) == {:ok, saved}
+    assert File.read!(saved.path) == body
     assert Writing.get_entry!(historical.id) == historical
   end
 
@@ -75,7 +80,8 @@ defmodule StillWeb.UnifiedEchoTest do
     assert {:ok, %{id: id, saved: true}} = Desk.current(Storage.collection_location())
     assert id == cursor.id
     {:ok, now, _} = live(conn, ~p"/")
-    assert has_element?(now, "#file-writing-body[data-document-id='#{id}']")
+    refute has_element?(now, "#file-writing-body[data-document-id='#{id}']")
+    assert has_element?(now, "#file-writing-body[data-resume-active='false']")
     assert Poems.get(Storage.collection_location(), previous.id) == {:ok, previous}
     assert Enum.any?(Writing.list_entries(), &(&1.file_id == previous.id))
   end

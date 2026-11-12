@@ -2,6 +2,7 @@ defmodule Still.GravityTest do
   use Still.DataCase
   alias Still.{Repo, Writing}
   alias Still.Writing.Entry
+  alias Still.Writing.PoemReferences
 
   test "synthetic uncommon language draws a piece while ordinary writing stays quiet" do
     Still.SyntheticCorpus.import!()
@@ -55,6 +56,59 @@ defmodule Still.GravityTest do
            ) == nil
 
     assert Writing.gravity("", previous_id: original.entry.id) == nil
+  end
+
+  test "valid own-line poem references do not enter echo discovery" do
+    source = piece("A Source:", "moonstone narwhal windmill")
+
+    marker =
+      PoemReferences.marker(%{
+        relative_path: "Current Notebooks/Source",
+        id: Ecto.UUID.generate()
+      })
+
+    host = piece("A Host:", "moonstone narwhal windmill\n" <> marker)
+
+    assert Writing.gravity(marker) == nil
+
+    drawn = Writing.gravity("moonstone narwhal windmill")
+    assert drawn.entry.id in [source.id, host.id]
+    assert drawn.line == "moonstone narwhal windmill"
+    refute drawn.line =~ "[[poem:"
+    refute drawn.phrase =~ "[[poem:"
+
+    remembered = %{
+      entry: host,
+      line: marker,
+      strength: 0.4,
+      side: :left,
+      height: 40
+    }
+
+    [recalled] = Writing.gravity_field("moonstone narwhal windmill", previous: [remembered])
+    assert recalled.line == "moonstone narwhal windmill"
+
+    crlf = "moonstone narwhal windmill\r\n" <> marker <> "\r\nquiet ending"
+    assert Writing.gravity(crlf).line == "moonstone narwhal windmill"
+
+    malformed = "[[poem: authored-rare-words | not-a-uuid]]"
+    assert PoemReferences.parse(malformed) |> Enum.all?(&(&1.kind == :text))
+    malformed_source = piece("Malformed:", malformed)
+    assert Writing.gravity("authored rare words").entry.id == malformed_source.id
+  end
+
+  test "literal echo evidence never bridges across a valid poem reference" do
+    marker =
+      PoemReferences.marker(%{
+        relative_path: "Current Notebooks/Source",
+        id: Ecto.UUID.generate()
+      })
+
+    piece("A Host:", "silver meadow\n" <> marker <> "\ncobalt lantern")
+
+    drawn = Writing.gravity("silver meadow\n" <> marker <> "\ncobalt lantern")
+    refute drawn.phrase =~ "[[poem:"
+    refute drawn.phrase =~ "meadow cobalt"
   end
 
   test "comparable echoes hold still but changed words can pull something else close" do

@@ -11,6 +11,8 @@ defmodule StillWeb.WritingLive do
     {:ok,
      assign(socket,
        recovery_waiting: false,
+       client_dirty: false,
+       reported_cursor: nil,
        recovery_problem: nil,
        gravity_field: [],
        field_waiting: [],
@@ -123,6 +125,8 @@ defmodule StillWeb.WritingLive do
              notebooks: Writing.notebooks(),
              draft_key: draft_key(location, piece),
              dirty: false,
+             client_dirty: false,
+             reported_cursor: {piece.id, piece.token, false},
              problem:
                problem || cursor_problem || discovery_problem ||
                  if(same_editor?, do: socket.assigns.problem),
@@ -197,7 +201,7 @@ defmodule StillWeb.WritingLive do
     do: {{:ok, Poems.new(location)}, false, historical_beside(id)}
 
   defp opening(:now, _, location) do
-    case Desk.current(location) do
+    case Desk.for_write(location) do
       {:ok, %{saved: true, id: id, beside: beside}} ->
         {Poems.get(location, id), true, historical_beside(beside)}
 
@@ -205,7 +209,7 @@ defmodule StillWeb.WritingLive do
         {{:ok, %{Poems.new(location) | id: id}}, true, historical_beside(beside)}
 
       {:ok, nil} ->
-        {{:ok, Poems.new(location)}, true, nil}
+        {{:ok, Poems.new(location)}, false, nil}
 
       {:error, message} ->
         {{:error, message}, false, nil}
@@ -240,14 +244,29 @@ defmodule StillWeb.WritingLive do
 
   defp historical_beside(_), do: nil
 
-  defp remember(location, piece, beside) do
+  defp remember(location, piece, beside, dirty \\ false) do
     case Desk.remember(location, %{
            id: piece.id,
            saved: piece.token != nil,
-           beside: beside && beside.id
+           beside: beside && beside.id,
+           dirty: dirty
          }) do
       :ok -> nil
       {:error, message} -> message
+    end
+  end
+
+  defp remember_editor(socket, dirty) do
+    piece = socket.assigns.piece
+    state = {piece && piece.id, piece && piece.token, dirty}
+
+    if socket.assigns.editing && piece && state != socket.assigns.reported_cursor do
+      case remember(socket.assigns.location, piece, socket.assigns.beside, dirty) do
+        nil -> assign(socket, reported_cursor: state)
+        message -> assign(socket, recovery_problem: message)
+      end
+    else
+      socket
     end
   end
 
@@ -288,7 +307,13 @@ defmodule StillWeb.WritingLive do
 
     {:noreply,
      socket
-     |> assign(draft: draft, dirty: draft != words(socket.assigns.piece), notice: nil)
+     |> assign(
+       draft: draft,
+       dirty: draft != words(socket.assigns.piece),
+       client_dirty: draft != words(socket.assigns.piece),
+       notice: nil
+     )
+     |> remember_editor(draft != words(socket.assigns.piece) or socket.assigns.recovery_waiting)
      |> put_references(draft.body)
      |> then(fn updated ->
        if draft.body != socket.assigns.draft.body, do: settle(updated, draft.body), else: updated
@@ -506,6 +531,8 @@ defmodule StillWeb.WritingLive do
          piece: piece,
          draft: words(piece),
          dirty: false,
+         client_dirty: false,
+         reported_cursor: {piece.id, piece.token, false},
          problem: problem,
          notice: notice,
          draft_key: target_key
@@ -540,11 +567,16 @@ defmodule StillWeb.WritingLive do
     else
       {:error, message} ->
         {:noreply,
-         assign(socket,
+         socket
+         |> assign(
            draft: draft,
            dirty: draft != words(socket.assigns.piece),
+           client_dirty: draft != words(socket.assigns.piece),
            problem: message,
            notice: nil
+         )
+         |> remember_editor(
+           draft != words(socket.assigns.piece) or socket.assigns.recovery_waiting
          )}
     end
   end
@@ -682,8 +714,32 @@ defmodule StillWeb.WritingLive do
 
   def handle_event("refresh_file_folder", _, socket), do: {:noreply, socket}
 
-  def handle_event("file_recovery_status", %{"waiting" => waiting}, socket),
-    do: {:noreply, assign(socket, recovery_waiting: waiting == true)}
+  def handle_event(
+        "file_editing_state",
+        %{"id" => id, "token" => token, "dirty" => dirty},
+        socket
+      )
+      when is_boolean(dirty) do
+    piece = socket.assigns.piece
+
+    if socket.assigns.editing && piece && piece.id == id && (piece.token || "") == token do
+      {:noreply,
+       socket
+       |> assign(client_dirty: dirty, dirty: dirty)
+       |> remember_editor(dirty or socket.assigns.recovery_waiting)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("file_editing_state", _, socket), do: {:noreply, socket}
+
+  def handle_event("file_recovery_status", %{"waiting" => waiting}, socket) do
+    {:noreply,
+     socket
+     |> assign(recovery_waiting: waiting == true)
+     |> remember_editor(socket.assigns.client_dirty or waiting == true)}
+  end
 
   def handle_event("file_recovery_unavailable", _, socket),
     do:
