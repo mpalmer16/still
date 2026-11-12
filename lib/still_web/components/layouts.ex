@@ -13,6 +13,7 @@ defmodule StillWeb.Layouts do
   attr :writing_menu_open, :boolean, default: false
   attr :writing_picker_open, :boolean, default: false
   attr :file_exports, :boolean, default: false
+  attr :correspondence, :boolean, default: false
   attr :room_width, :integer, default: 0
   attr :width_open, :boolean, default: false
   attr :landscape_open, :boolean, default: false
@@ -56,7 +57,7 @@ defmodule StillWeb.Layouts do
             do: "true"
         }
       >
-        <header class="site-header">
+        <header :if={!@correspondence} class="site-header">
           <.link navigate={~p"/?new=1"} class="wordmark" aria-label="Still, a new page">still<span class="wordmark-stop">.</span></.link>
           <nav class="site-nav" aria-label="Main navigation">
             <.link
@@ -136,7 +137,9 @@ defmodule StillWeb.Layouts do
           <.room_tools {assigns} />
         </.focus_wrap>
       <% else %>
-        <.room_tools {assigns} />
+        <%= if !@correspondence do %>
+          <.room_tools {assigns} />
+        <% end %>
       <% end %>
 
       {render_slot(@writing_overlay)}

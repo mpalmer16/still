@@ -8,99 +8,115 @@ defmodule StillWeb.CorrespondencePlaces do
 
   def directory(assigns) do
     ~H"""
-    <section id="places-directory" class="editorial-place-directory" aria-labelledby="places-heading">
-      <header class="editorial-place-intro">
+    <section
+      id="places-directory"
+      class="editorial-place-directory corr-directory"
+      aria-labelledby="places-heading"
+    >
+      <header class="editorial-place-intro corr-directory-heading">
         <h1 id="places-heading">Places</h1>
-        <div class="corr-place-directory-actions">
-          <.link patch={~p"/correspondence/journals/new"} class="corr-button editorial-place-add">Add a place
-          <span>+</span></.link>
-          <.link patch={~p"/correspondence/journals/import"} class="corr-text-link">Import Places</.link>
-        </div>
+        <details class="corr-popover corr-directory-actions">
+          <summary>Places menu <span aria-hidden="true">⌄</span></summary>
+          <div class="corr-popover-panel">
+            <.link patch={~p"/correspondence/journals/new"}>Add a place</.link>
+            <.link patch={~p"/correspondence/journals/import"}>Import Places</.link>
+          </div>
+        </details>
       </header>
 
       <.form
         for={%{}}
         id="places-filters"
-        class="places-filters"
+        class="places-filters corr-directory-toolbar"
         phx-change="filter_places"
         phx-submit="filter_places"
       >
-        <div class="places-search-row">
-          <div class="places-search">
-            <label for="places-query">Search places</label>
-            <input
-              id="places-query"
-              type="search"
-              name="places[q]"
-              value={@directory.filters["q"]}
-              placeholder="Name, keywords, or notes"
-              phx-debounce="250"
-              autocomplete="off"
+        <div class="places-search corr-directory-search">
+          <label for="places-query" class="sr-only">Search places</label>
+          <input
+            id="places-query"
+            type="search"
+            name="places[q]"
+            value={@directory.filters["q"]}
+            placeholder="Name, keywords, or notes"
+            phx-debounce="250"
+            autocomplete="off"
+          />
+        </div>
+        <details class="corr-popover corr-directory-filters">
+          <summary>
+            Filters
+            <span :if={active_filter_count(@directory.filters) > 0} class="corr-filter-count">{active_filter_count(
+              @directory.filters
+            )}</span> <span aria-hidden="true">⌄</span>
+          </summary>
+          <div class="corr-popover-panel places-filter-row">
+            <.directory_filter
+              id="places-status"
+              label="Status"
+              name="status"
+              value={@directory.filters["status"]}
+              options={[
+                {"Active places", "active"},
+                {"All places", "all"},
+                {"Inactive places", "inactive"}
+              ]}
             />
-            <small>Search includes descriptions, guidelines, submission details, and your notes.</small>
+            <.directory_filter
+              id="places-nearby"
+              label="Kept nearby"
+              name="nearby"
+              value={@directory.filters["nearby"]}
+              options={[{"All", "all"}, {"Kept nearby", "nearby"}, {"Not kept nearby", "not_nearby"}]}
+            />
+            <.directory_filter
+              id="places-reach"
+              label="Reach · your impression"
+              name="reach"
+              value={@directory.filters["reach"]}
+              options={[
+                {"Any reach", "all"},
+                {"Approachable", "approachable"},
+                {"A stretch", "stretch"},
+                {"A long shot", "long_shot"},
+                {"Unknown", "unknown"}
+              ]}
+            />
+            <.directory_filter
+              id="places-simultaneous"
+              label="Simultaneous submissions"
+              name="simultaneous"
+              value={@directory.filters["simultaneous"]}
+              options={[
+                {"Any policy", "all"},
+                {"Allowed", "allowed"},
+                {"Not allowed", "not_allowed"},
+                {"Unknown", "unknown"}
+              ]}
+            />
+            <.directory_filter
+              id="places-history"
+              label="Submission history"
+              name="history"
+              value={@directory.filters["history"]}
+              options={[
+                {"Any history", "all"},
+                {"Never sent", "never_sent"},
+                {"Awaiting reply", "awaiting"},
+                {"Sent before", "sent"}
+              ]}
+            />
           </div>
-          <.link id="reset-places" patch={~p"/correspondence/journals"} class="corr-text-link">Reset view</.link>
-        </div>
-        <div class="places-filter-row">
-          <.directory_filter
-            id="places-status"
-            label="Status"
-            name="status"
-            value={@directory.filters["status"]}
-            options={[
-              {"Active places", "active"},
-              {"All places", "all"},
-              {"Inactive places", "inactive"}
-            ]}
-          />
-          <.directory_filter
-            id="places-nearby"
-            label="Kept nearby"
-            name="nearby"
-            value={@directory.filters["nearby"]}
-            options={[{"All", "all"}, {"Kept nearby", "nearby"}, {"Not kept nearby", "not_nearby"}]}
-          />
-          <.directory_filter
-            id="places-reach"
-            label="Reach · your impression"
-            name="reach"
-            value={@directory.filters["reach"]}
-            options={[
-              {"Any reach", "all"},
-              {"Approachable", "approachable"},
-              {"A stretch", "stretch"},
-              {"A long shot", "long_shot"},
-              {"Unknown", "unknown"}
-            ]}
-          />
-          <.directory_filter
-            id="places-simultaneous"
-            label="Simultaneous submissions"
-            name="simultaneous"
-            value={@directory.filters["simultaneous"]}
-            options={[
-              {"Any policy", "all"},
-              {"Allowed", "allowed"},
-              {"Not allowed", "not_allowed"},
-              {"Unknown", "unknown"}
-            ]}
-          />
-          <.directory_filter
-            id="places-history"
-            label="Submission history"
-            name="history"
-            value={@directory.filters["history"]}
-            options={[
-              {"Any history", "all"},
-              {"Never sent", "never_sent"},
-              {"Awaiting reply", "awaiting"},
-              {"Sent before", "sent"}
-            ]}
-          />
-        </div>
+        </details>
+        <.link id="reset-places" patch={~p"/correspondence/journals"} class="corr-text-link">Reset</.link>
       </.form>
 
-      <p id="places-result-count" class="places-result-count" role="status" aria-live="polite">
+      <p
+        id="places-result-count"
+        class="places-result-count corr-result-count"
+        role="status"
+        aria-live="polite"
+      >
         <%= if @directory.matched > 0 do %>
           {(@directory.page - 1) * @directory.per_page + 1}–{(@directory.page - 1) *
             @directory.per_page + length(@directory.rows)} of {@directory.matched} {if @directory.matched ==
@@ -115,12 +131,12 @@ defmodule StillWeb.CorrespondencePlaces do
 
       <div
         :if={@directory.rows != []}
-        class="places-table-scroll"
+        class="places-table-scroll corr-table-scroll"
         role="region"
         aria-label="Places table"
         tabindex="0"
       >
-        <table id="places-table" class="places-table">
+        <table id="places-table" class="places-table corr-table">
           <caption class="sr-only">Places and the submission details you have recorded</caption>
           <thead>
             <tr>
@@ -782,6 +798,19 @@ defmodule StillWeb.CorrespondencePlaces do
       nil -> "Saved piece unavailable"
       piece -> Poems.display_title(piece)
     end
+  end
+
+  defp active_filter_count(filters) do
+    Enum.count(
+      [
+        {"status", "active"},
+        {"nearby", "all"},
+        {"reach", "all"},
+        {"simultaneous", "all"},
+        {"history", "all"}
+      ],
+      fn {key, default} -> filters[key] != default end
+    )
   end
 
   defp packet_sort_key(packet),

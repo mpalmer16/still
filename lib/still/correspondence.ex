@@ -8,7 +8,7 @@ defmodule Still.Correspondence do
   import Ecto.Query
 
   @journal_fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted verified inactive keywords reach reach_note possible_piece_ids icon_url description)
-  @packet_fields ~w(title journal_id piece_ids preparation_notes cover_letter)
+  @packet_fields ~w(title journal_id piece_ids preparation_notes cover_letter cover_letter_piece_id)
   @statuses ~w(preparing submitted awaiting declined accepted withdrawn)
   @desk_format "still-correspondence-desk"
   @desk_version 1
@@ -387,9 +387,10 @@ defmodule Still.Correspondence do
          {:ok, d} <- store(location),
          {:ok, old} <- existing(d, id, token, :packet),
          :ok <- editable(old),
-         {:ok, j} <- read_record(d, vals.journal_id, :journal),
-         :ok <- active_destination(j),
+         {:ok, j} <- optional_destination(d, vals.journal_id),
+         :ok <- maybe_active_destination(j),
          {:ok, pieces} <- current_pieces(location, vals.piece_ids),
+         {:ok, letter_token} <- cover_letter_token(location, vals.cover_letter_piece_id),
          now <- now(),
          rec <-
            Map.merge(vals, %{
@@ -400,14 +401,33 @@ defmodule Still.Correspondence do
              snapshot_ref: nil,
              snapshot_digest: nil,
              accepted_piece_ids: [],
-             journal_name: j.name,
-             piece_tokens: Map.new(pieces, &{&1.id, &1.token})
+             journal_name: j && j.name,
+             piece_tokens: Map.new(pieces, &{&1.id, &1.token}),
+             cover_letter_piece_token: letter_token
            }),
          {:ok, saved} <- write_record(d, rec, :packet, token),
          do: {:ok, saved}
   end
 
   def save_packet(_, _, _, _), do: invalid("packet")
+
+  @doc "Duplicates an existing packet as a new, destination-free preparation."
+  def duplicate_packet(location, id, token) do
+    with {:ok, source} <- packet(location, id),
+         :ok <- fresh(source, token),
+         {:ok, pieces} <- current_pieces(location, source.piece_ids),
+         :ok <- if(source.status == "preparing", do: reviewed_tokens(source, pieces), else: :ok),
+         {:ok, notes} <- Still.Correspondence.PacketNotes.get(location, source.id) do
+      save_packet(location, %{
+        title: source.title,
+        journal_id: nil,
+        piece_ids: source.piece_ids,
+        preparation_notes: notes.body,
+        cover_letter: if(source.cover_letter_piece_id, do: nil, else: source.cover_letter),
+        cover_letter_piece_id: source.cover_letter_piece_id
+      })
+    end
+  end
 
   def submit(location, id, token, date) do
     with {:ok, d} <- store(location),
@@ -416,8 +436,9 @@ defmodule Still.Correspondence do
          :ok <- preparing(p),
          {:ok, pieces} <- current_pieces(location, p.piece_ids),
          :ok <- reviewed_tokens(p, pieces),
+         {:ok, cover_letter} <- reviewed_cover_letter(location, p),
          {:ok, date} <- date(date),
-         {:ok, j} <- read_record(d, p.journal_id, :journal),
+         {:ok, j} <- required_destination(d, p.journal_id),
          :ok <- active_destination(j),
          sid <- Ecto.UUID.generate(),
          snap <- %{
@@ -427,7 +448,7 @@ defmodule Still.Correspondence do
            journal_id: p.journal_id,
            journal_name: j.name,
            packet_title: p.title,
-           cover_letter: p.cover_letter,
+           cover_letter: cover_letter,
            preparation_notes: p.preparation_notes,
            pieces:
              Enum.map(
@@ -452,6 +473,7 @@ defmodule Still.Correspondence do
            |> Map.put(:snapshot_ref, sid)
            |> Map.put(:snapshot_digest, snapshot_digest)
            |> Map.put(:journal_name, j.name)
+           |> Map.put(:cover_letter, cover_letter)
            |> Map.update!(:events, &(&1 ++ [event]))
            |> Map.put(:updated_at, now()),
          {:ok, saved} <- write_record(d, next, :packet, p.token),
@@ -606,6 +628,7 @@ defmodule Still.Correspondence do
   defp journal_for_export(%{snapshot: s}, _d) when is_map(s),
     do: {:ok, %{id: s.journal_id, name: s.journal_name}}
 
+  defp journal_for_export(%{journal_id: nil}, _d), do: {:ok, nil}
   defp journal_for_export(p, d), do: read_record(d, p.journal_id, :journal)
 
   defp normalize_journal(a) do
@@ -689,24 +712,88 @@ defmodule Still.Correspondence do
         {:error, "This place is inactive. Reactivate it before preparing or sending a packet."}
   end
 
+  defp maybe_active_destination(nil), do: :ok
+  defp maybe_active_destination(journal), do: active_destination(journal)
+
+  defp optional_destination(_d, nil), do: {:ok, nil}
+  defp optional_destination(d, id), do: read_record(d, id, :journal)
+
+  defp required_destination(_d, nil),
+    do: {:error, "Choose a destination before sending this packet."}
+
+  defp required_destination(d, id), do: read_record(d, id, :journal)
+
+  defp cover_letter_token(_location, nil), do: {:ok, nil}
+
+  defp cover_letter_token(location, id) do
+    case Poems.get(location, id) do
+      {:ok, _piece} ->
+        case current_pieces(location, [id]) do
+          {:ok, [expanded]} -> {:ok, expanded.token}
+          {:error, _} = error -> error
+          _ -> {:error, "The linked cover letter is missing from the active collection."}
+        end
+
+      _ ->
+        {:error, "The linked cover letter is missing from the active collection."}
+    end
+  end
+
+  defp reviewed_cover_letter(_location, %{cover_letter_piece_id: nil} = packet),
+    do: {:ok, packet.cover_letter}
+
+  defp reviewed_cover_letter(location, packet) do
+    case Poems.get(location, packet.cover_letter_piece_id) do
+      {:ok, _piece} ->
+        case current_pieces(location, [packet.cover_letter_piece_id]) do
+          {:ok, [expanded]} when expanded.token == packet.cover_letter_piece_token ->
+            {:ok, expanded.body}
+
+          {:ok, [_expanded]} ->
+            {:error,
+             "The linked cover letter changed after packet preparation. Review the packet again before sending."}
+
+          {:error, _} = error ->
+            error
+
+          _ ->
+            {:error, "The linked cover letter is missing from the active collection."}
+        end
+
+      _ ->
+        {:error, "The linked cover letter is missing from the active collection."}
+    end
+  end
+
   defp normalize_packet(a) do
     with {:ok, v} <- fields(a, @packet_fields),
          {:ok, title} <- optional(v["title"], "Packet title"),
-         {:ok, journal_id} <- uuid(v["journal_id"], "Choose a journal."),
+         {:ok, journal_id} <- optional_uuid(v["journal_id"], "Choose a journal."),
          {:ok, ids} <- piece_ids(v["piece_ids"]),
          {:ok, notes} <- optional(v["preparation_notes"], "Preparation notes"),
-         {:ok, letter} <- optional(v["cover_letter"], "Cover letter") do
-      {:ok,
-       %{
-         title: title,
-         journal_id: journal_id,
-         piece_ids: ids,
-         preparation_notes: notes,
-         cover_letter: letter,
-         status: "preparing"
-       }}
+         {:ok, letter} <- optional(v["cover_letter"], "Cover letter"),
+         {:ok, letter_id} <-
+           optional_uuid(v["cover_letter_piece_id"], "Choose a saved cover letter.") do
+      if letter_id && letter do
+        {:error, "Use either a linked cover letter or inline cover-letter text."}
+      else
+        {:ok,
+         %{
+           title: title,
+           journal_id: journal_id,
+           piece_ids: ids,
+           preparation_notes: notes,
+           cover_letter: letter,
+           cover_letter_piece_id: letter_id,
+           status: "preparing"
+         }}
+      end
     end
   end
+
+  defp optional_uuid(nil, _), do: {:ok, nil}
+  defp optional_uuid("", _), do: {:ok, nil}
+  defp optional_uuid(value, label), do: uuid(value, label)
 
   defp fields(a, allowed) do
     if Enum.all?(Map.keys(a), &(to_string(&1) in allowed)),
@@ -1136,8 +1223,13 @@ defmodule Still.Correspondence do
   end
 
   defp decode(r, :packet) do
+    r =
+      r
+      |> Map.put_new("cover_letter_piece_id", nil)
+      |> Map.put_new("cover_letter_piece_token", nil)
+
     fields =
-      ~w(title journal_id piece_ids preparation_notes cover_letter status created_at updated_at events snapshot_ref snapshot_digest accepted_piece_ids journal_name piece_tokens)
+      ~w(title journal_id piece_ids preparation_notes cover_letter cover_letter_piece_id cover_letter_piece_token status created_at updated_at events snapshot_ref snapshot_digest accepted_piece_ids journal_name piece_tokens)
 
     ids = r["piece_ids"]
     accepted = r["accepted_piece_ids"]
@@ -1146,12 +1238,17 @@ defmodule Still.Correspondence do
     basic =
       Enum.all?(fields, &Map.has_key?(r, &1)) and is_list(ids) and ids != [] and
         Enum.all?(ids, &uuid_value?/1) and length(ids) == length(Enum.uniq(ids)) and
-        uuid_value?(r["journal_id"]) and r["status"] in @statuses and
+        (is_nil(r["journal_id"]) or uuid_value?(r["journal_id"])) and r["status"] in @statuses and
         is_list(r["events"]) and Enum.all?(r["events"], &valid_event?(&1, ids)) and
         valid_event_times?(r["events"]) and
         valid_time?(r["created_at"]) and valid_time?(r["updated_at"]) and
         nullable_text?(r["title"]) and nullable_text?(r["preparation_notes"]) and
-        nullable_text?(r["cover_letter"]) and is_list(accepted) and
+        nullable_text?(r["cover_letter"]) and
+        (is_nil(r["cover_letter_piece_id"]) or uuid_value?(r["cover_letter_piece_id"])) and
+        (is_nil(r["cover_letter_piece_token"]) or is_binary(r["cover_letter_piece_token"])) and
+        is_nil(r["cover_letter_piece_id"]) == is_nil(r["cover_letter_piece_token"]) and
+        not (not is_nil(r["cover_letter_piece_id"]) and not is_nil(r["cover_letter"]) and
+               r["status"] == "preparing") and is_list(accepted) and
         Enum.all?(accepted, &(&1 in ids)) and length(accepted) == length(Enum.uniq(accepted)) and
         (r["status"] != "accepted" or accepted != []) and is_map(tokens) and
         Map.keys(tokens) |> MapSet.new() == MapSet.new(ids) and
@@ -1162,7 +1259,8 @@ defmodule Still.Correspondence do
         is_nil(r["snapshot_digest"]) and accepted == []
 
     sent =
-      r["status"] != "preparing" and uuid_value?(r["snapshot_ref"]) and
+      r["status"] != "preparing" and uuid_value?(r["journal_id"]) and
+        uuid_value?(r["snapshot_ref"]) and
         is_binary(r["snapshot_digest"]) and is_binary(r["journal_name"]) and
         String.trim(r["journal_name"]) != ""
 
@@ -1315,6 +1413,8 @@ defmodule Still.Correspondence do
         :piece_ids,
         :preparation_notes,
         :cover_letter,
+        :cover_letter_piece_id,
+        :cover_letter_piece_token,
         :status,
         :created_at,
         :updated_at,
@@ -1435,10 +1535,12 @@ defmodule Still.Correspondence do
   defp token_matches?(_, _), do: false
 
   defp writable_destination(%{scope: scope}, %{status: status, journal_id: id}, :packet)
-       when status in ["preparing", "submitted"] do
+       when status in ["preparing", "submitted"] and not is_nil(id) do
     with {:ok, journal} <- read_record(%{scope: scope}, id, :journal),
          do: active_destination(journal)
   end
+
+  defp writable_destination(_d, %{status: "preparing", journal_id: nil}, :packet), do: :ok
 
   defp writable_destination(_, _, _), do: :ok
 

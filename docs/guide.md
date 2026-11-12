@@ -450,11 +450,13 @@ Correspondence keeps file-backed writing, manually maintained journals, ordered
 submission packets, and replies together in the selected collection. Sent manuscripts
 keep immutable copies; nothing is submitted automatically. The historical Lists and
 the Write writing experience keep their existing behavior. The editorial workspace
-uses a wide editorial layout, with an explicitly chosen work on the desk,
-Places kept nearby, side-by-side work history, a curated Places directory, and a
-live ordered manuscript in packet preparation.
+has its own navigation and a packet-focused Home. Works, Places, and Packets use
+consistent searchable tables. Prepare a packet before choosing a destination,
+rearrange its poems, edit the original writing with a direct return to the packet,
+and attach an unmarked scratch page as a linked cover letter. Duplicate a packet
+for a later send while keeping the original record intact.
 Graphite is the default dark color; Night blue, Forest, and Plum are available.
-Still remembers the chosen dark color and the optional Light appearance across
+The sun/moon menu holds appearance choices. Still remembers the dark color and optional Light appearance across
 visits to Correspondence. The writing room keeps its own light.
 
 See [the Correspondence guide](correspondence.md) for the workflow, portable

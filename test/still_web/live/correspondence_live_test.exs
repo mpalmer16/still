@@ -41,8 +41,8 @@ defmodule StillWeb.CorrespondenceLiveTest do
 
     {:ok, home, _html} = live(conn, ~p"/correspondence")
     refute has_element?(home, "#desk-piece-title")
-    render_click(element(home, "[phx-click='place_on_desk'][phx-value-id='#{piece.id}']"))
-    assert has_element?(home, "#desk-piece-title", "A Window at Dusk")
+    assert has_element?(home, ".corr-home-summary[href='/correspondence/writing']", "1")
+    assert has_element?(home, ".corr-home-primary-action", "Prepare a packet")
 
     {:ok, journal_view, _html} = live(conn, ~p"/correspondence/journals/new")
 
@@ -250,15 +250,15 @@ defmodule StillWeb.CorrespondenceLiveTest do
   test "an empty collection has a gentle first step and no invented activity", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/correspondence")
 
-    assert has_element?(view, ".editorial-desk-empty", "Choose a work to keep in view.")
+    assert has_element?(view, ".corr-home-preparing", "No packets are being prepared.")
 
     assert has_element?(
              view,
-             ".editorial-desk-empty a[href='/correspondence/writing']",
-             "Browse Works"
+             ".corr-home-summary[href='/correspondence/writing']",
+             "Works"
            )
 
-    assert has_element?(view, "a[href='/correspondence/journals/new']", "Add a place")
+    assert has_element?(view, ".corr-home-summary[href='/correspondence/journals']", "Places")
     refute has_element?(view, ".corr-journey")
   end
 end

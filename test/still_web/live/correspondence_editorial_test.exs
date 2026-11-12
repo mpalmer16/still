@@ -25,11 +25,16 @@ defmodule StillWeb.CorrespondenceEditorialTest do
   test "empty editorial spaces offer honest first steps and usable navigation", %{conn: conn} do
     {:ok, home, _} = live(conn, "/correspondence")
     assert has_element?(home, "#correspondence-home")
-    assert has_element?(home, "h1#desk-heading", "On the desk")
+    assert has_element?(home, "h1#home-heading", "Home")
+    assert has_element?(home, ".corr-home-overview", "Works")
+    assert has_element?(home, ".corr-home-overview", "Places")
+    assert has_element?(home, ".corr-home-overview", "Packets")
+    assert has_element?(home, "a[href='/correspondence/packets/new']", "Prepare a packet")
+    refute has_element?(home, "#on-the-desk")
     refute has_element?(home, ".corr-hero")
     refute render(home) =~ "A wider world for the words."
     refute render(home) =~ "THE WORK, IN MOTION"
-    assert has_element?(home, "#open-correspondence[aria-current='page']")
+    assert has_element?(home, "#back-to-still", "Back to Still")
     assert has_element?(home, "a[href='/correspondence/writing']")
     refute has_element?(home, ".corr-journey")
 
@@ -38,8 +43,9 @@ defmodule StillWeb.CorrespondenceEditorialTest do
     assert has_element?(places, "a[href='/correspondence/journals/new']", "Add a place")
 
     {:ok, writing, _} = live(conn, "/correspondence/writing")
-    assert has_element?(writing, "#correspondence-search[aria-label='Search works']")
-    assert has_element?(writing, "a[href='/correspondence/packets/new']")
+    assert has_element?(writing, "#works-directory")
+    assert has_element?(writing, "#works-filters input[name='works[q]']")
+    assert has_element?(home, "a[href='/correspondence/packets/new']")
   end
 
   test "a small collection connects a manuscript to its current text, history, and place", %{
@@ -199,7 +205,7 @@ defmodule StillWeb.CorrespondenceEditorialTest do
     conn: conn,
     location: location
   } do
-    pieces = for n <- 1..12, do: save_piece!(location, "Established piece #{n}", "Body #{n}.")
+    pieces = for n <- 1..45, do: save_piece!(location, "Established piece #{n}", "Body #{n}.")
     for piece <- pieces, do: assert(:ok = Correspondence.set_focus(location, piece.id, true))
     journals = for n <- 1..4, do: save_journal!(location, "Established journal #{n}")
 
@@ -245,15 +251,46 @@ defmodule StillWeb.CorrespondenceEditorialTest do
     assert has_element?(home, "#correspondence-home")
 
     {:ok, writing, _} = live(conn, "/correspondence/writing")
-    for piece <- pieces, do: assert(has_element?(writing, ".corr-library-piece", piece.title))
+    assert has_element?(writing, "#works-directory", "45 works")
+    assert length(Regex.scan(~r/<tr[^>]*id="work-directory-row-/, render(writing))) == 40
+    assert has_element?(writing, ".corr-pagination", "Page 1 of 2")
+    assert length(Regex.scan(~r/id="work-directory-row-/, render(writing))) == 40
+
+    render_change(element(writing, "#works-filters"), %{
+      "works" => %{"q" => "Established piece 45"}
+    })
+
+    assert has_element?(
+             writing,
+             "#work-directory-row-#{List.last(pieces).id}",
+             "Established piece 45"
+           )
+
+    refute has_element?(writing, "#work-directory-row-#{hd(pieces).id}")
+
+    render_change(element(writing, "#works-filters"), %{"works" => %{"q" => ""}})
+    render_click(element(writing, "button[phx-click='works_page'][phx-value-page='2']"))
+    assert has_element?(writing, ".corr-pagination", "Page 2 of 2")
+    assert length(Regex.scan(~r/id="work-directory-row-/, render(writing))) == 5
+
+    refute has_element?(writing, "#work-directory-row-#{hd(pieces).id}")
 
     {:ok, places, _} = live(conn, "/correspondence/journals")
     for journal <- journals, do: assert(has_element?(places, "#places-directory", journal.name))
 
     {:ok, packets, _} = live(conn, "/correspondence/packets")
 
-    for n <- 1..8,
-        do: assert(has_element?(packets, ".corr-library-piece", "Established packet #{n}"))
+    {:ok, overview} = Correspondence.overview(location)
+
+    for n <- 1..8 do
+      packet = Enum.find(overview.packets, &(&1.title == "Established packet #{n}"))
+
+      assert has_element?(
+               packets,
+               "#packet-directory-row-#{packet.id}",
+               "Established packet #{n}"
+             )
+    end
   end
 
   defp save_piece(location, title, body),

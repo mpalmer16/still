@@ -190,7 +190,7 @@ export const FileRecovery = {
     this.saveButton = [...document.querySelectorAll("#save-file")].find(button => button.form === this.form)
     this.onNew = () => { this.capture(); this.keepPosition(); this.pushEvent("new_file", {writing: this.words()}) }
     this.newButton?.addEventListener("click", this.onNew)
-    this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); this.submitWriting(["read-file", "save-return-notebook"].includes(event.submitter?.id), event.submitter?.id === "save-scratch", event.submitter?.id === "save-unplaced", event.submitter?.id === "save-return-notebook") }
+    this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); this.submitWriting(["read-file", "save-return-notebook", "save-return-packet"].includes(event.submitter?.id), event.submitter?.id === "save-scratch", event.submitter?.id === "save-unplaced", event.submitter?.id === "save-return-notebook") }
     this.onKey = event => {
       if (event.target !== this.el && event.target?.form !== this.form) return
       const editor = event.target === this.el || this.el.linkedEditor?.owns(event.target) ? event.target : null

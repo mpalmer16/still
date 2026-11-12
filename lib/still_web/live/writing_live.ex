@@ -36,6 +36,7 @@ defmodule StillWeb.WritingLive do
        notebook_entry: nil,
        notebook_context: %{},
        notebook_return: nil,
+       packet_return: nil,
        notebook_edit_path: nil,
        notebook_sidebar_open: false,
        native_exports?:
@@ -101,6 +102,7 @@ defmodule StillWeb.WritingLive do
              notebook_entry: notebook_view && notebook_view.entry,
              notebook_context: if(notebook_view, do: notebook_view.context, else: %{}),
              notebook_return: notebook_view && notebook_view.return_path,
+             packet_return: packet_return(location, piece, params["packet"]),
              notebook_edit_path: notebook_view && notebook_view.edit_path,
              notebook_sidebar_open: false,
              piece_find_open: false,
@@ -817,7 +819,9 @@ defmodule StillWeb.WritingLive do
     do:
       push_navigate(socket,
         to:
-          socket.assigns.wander_return || socket.assigns.notebook_return ||
+          (socket.assigns.packet_return &&
+             ~p"/correspondence/packets/#{socket.assigns.packet_return.id}") ||
+            socket.assigns.wander_return || socket.assigns.notebook_return ||
             ~p"/writing/#{piece.id}"
       )
 
@@ -836,8 +840,29 @@ defmodule StillWeb.WritingLive do
             URI.encode_query(%{"reference_return" => socket.assigns.reference_return}),
         else: path
 
+    path =
+      if socket.assigns.packet_return,
+        do:
+          path <>
+            if(String.contains?(path, "?"), do: "&", else: "?") <>
+            URI.encode_query(%{"packet" => socket.assigns.packet_return.id}),
+        else: path
+
     push_patch(socket, to: path, replace: true)
   end
+
+  defp packet_return(location, piece, id) when is_binary(id) do
+    case Correspondence.packet(location, id) do
+      {:ok, %{status: "preparing"} = packet} ->
+        if piece.id in packet.piece_ids or piece.id == Map.get(packet, :cover_letter_piece_id),
+          do: packet
+
+      _ ->
+        nil
+    end
+  end
+
+  defp packet_return(_, _, _), do: nil
 
   defp notebook_view(%{token: token, entry_id: id}, params)
        when is_binary(token) and is_integer(id) do
@@ -1414,6 +1439,7 @@ defmodule StillWeb.WritingLive do
               value="true"
               class="quiet-link"
             >{cond do
+              @packet_return -> "Save & return to packet"
               @wander_return -> "Save & return to Wander"
               @notebook_return -> "Save & return to notebook"
               true -> "Read"
@@ -1806,7 +1832,27 @@ defmodule StillWeb.WritingLive do
           class={if @notebook, do: "notebook-editor-content", else: ""}
         >
           <nav
-            :if={@notebook}
+            :if={@packet_return}
+            class="notebook-toolbar notebook-edit-toolbar packet-edit-toolbar"
+            aria-label="Editing for packet"
+          >
+            <.link
+              id="back-to-packet"
+              navigate={~p"/correspondence/packets/#{@packet_return.id}"}
+              class="quiet-link"
+            >Back to packet</.link>
+            <span class="reader-reference">{@packet_return.title}</span>
+            <button
+              id="save-return-packet"
+              form="file-writing-form"
+              type="submit"
+              name="read"
+              value="true"
+              class="quiet-link"
+            >Save &amp; return to packet</button>
+          </nav>
+          <nav
+            :if={@notebook && !@packet_return}
             class="notebook-toolbar notebook-edit-toolbar"
             aria-label="Editing in notebook"
           >

@@ -6,19 +6,17 @@ Historical Lists remain in SQLite and never become submission candidates.
 
 ## Everyday use
 
-Open **Correspondence** from the main navigation. Graphite is the default dark
-color. Use **Color** to choose Graphite, Night blue, Forest, or Plum, and **Light**
-to switch to a light appearance. Still remembers both choices across visits;
-they affect Correspondence only and do not change Write. Choose the same
-collection folder in **Storage & Backups** that holds your saved writing.
+Open **Correspondence** from Still's navigation. It has its own Home, Works,
+Places, and Packets navigation, with **Back to Still** returning to writing. The
+sun/moon menu holds the light appearance and remembered dark color choices:
+Graphite, Night blue, Forest, or Plum. These affect Correspondence only.
+Choose the collection folder in **Storage & Backups** that holds your saved writing.
 Without an available folder, Correspondence explains what is missing and stores
 no authoritative records elsewhere.
 
-Pages begin with compact labels and actions rather than introductory banners.
-**On the desk** keeps a work you explicitly choose in view. Use **Place on desk**
-in **Works**, or the home page's saved-work chooser. Change it there or **Clear the desk**;
-clearing removes only the placement, never the writing. The selection survives a restart
-and follows the collection. A recent edit does not imply readiness for publication.
+Home follows packets: continue preparations, see the submissions awaiting replies,
+and revisit recent responses. Collection counts lead to the full directories.
+It does not select a single work as the focus of the room.
 
 **Works** holds the pieces you mark for Correspondence. Open a saved piece in
 Write or in its notebook and choose **Mark for Correspondence**. This adds the
@@ -29,18 +27,18 @@ marked. You can remove the mark while keeping the packet history.
 the editor notes that the piece has been sent. Saving an edit creates a new
 version, and the packet keeps the exact submitted words.
 
-Works shows 40 pieces initially. **More works** reveals the next group and
-search covers all marked pieces.
-Opening a work places its current text beside earlier versions and correspondence,
-including the exact versions sent. Use **Edit in Now** to compose or revise.
-Correspondence does not have a second editor; global **Write** remains the way back.
+**Works**, **Places**, and **Packets** use the same compact table layout, with
+search beside a **Filters** menu. Each shows 40 rows per page, and searching or
+filtering covers the entire list. Works can be filtered by notebook and packet
+status, and sorted by notebook sequence, title, or packet activity. It shows
+participation across packets, so a newer preparation or rejection cannot hide
+an existing submission or acceptance. Open a work for its current text,
+earlier versions, and exact sent copies.
 
-Home shows up to three outstanding submissions, including unresolved pieces in a
-partly accepted packet, and two recent replies. **All packets** leads to the complete
-history. **Kept nearby** shows up to three places you want to return to, with your
-notes and previous correspondence. **Keep nearby** controls in Places and on home change
-only that personal marker; they do not represent an editorial decision from a journal. Home shows recorded windows and policies only when you
-have marked the source checked; this is your record, not live confirmation of availability.
+Packets can be searched by title, destination, or their contents, filtered by
+status and whether a destination is chosen, and sorted by activity, title,
+destination, or sent date. Sent packet contents and destination names come from
+the historical record. **Prepare a packet** can begin before any place is chosen.
 
 **Places** is a single searchable table. Search names, keywords, descriptions, guidelines,
 and your notes. Combine filters for active or inactive places, kept nearby, reach,
@@ -50,9 +48,9 @@ remain the text you recorded, without guessing whether a place is open. History 
 the date you marked a packet sent, with unknown dates kept last.
 
 The table shows 40 places per page. Search and filters cover the full directory;
-opening a place and returning to **All places** keeps your view. **Reset view** clears
+opening a place and returning to **All places** keeps your view. **Reset** clears
 the search, filters, sorting, and page. Keep nearby is a personal marker in the same
-table, rather than a second copy of the place. Open a place to read its complete notes,
+table. **Places menu** holds Add a place and Import Places. Open a place to read its complete notes,
 requirements, and linked packets and pieces. **Edit place details**
 opens the manual record; **Prepare a packet** starts with that saved destination selected.
 Packet preparation separates the saved-writing chooser, ordered manuscript, and
@@ -66,9 +64,22 @@ guidelines, reading windows, fees, simultaneous-submission policy, and response
 expectations yourself. An unknown field means unknown. Personal notes remain separate
 from the information you have checked. Still does not fetch or invent journal policies.
 
-Choose saved writing, arrange it in a packet, and select a destination. Review the
+Choose saved writing and arrange it in a packet. Save and revise the draft before
+choosing a destination. **Edit** beneath a manuscript saves the packet arrangement
+and opens the original file in the writing editor; **Save & return to packet**
+brings you back. Review and save the packet again after changing a source. The
+poems remain in their original notebooks; the packet holds ordered links to them.
+
+Choose a destination when ready. Review the
 requirements and any other outstanding submissions. Keep private submission notes and a
-cover-letter draft. **Save as PDF** in the Mac app creates a clean manuscript with each
+cover-letter draft. Use **Choose saved writing…** to attach a scratch page or any
+other saved writing as the cover letter. It does not need a Correspondence mark
+and is not added to the poems. The linked letter follows its source until sending;
+changing it requires reviewing and saving the packet again. Alternatively, write
+an inline letter draft in the packet. The copy button copies the linked or sent
+letter for pasting into the submission form.
+
+**Save as PDF** in the Mac app creates a clean manuscript with each
 poem beginning on a new page, using the same verified text as the preview. PDFs are
 saved under `<collection> Exports/Packets`, beside the writing folder and outside its
 notebooks. Unrelated or externally changed exports are left untouched. Manuscript
@@ -93,17 +104,21 @@ A sent packet's manuscript is frozen. Reading it or downloading it later uses th
 snapshot, even after the original is revised or moved to Trash. Record a reply in the
 packet and select which pieces were accepted. Review other outstanding submissions
 when work is accepted; Still never withdraws or contacts anyone automatically.
-Prepare a new packet for a subsequent submission so the earlier history remains intact.
+Use **Duplicate packet** to make a new preparation with the same ordered pieces,
+cover-letter choice, and latest saved private notes. It starts without a destination
+or send history. Choose another place and revise it freely; the original packet,
+reply, and exact sent text remain intact. A duplicate uses current source writing,
+so review it before sending again.
 
 ## Storage and recovery
 
-Correspondence records live in the machine-local SQLite database outside the selected writing folder. The folder itself contains the current ordinary text files and, after a backup, one latest verified `still-backup.sqlite3` copy. The database stores scoped place and packet records, desk placement, earlier record revisions, discovery details, icon bytes, and immutable submitted manuscripts. No Correspondence folders, JSON sidecars, icon files, or per-piece revision directories are created beside the writing.
+Correspondence records live in the machine-local SQLite database outside the selected writing folder. The folder itself contains the current ordinary text files and, after a backup, one latest verified `still-backup.sqlite3` copy. The database stores scoped place and packet records, earlier record revisions, discovery details, icon bytes, and immutable submitted manuscripts. No Correspondence folders, JSON sidecars, icon files, or per-piece revision directories are created beside the writing.
 
 Each selected folder has a stable collection identity in the local database. Still stores file locations relative to that folder and keeps the active words in those files. Opening or searching synchronizes readable UTF-8 files into SQLite indexes; the index is not a second editable copy. A file without an extension is valid. Binary or unsupported text is reported and left untouched. If the selected folder becomes unavailable, Still reports that instead of treating the writing as deleted or switching to another collection.
 
 A packet records the selected piece identities and their current file tokens. **Mark sent** saves the exact full text of every piece into an immutable SQLite snapshot, including the explicit title line when one is part of the file. The snapshot also keeps title-role metadata and the destination name as it was when sent. Later edits, file moves, place renames, or Trash do not change that submitted version. Manuscript exports use this same full text and do not prepend a second title. PDF, DOCX and UTF-8 plain-text exports contain the ordered writing; the cover letter remains separate.
 
-Place details, kept-nearby choices, packet events, and desk placement are stored as scoped SQLite records. Stale form tokens prevent an older window from replacing a newer record. Each successful edit preserves the prior record revision in SQLite. A saved desk placement has the same stale-edit protection; clearing it removes only the placement, while its prior state remains in revision history.
+Place details, kept-nearby choices, and packet events are stored as scoped SQLite records. Stale form tokens prevent an older window from replacing a newer record. Each successful edit preserves the prior record revision in SQLite.
 
 Icons are optional. Still fetches only public HTTP(S) sources, checks redirects, and accepts bounded raster images. The image bytes, MIME type, source hash, and retry time are stored in SQLite. Changing the place's icon or website uses a different cache entry. A collection folder copy by itself does not carry this cache; a verified database backup does.
 
@@ -143,12 +158,12 @@ There is no external directory, policy verification service, sending integration
 scheduler, hosted database, new writing classification, or cloud sync engine.
 DOCX is a readable manuscript, not a claim to meet every journal's requirements.
 Its layout is a readable manuscript rendering; the frozen UTF-8 text remains the
-source of exact wording and line-ending fidelity. PDF can be produced by opening a DOCX and exporting
-or printing it in a word processor; Still does not require a PDF conversion service.
+source of exact wording and line-ending fidelity. The Mac app creates packet PDFs
+locally; Still does not require a PDF conversion service.
 
 ## Importing and deactivating places
 
-Next to **Add a place**, choose **Import Places**. Share the JSON example on that
+In **Places menu**, choose **Import Places**. Share the JSON example on that
 page (or `docs/places-import-example.json`) with Cal. Upload one UTF-8 `.json`
 array containing 1–200 places, at most 1 MB. Only `name` is required; all other
 fields in the example are optional. Text must be strings; unknown details may be
@@ -169,7 +184,7 @@ names, making retries safe. The preview stays bound to the collection in which
 it was reviewed: a missing or changed folder is an error, never a fallback.
 
 Open a place and choose **Deactivate place** to remove it from the active directory,
-home kept-nearby shelf, and new packet choices. Its identity, notes, revisions, submitted
+and new packet choices. Its identity, notes, revisions, submitted
 manuscripts, replies, and links remain intact. Find it under **Inactive places**
 and choose **Reactivate place** to use it again. Preparing or sending a packet to
 an inactive place requires reactivation; recording responses to existing submissions

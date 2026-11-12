@@ -160,6 +160,132 @@ defmodule Still.CorrespondenceTest do
              )
   end
 
+  test "packets can be assembled without a destination and link a live cover letter", %{
+    location: location
+  } do
+    {:ok, poem} = save_piece("Manuscript", "the manuscript\n")
+    {:ok, letter} = save_piece("Scratch letter", "Dear editors,\n\nPlease read this.\n")
+
+    assert {:ok, packet} =
+             Correspondence.save_packet(location, %{
+               title: "Unassigned packet",
+               piece_ids: [poem.id],
+               cover_letter_piece_id: letter.id
+             })
+
+    assert packet.journal_id == nil
+    assert packet.cover_letter == nil
+    assert packet.cover_letter_piece_id == letter.id
+
+    assert {:error, "Choose a destination before sending this packet."} =
+             Correspondence.submit(location, packet.id, packet.token, "2026-11-12")
+
+    {:ok, journal} = Correspondence.save_journal(location, journal_attrs())
+
+    assert {:ok, packet} =
+             Correspondence.save_packet(
+               location,
+               %{
+                 title: packet.title,
+                 journal_id: journal.id,
+                 piece_ids: packet.piece_ids,
+                 cover_letter_piece_id: letter.id
+               },
+               packet.id,
+               packet.token
+             )
+
+    {:ok, edited_letter} = Poems.get(location, letter.id)
+
+    {:ok, _} =
+      Poems.save(location, edited_letter, %{title: edited_letter.title, body: "new words"})
+
+    assert {:error, message} =
+             Correspondence.submit(location, packet.id, packet.token, "2026-11-12")
+
+    assert message =~ "linked cover letter changed"
+  end
+
+  test "linked letter is frozen at submission and duplicate starts fresh for another destination",
+       %{location: location} do
+    {:ok, poem} = save_piece("Manuscript", "exact poem\n")
+    {:ok, letter} = save_piece("Scratch letter", "Dear editors,\n\nExact letter.\n")
+    {:ok, journal} = Correspondence.save_journal(location, journal_attrs())
+
+    assert {:ok, packet} =
+             Correspondence.save_packet(location, %{
+               title: "Original packet",
+               journal_id: journal.id,
+               piece_ids: [poem.id],
+               cover_letter_piece_id: letter.id
+             })
+
+    assert {:ok, sent} = Correspondence.submit(location, packet.id, packet.token, "2026-11-12")
+    assert sent.snapshot.cover_letter == letter.body
+    assert sent.cover_letter == sent.snapshot.cover_letter
+
+    assert {:ok, _notes} =
+             Still.Correspondence.PacketNotes.save(location, sent.id, "latest private notes", nil)
+
+    {:ok, current_letter} = Poems.get(location, letter.id)
+    {:ok, _} = Poems.save(location, current_letter, %{title: current_letter.title, body: "later"})
+    assert {:ok, reopened} = Correspondence.packet(location, sent.id)
+    assert reopened.snapshot.cover_letter == letter.body
+
+    assert {:ok, duplicate} = Correspondence.duplicate_packet(location, sent.id, sent.token)
+    assert duplicate.id != sent.id
+    assert duplicate.journal_id == nil
+    assert duplicate.status == "preparing"
+    assert duplicate.snapshot_ref == nil
+    assert duplicate.cover_letter_piece_id == letter.id
+    assert duplicate.cover_letter == nil
+    assert duplicate.preparation_notes == "latest private notes"
+    assert {:ok, still_sent} = Correspondence.packet(location, sent.id)
+    assert still_sent.snapshot.cover_letter == letter.body
+  end
+
+  test "linked cover letter review includes nested poem sources", %{location: location} do
+    alias Still.Writing.PoemReferences
+
+    {:ok, source} = save_piece("Source", "source words\n")
+
+    {:ok, letter} =
+      save_piece("Scratch letter", "Dear editors,\n" <> PoemReferences.marker(source))
+
+    {:ok, poem} = save_piece("Manuscript", "poem words\n")
+    {:ok, journal} = Correspondence.save_journal(location, journal_attrs())
+
+    assert {:ok, packet} =
+             Correspondence.save_packet(location, %{
+               journal_id: journal.id,
+               piece_ids: [poem.id],
+               cover_letter_piece_id: letter.id
+             })
+
+    {:ok, current_source} = Poems.get(location, source.id)
+
+    {:ok, _} =
+      Poems.save(location, current_source, %{title: current_source.title, body: "changed source"})
+
+    assert {:error, message} =
+             Correspondence.submit(location, packet.id, packet.token, "2026-11-12")
+
+    assert message =~ "linked cover letter changed"
+  end
+
+  test "missing linked cover letters are rejected", %{location: location} do
+    {:ok, poem} = save_piece("Manuscript", "the manuscript\n")
+    missing_id = Ecto.UUID.generate()
+
+    assert {:error, message} =
+             Correspondence.save_packet(location, %{
+               piece_ids: [poem.id],
+               cover_letter_piece_id: missing_id
+             })
+
+    assert message =~ "linked cover letter is missing"
+  end
+
   test "submitted snapshots preserve title meaning separately from identical display text", %{
     location: location
   } do

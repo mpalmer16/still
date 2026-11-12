@@ -226,10 +226,16 @@ defmodule StillWeb.PlaceImportLiveTest do
     assert {:ok, updated} = Correspondence.journal(location, journal.id)
     assert updated.description == "An edited short blurb"
     assert updated.icon_url == "https://images.example/new.png"
-    {:ok, home, _} = live(conn, ~p"/correspondence")
-    render_async(home)
-    assert has_element?(home, ".editorial-home-place .place-description", "An edited short blurb")
-    assert has_element?(home, ".editorial-home-place .place-icon img")
+    {:ok, places, _} = live(conn, ~p"/correspondence/journals")
+    render_async(places)
+
+    assert has_element?(
+             places,
+             "#place-row-#{journal.id} .places-description",
+             "An edited short blurb"
+           )
+
+    assert has_element?(places, "#place-row-#{journal.id} .place-icon img")
   end
 
   defp review(view, json) do

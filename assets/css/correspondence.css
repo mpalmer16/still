@@ -450,72 +450,7 @@
 @media (max-width: 580px) { .corr-page-heading { align-items: start; flex-wrap: wrap; } .editorial-ready > .corr-section-heading { align-items: center; } }
 
 /* Desk placement and shortlisting are small, explicit choices. */
-.corr-desk-action { border: 0; background: transparent; padding: 8px 0; cursor: pointer; font: 14px/1.5 var(--sans); text-align: left; }
 .corr-place-actions { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: baseline; margin-top: 10px; }
-
-/* Correspondence M3 home component styles; scoped to the manuscript-led desk. */
-.editorial-correspondence-home{color:var(--corr-ink);font-size:15px}
-.editorial-home-columns{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(310px,.78fr);gap:clamp(34px,5vw,82px);align-items:start}
-.editorial-home-heading,.editorial-home-section-heading{display:flex;justify-content:space-between;align-items:baseline;gap:18px;border-bottom:1px solid var(--corr-line);padding:0 0 12px;margin:0 0 14px}
-.editorial-home-heading h1,.editorial-home-section-heading h2{margin:0;font:400 27px/1.25 Georgia,'Iowan Old Style',serif;letter-spacing:-.02em;color:var(--corr-ink)}
-.editorial-home-section-heading>a{flex:0 0 auto;color:var(--corr-blue);font-size:14px}
-.editorial-home-section-heading>a:hover,.editorial-home-section-heading>a:focus-visible,.editorial-desk a:hover,.editorial-desk a:focus-visible,.editorial-home-activity a:hover,.editorial-home-activity a:focus-visible,.editorial-home-places a:hover,.editorial-home-places a:focus-visible{color:var(--corr-blue);text-decoration:underline;text-underline-offset:4px}
-.editorial-desk-piece{padding:clamp(21px,3vw,40px);background:var(--corr-paper,var(--corr-panel));border-top:2px solid var(--corr-sage-dim)}
-.editorial-desk-piece h2{margin:0 0 18px;font:400 32px/1.2 Georgia,'Iowan Old Style',serif;letter-spacing:-.025em}
-.editorial-desk-excerpt{margin:0;color:var(--corr-ink);font:20px/1.8 Georgia,'Iowan Old Style',serif;white-space:pre-wrap;overflow-wrap:anywhere}
-.editorial-desk-continues{margin:11px 0 0;color:var(--corr-muted);font-size:14px}
-.editorial-desk-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px 22px;margin-top:22px;padding-top:15px;border-top:1px solid var(--corr-line)}
-.editorial-desk-actions :is(a,button),.editorial-desk-all-works{color:var(--corr-blue);font-size:14px}
-.editorial-desk-actions button,.editorial-home-place button{border:0;padding:0;background:none;cursor:pointer;color:var(--corr-muted);font-size:14px}
-.editorial-desk-empty,.editorial-desk-missing{padding:25px 0;border-bottom:1px solid var(--corr-line)}
-.editorial-desk-empty h2{margin:0 0 7px;font:400 22px/1.3 Georgia,'Iowan Old Style',serif}
-.editorial-desk-empty p,.editorial-desk-missing p{max-width:58ch;margin:0 0 12px;color:var(--corr-muted);font:16px/1.55 Georgia,'Iowan Old Style',serif}
-.editorial-desk-empty>a,.editorial-desk-missing button{color:var(--corr-blue);font-size:14px}
-.editorial-desk-missing button{border:0;padding:0;background:none;cursor:pointer}
-.editorial-desk-chooser{margin-top:19px;border-bottom:1px solid var(--corr-line)}
-.editorial-desk-chooser>summary{padding:11px 0;color:var(--corr-blue);cursor:pointer;font-size:14px}
-.editorial-desk-chooser ul{list-style:none;margin:0;padding:0}
-.editorial-desk-chooser li{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 0;border-top:1px solid var(--corr-line)}
-.editorial-desk-chooser li>div{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px}
-.editorial-desk-chooser li a{font:18px/1.35 Georgia,'Iowan Old Style',serif}
-.editorial-desk-chooser li span{color:var(--corr-muted);font-size:14px}
-.editorial-desk-chooser li button{flex:0 0 auto;border:1px solid var(--corr-line);padding:8px 10px;background:var(--corr-panel);color:var(--corr-ink);cursor:pointer;font-size:14px}
-.editorial-desk-chooser li button:hover{border-color:var(--corr-blue)}
-.editorial-desk-all-works{display:inline-block;margin:11px 0 15px}
-.editorial-home-activity{align-self:start;padding:21px 23px;background:var(--corr-panel)}
-.editorial-home-activity section+section{margin-top:27px;padding-top:24px;border-top:1px solid var(--corr-line)}
-.editorial-home-activity .editorial-home-section-heading{margin-bottom:4px}
-.editorial-active-packet{padding:16px 0;border-bottom:1px solid var(--corr-line)}
-.editorial-home-meta{display:flex;justify-content:space-between;align-items:baseline;gap:12px;color:var(--corr-muted);font-size:14px}
-.editorial-home-meta span{color:var(--corr-blue)}
-.editorial-active-packet h3{margin:8px 0 3px;font:400 21px/1.3 Georgia,'Iowan Old Style',serif}
-.editorial-active-packet-link,.editorial-reply-open{font-size:14px;color:var(--corr-blue)}
-.editorial-home-piece-links{margin:8px 0 0;color:var(--corr-muted);font:15px/1.5 Georgia,'Iowan Old Style',serif}
-.editorial-recent-replies .editorial-reply-row{padding:12px 0;border-bottom:1px solid var(--corr-line)}
-.editorial-reply-row>p:first-of-type{margin:6px 0;color:var(--corr-ink);font:15px/1.4 Georgia,'Iowan Old Style',serif}
-.editorial-reply-note{margin:5px 0;color:var(--corr-muted);font:14px/1.45 Georgia,'Iowan Old Style',serif;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.editorial-reply-open{display:inline-block;margin-top:5px}
-.editorial-home-empty-note{margin:13px 0 3px;color:var(--corr-muted);font:15px/1.5 Georgia,'Iowan Old Style',serif}
-.editorial-home-empty-note a{color:var(--corr-blue);text-decoration:underline;text-underline-offset:3px}
-.editorial-home-places{margin-top:38px;padding-top:24px;border-top:1px solid var(--corr-line)}
-.editorial-home-place-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
-.editorial-home-place{min-width:0;padding:18px;background:var(--corr-surface,var(--corr-panel));border-top:1px solid var(--corr-line)}
-.editorial-home-place h3{margin:0 0 8px;font:400 21px/1.3 Georgia,'Iowan Old Style',serif;overflow-wrap:anywhere}
-.editorial-home-place p{margin:6px 0;color:var(--corr-muted);font:15px/1.45 Georgia,'Iowan Old Style',serif;overflow-wrap:anywhere}
-.editorial-home-place .editorial-home-place-verified{margin-top:10px;color:var(--corr-blue);font-size:14px}
-.editorial-home-place p.editorial-home-place-fact{font:14px/1.4 var(--sans);color:var(--corr-ink)}
-.editorial-home-place-history{display:grid;gap:5px;margin-top:12px;padding-top:10px;border-top:1px solid var(--corr-line);font-size:14px;color:var(--corr-muted)}
-.editorial-home-place-history a{color:var(--corr-blue);overflow-wrap:anywhere}
-.editorial-home-place button{margin-top:13px;text-decoration:underline;text-underline-offset:3px}
-@media(max-width:1000px){.editorial-home-columns{grid-template-columns:minmax(0,1fr);gap:30px}.editorial-home-activity{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}.editorial-home-activity section+section{margin:0;padding:0;border:0}.editorial-home-place-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:640px){.editorial-home-activity{display:block;padding:18px}.editorial-home-activity section+section{margin-top:25px;padding-top:23px;border-top:1px solid var(--corr-line)}.editorial-home-place-grid{grid-template-columns:1fr}.editorial-desk-actions{gap:12px 16px}.editorial-home-section-heading{align-items:center}.editorial-home-section-heading h2,.editorial-home-heading h1{font-size:25px}}
-@media(max-width:390px){.editorial-desk-piece{padding:19px}.editorial-desk-excerpt{font-size:19px}.editorial-home-activity{padding:16px}.editorial-desk-chooser li{align-items:flex-start}.editorial-desk-chooser li button{padding:7px}}
-@media(prefers-reduced-motion:reduce){.editorial-correspondence-home *{scroll-behavior:auto!important;transition:none!important}}
-
-.editorial-correspondence-home { padding-top: 34px; }
-.editorial-home-place-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-.editorial-recent-replies .editorial-home-section-heading h2 { font-size: 22px; }
-@media (max-width: 640px) { .editorial-home-place-grid { grid-template-columns: 1fr; } }
 
 /* Place imports and reversible deactivation use the room's existing quiet controls. */
 .corr-place-directory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 28px; }
@@ -559,3 +494,89 @@
 .corr-submission-notes { grid-column: 1 / -1; }
 .corr-submission-notes textarea { min-height: 18em; }
 .corr-submission-notes [data-notes-save] { width: auto; }
+
+/* Correspondence is one workspace, with the directories close to its navigation. */
+.corr-workspace { width: min(calc(100% - 64px), 1680px); min-height: 100vh; }
+.corr-workspace .corr-header { grid-template-columns: auto 1fr auto; min-height: 70px; border-top: 0; gap: 36px; padding-top: 0; }
+.corr-workspace .corr-header nav { justify-self: start; grid-row: auto; grid-column: auto; gap: 28px; }
+.corr-workspace .corr-header nav a { padding-block: 22px; }
+.corr-workspace .corr-header-actions { grid-column: auto; grid-row: auto; gap: 22px; }
+.corr-workspace .corr-page { padding-top: 24px; }
+.corr-workspace .corr-footer { margin-top: 36px; font-size: 12px; }
+.corr-popover { position: relative; }
+.corr-popover > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--corr-line); border-radius: 5px; font: 14px/1.4 var(--sans); color: var(--corr-muted); white-space: nowrap; }
+.corr-popover > summary::-webkit-details-marker { display: none; }
+.corr-popover > summary:hover, .corr-popover[open] > summary { color: var(--corr-ink); background: var(--corr-panel); }
+.corr-popover-panel { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; min-width: 220px; padding: 16px; border: 1px solid var(--corr-line); border-radius: 7px; background: var(--corr-panel); box-shadow: 0 12px 35px #0003; }
+.corr-popover-panel > a { display: block; padding: 7px 0; color: var(--corr-ink); font-size: 14px; }
+.corr-appearance > summary { border-color: transparent; font-size: 23px; padding: 0 7px; }
+.corr-appearance #correspondence-color-form { display: grid; gap: 6px; margin-top: 10px; }
+.corr-appearance #correspondence-color { width: 100%; max-width: none; }
+.corr-directory-heading, .corr-workspace .corr-directory-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0; border: 0; margin: 0 0 16px; }
+.corr-directory-heading h1 { margin: 0; font: 400 30px/1.2 Georgia, 'Iowan Old Style', serif; letter-spacing: -.025em; }
+.corr-directory-toolbar, .places-filters.corr-directory-toolbar { display: flex; align-items: center; gap: 12px; margin: 0 0 7px; }
+.corr-directory-search, .places-search.corr-directory-search { flex: 0 1 390px; min-width: 180px; }
+.corr-directory-search input, .places-search.corr-directory-search input { width: 100%; min-height: 38px; margin: 0; padding: 8px 12px; background: var(--corr-panel); border: 1px solid var(--corr-line); border-radius: 5px; color: var(--corr-ink); font: 14px/1.4 var(--sans); }
+.corr-directory-filters .corr-popover-panel { left: 0; right: auto; width: 320px; max-height: min(70vh, 540px); overflow-y: auto; display: grid; gap: 13px; }
+.corr-directory-filters label, .corr-directory-toolbar label:not(.sr-only) { color: var(--corr-muted); font-size: 13px; }
+.corr-directory-filters select, .corr-directory-toolbar > label select { width: 100%; min-height: 36px; padding: 7px 10px; margin-top: 5px; border: 1px solid var(--corr-line); border-radius: 5px; background: var(--corr-bg); color: var(--corr-ink); font: 14px/1.4 var(--sans); }
+.corr-filter-count { border-radius: 10px; padding: 0 6px; background: var(--corr-surface); color: var(--corr-blue); font-size: 12px; }
+.corr-result-count, .places-result-count.corr-result-count { margin: 0; padding: 6px 0 9px; color: var(--corr-muted); font-size: 12px; }
+.corr-table-scroll { width: 100%; overflow-x: auto; border-block: 1px solid var(--corr-line); }
+.corr-table { width: 100%; border-collapse: collapse; color: var(--corr-ink); font-size: 14px; }
+.corr-table thead { background: color-mix(in srgb, var(--corr-panel) 60%, transparent); }
+.corr-table th { text-align: left; color: var(--corr-muted); font-size: 12px; font-weight: 500; padding: 10px 12px; border-bottom: 1px solid var(--corr-line); }
+.corr-table td { vertical-align: top; padding: 14px 12px; border-bottom: 1px solid color-mix(in srgb, var(--corr-line) 65%, transparent); }
+.corr-table tr:last-child td { border-bottom: 0; }
+.corr-table tbody tr:hover { background: color-mix(in srgb, var(--corr-panel) 50%, transparent); }
+.corr-table a { color: var(--corr-blue); }
+.corr-table .corr-work-title, .corr-table-title { font: 400 20px/1.35 Georgia, 'Iowan Old Style', serif; color: var(--corr-ink) !important; }
+.corr-table p { margin: 5px 0 0; color: var(--corr-muted); font-size: 13px; }
+.corr-table button { background: transparent; color: var(--corr-blue); border: 0; padding: 0; font: inherit; }
+.corr-pagination { display: flex; align-items: center; justify-content: center; gap: 24px; padding-top: 16px; color: var(--corr-muted); font-size: 13px; }
+.corr-pagination button { background: none; border: 0; color: var(--corr-blue); padding: 6px; font: inherit; }
+.corr-pagination button:disabled { color: var(--corr-faint); cursor: default; }
+.corr-home-overview { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 24px 0; }
+.corr-home-summary { display: flex; flex-wrap: wrap; gap: 24px; color: var(--corr-muted); font-size: 14px; }
+.corr-home-summary strong { color: var(--corr-ink); font-weight: 500; }
+.corr-home-columns { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 28px; }
+.corr-home-section { border-top: 1px solid var(--corr-line); padding: 20px 0; }
+.corr-home-section h2 { font: 400 25px/1.3 Georgia, 'Iowan Old Style', serif; margin: 0 0 16px; }
+.corr-home-packet { padding: 15px 0; border-bottom: 1px solid var(--corr-line); }
+.corr-home-packet h3 { font: 400 21px/1.3 Georgia, 'Iowan Old Style', serif; margin: 0 0 6px; }
+.corr-home-meta, .corr-home-empty { color: var(--corr-muted); font-size: 14px; }
+.corr-home-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+.correspondence-room :is(a,button,summary,input,select,textarea):focus-visible { outline: 2px solid var(--corr-blue); outline-offset: 3px; }
+@media (max-width: 1000px) {
+  .corr-workspace { width: calc(100% - 40px); }
+  .corr-workspace .corr-header { gap: 18px; }
+  .corr-workspace .corr-header nav { gap: 18px; }
+  .corr-workspace .corr-brand a { font-size: 22px; }
+}
+.corr-home-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 24px; }
+.corr-home-header h1 { margin: 0; font: 400 30px/1.2 Georgia, 'Iowan Old Style', serif; }
+.corr-home-primary-action { border: 1px solid var(--corr-line); padding: 8px 14px; border-radius: 5px; font-size: 14px; color: var(--corr-blue) !important; }
+.corr-home-overview { justify-content: start; gap: 36px; padding: 22px 0; }
+.corr-home-summary { gap: 8px; }
+.corr-home-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; }
+.corr-home-section-heading a, .corr-home-create-link, .corr-home-actions a { font-size: 13px; color: var(--corr-blue); }
+.corr-home-meta { display: flex; justify-content: space-between; gap: 15px; font-size: 12px; }
+.corr-home-packet p { margin: 4px 0; }
+.corr-home-destination, .corr-home-piece-links, .corr-home-response-note, .corr-home-packet-title { color: var(--corr-muted); font-size: 14px; }
+.corr-home-piece-links a { color: var(--corr-blue); }
+.corr-table th[scope=row] { padding: 14px 12px; font: 400 20px/1.35 Georgia, 'Iowan Old Style', serif; vertical-align: top; text-transform: none; letter-spacing: normal; }
+.corr-table th[scope=row] > a { color: var(--corr-ink); }
+.corr-directory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.corr-directory-heading .corr-button { min-height: 36px; padding: 7px 12px; border-radius: 5px; }
+.packet-sheet-actions { display: flex; align-items: center; gap: 20px; }
+.packet-sheet-actions button { border: 0; background: transparent; padding: 0; font: inherit; cursor: pointer; }
+.packet-cover-letter { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--corr-line); }
+.packet-cover-letter h3 { font: 400 22px/1.3 Georgia, 'Iowan Old Style', serif; margin: 10px 0 0; }
+#packet-letter-preview pre { padding: 14px; max-height: 260px; overflow-y: auto; background: var(--corr-paper); font: 15px/1.6 Georgia, 'Iowan Old Style', serif; }
+.packet-cover-letter .corr-meta { font-size: 12px; }
+.corr-workspace .corr-packet-grid { grid-template-columns: minmax(190px,.7fr) minmax(0,1.5fr) minmax(290px,.9fr); }
+.corr-workspace .corr-packet-grid.is-sent { grid-template-columns: minmax(0,1.7fr) minmax(300px,.8fr); }
+@media (max-width: 1200px) {
+  .corr-workspace .corr-packet-grid { grid-template-columns: minmax(0,1.4fr) minmax(290px,.9fr); }
+  .corr-workspace .editorial-packet-library { grid-column: 1/-1; }
+}

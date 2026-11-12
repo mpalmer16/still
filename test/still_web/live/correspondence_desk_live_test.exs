@@ -22,7 +22,7 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
     %{location: Storage.collection_location(), collection: collection}
   end
 
-  test "placing, changing, and clearing a work persists across home mounts without changing writing or submissions",
+  test "a legacy desk pin does not override the packet home or alter saved writing",
        %{
          conn: conn,
          location: location
@@ -36,53 +36,22 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
     source_before = File.read!(first.path)
     packet_before = Correspondence.packet(location, sent.id)
 
-    {:ok, works, _} = live(conn, "/correspondence/writing")
-    render_click(element(works, "[phx-click='place_on_desk'][phx-value-id='#{first.id}']"))
-
-    assert {:ok, first_desk} = Correspondence.desk(location)
-    assert first_desk.piece_id == first.id
-    assert is_binary(first_desk.token)
+    assert {:ok, _first_desk} = Correspondence.place_on_desk(location, first.id, nil)
     assert File.read!(first.path) == source_before
     assert Correspondence.packet(location, sent.id) == packet_before
 
     {:ok, home, _} = live(conn, "/correspondence")
-    assert has_element?(home, "#on-the-desk", "First desk piece")
-    assert has_element?(home, "#on-the-desk", "First exact manuscript words.")
-    assert has_element?(home, "#on-the-desk a[href='/correspondence/writing/#{first.id}']")
-
-    assert has_element?(
-             home,
-             "#on-the-desk a[href='/correspondence/packets/new?piece=#{first.id}']"
-           )
-
-    {:ok, reopened, _} = live(conn, "/correspondence")
-    assert has_element?(reopened, "#on-the-desk", "First desk piece")
+    assert has_element?(home, ".corr-home-awaiting", packet.title)
+    assert has_element?(home, "a[href='/correspondence/packets/new']", "Prepare a packet")
+    refute has_element?(home, "#on-the-desk")
+    refute render(home) =~ "First exact manuscript words."
     assert {:ok, reopened_desk} = Correspondence.desk(location)
-    assert reopened_desk.token == first_desk.token
-
-    render_click(element(reopened, "[phx-click='place_on_desk'][phx-value-id='#{second.id}']"))
-    assert {:ok, second_desk} = Correspondence.desk(location)
-    assert second_desk.piece_id == second.id
-    assert second_desk.token != first_desk.token
-    assert File.read!(first.path) == source_before
-    assert Correspondence.packet(location, sent.id) == packet_before
-
-    {:ok, changed, _} = live(conn, "/correspondence")
-    assert has_element?(changed, ".editorial-desk-piece", "Second desk piece")
-    refute has_element?(changed, ".editorial-desk-piece", "First desk piece")
-    render_click(element(changed, "[phx-click='clear_desk']"))
-
-    assert {:ok, cleared_desk} = Correspondence.desk(location)
-    assert cleared_desk.piece_id == nil
-    assert is_binary(cleared_desk.token)
-    {:ok, cleared, _} = live(conn, "/correspondence")
-    assert has_element?(cleared, ".editorial-desk-empty")
-    refute has_element?(cleared, ".editorial-desk-piece", "Second desk piece")
+    assert reopened_desk.piece_id == first.id
     assert File.read!(first.path) == source_before
     assert Correspondence.packet(location, sent.id) == packet_before
   end
 
-  test "shortlisting a journal is a persisted personal marker and updates home places", %{
+  test "shortlisting a journal is a persisted marker in the Places directory", %{
     conn: conn,
     location: location
   } do
@@ -95,20 +64,10 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
     assert {:ok, %{shortlisted: true}} = Correspondence.journal(location, journal.id)
     assert {:ok, %{shortlisted: false}} = Correspondence.journal(location, other.id)
 
-    {:ok, home, _} = live(conn, "/correspondence")
-    assert has_element?(home, "#places-to-consider", "Shortlist Journal")
-    refute has_element?(home, "#places-to-consider", "Unshortlisted Journal")
+    assert has_element?(places, "#place-row-#{journal.id} .places-nearby[aria-pressed='true']")
+    assert has_element?(places, "#place-row-#{other.id} .places-nearby[aria-pressed='false']")
 
-    assert has_element?(
-             home,
-             "#places-to-consider a[href='/correspondence/journals/#{journal.id}']"
-           )
-
-    {:ok, reopened_places, _} = live(conn, "/correspondence/journals")
-
-    render_click(
-      element(reopened_places, "[phx-click='toggle_shortlist'][phx-value-id='#{journal.id}']")
-    )
+    render_click(element(places, "[phx-click='toggle_shortlist'][phx-value-id='#{journal.id}']"))
 
     assert {:ok, %{shortlisted: false}} = Correspondence.journal(location, journal.id)
   end
@@ -161,7 +120,7 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
     assert has_element?(view, "textarea[name='journal[notes]']", "Unsaved editorial notes")
   end
 
-  test "home limits active submissions to three and recent replies to two while keeping full history linked",
+  test "home keeps awaiting replies and recent responses compact while full history stays linked",
        %{
          conn: conn,
          location: location
@@ -201,11 +160,15 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
 
     {:ok, home, _} = live(conn, "/correspondence")
 
-    displayed_active = Enum.count(active_packets, &has_element?(home, "#out-in-world", &1.title))
-    assert displayed_active == 3
+    displayed_active =
+      Enum.count(active_packets, &has_element?(home, ".corr-home-awaiting", &1.title))
 
-    replies_html = render(element(home, "#recent-replies"))
-    assert length(Regex.scan(~r/class="editorial-reply-open"/, replies_html)) == 2
+    assert displayed_active == 5
+
+    replies_html = render(element(home, ".corr-home-history"))
+
+    assert length(Regex.scan(~r/<article[^>]*class="[^"]*\bcorr-home-response\b/, replies_html)) ==
+             4
 
     assert has_element?(
              home,
@@ -216,13 +179,13 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
     {:ok, history, _} = live(conn, "/correspondence/packets")
 
     for packet <- active_packets ++ reply_packets,
-        do: assert(has_element?(history, ".corr-library-piece", packet.title))
+        do: assert(has_element?(history, "#packet-directory-row-#{packet.id}", packet.title))
 
     for packet <- reply_packets,
         do: assert(has_element?(history, "a[href='/correspondence/packets/#{packet.id}']"))
   end
 
-  test "an unavailable pinned work is not presented as current writing and the pin can be cleared",
+  test "a stale legacy pin is ignored by packet home after a work is removed",
        %{
          conn: conn,
          location: location
@@ -233,12 +196,11 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
     {:ok, _trashed} = Poems.trash(location, piece)
 
     {:ok, home, _} = live(conn, "/correspondence")
-    refute has_element?(home, "#on-the-desk", "Removed desk piece")
-    refute has_element?(home, "#on-the-desk", "Words no longer in the collection.")
-    assert has_element?(home, "#on-the-desk [phx-click='clear_desk']")
-
-    render_click(element(home, "[phx-click='clear_desk']"))
-    assert {:ok, %{piece_id: nil}} = Correspondence.desk(location)
+    refute has_element?(home, "#on-the-desk")
+    refute render(home) =~ "Removed desk piece"
+    refute render(home) =~ "Words no longer in the collection."
+    assert {:ok, stale_desk} = Correspondence.desk(location)
+    assert stale_desk.piece_id == piece.id
   end
 
   test "an unavailable collection shows guidance without creating Correspondence data", %{

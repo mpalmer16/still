@@ -74,29 +74,29 @@ defmodule StillWeb.CorrespondenceQueryBudgetTest do
     visible =
       render(view)
       |> LazyHTML.from_fragment()
-      |> LazyHTML.query(".corr-library-piece")
+      |> LazyHTML.query("#works-directory tbody tr")
       |> LazyHTML.attribute("id")
 
     assert length(visible) == 40
-    hidden = Enum.find(pieces, &(!("correspondence-work-#{&1.id}" in visible)))
+    hidden = Enum.find(pieces, &(!("work-directory-row-#{&1.id}" in visible)))
     assert hidden
 
     view
-    |> element("#correspondence-search")
-    |> render_change(%{"search" => Poems.display_title(hidden)})
+    |> element("#works-filters")
+    |> render_change(%{"works" => %{"q" => Poems.display_title(hidden)}})
 
-    assert has_element?(view, "#correspondence-work-#{hidden.id}")
-    view |> element("#correspondence-search") |> render_change(%{"search" => ""})
+    assert has_element?(view, "#work-directory-row-#{hidden.id}")
+    view |> element("#works-filters") |> render_change(%{"works" => %{"q" => ""}})
     :atomics.put(count, 1, 0)
-    view |> element("#more-works") |> render_click()
-    assert :atomics.get(count, 1) == 0
-    assert has_element?(view, "#correspondence-work-#{hidden.id}")
-    refute has_element?(view, "#more-works")
+    view |> element("[phx-click='works_page'][phx-value-page='2']") |> render_click()
+    assert :atomics.get(count, 1) < 10
+    assert has_element?(view, "#work-directory-row-#{hidden.id}")
+    assert has_element?(view, "[phx-click='works_page'][disabled]")
     view |> element("nav[aria-label='Correspondence'] a", "Home") |> render_click()
 
     File.write!(Path.join(folder, "1"), "Changed outside Still\nCurrent external words\n")
     view |> element("nav[aria-label='Correspondence'] a", "Works") |> render_click()
-    assert has_element?(view, ".corr-library-piece", "Changed outside Still")
+    assert has_element?(view, "#works-directory", "Changed outside Still")
     original = Enum.find(pieces, &(&1.relative_path == "1"))
 
     refute has_element?(

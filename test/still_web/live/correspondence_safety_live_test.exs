@@ -14,7 +14,12 @@ defmodule StillWeb.CorrespondenceSafetyLiveTest do
   test "dark is the default and optional light stays confined to this room", %{conn: conn} do
     {:ok, view, _} = live(conn, "/correspondence")
     assert has_element?(view, ".correspondence-room:not(.is-light)")
-    assert has_element?(view, "#open-correspondence[aria-current='page']")
+
+    assert has_element?(
+             view,
+             "nav[aria-label='Correspondence'] a[href='/correspondence'][aria-current='page']"
+           )
+
     render_click(element(view, ".corr-theme"))
     assert has_element?(view, ".correspondence-room.is-light")
     render_patch(view, "/correspondence/writing")
@@ -96,11 +101,13 @@ defmodule StillWeb.CorrespondenceSafetyLiveTest do
     })
 
     {:ok, collection, _} = live(conn, "/correspondence/writing")
-    assert has_element?(collection, ".corr-library-piece", "Accepted · also away")
+    assert has_element?(collection, "#work-directory-row-#{a.id}", "Accepted")
+    assert has_element?(collection, "#work-directory-row-#{a.id}", "1 submitted")
     {:ok, home, _} = live(conn, "/correspondence")
     refute has_element?(home, "#ready-#{a.id}")
     {:ok, packets, _} = live(conn, "/correspondence/packets")
-    assert has_element?(packets, ".corr-library-piece", "RETURNED · 23 Oct 2026")
+    assert has_element?(packets, "#packet-directory-row-#{sent.id}", "Declined")
+    assert has_element?(packets, "#packet-directory-row-#{sent.id}", "21 Sep 2026")
     assert {:ok, %{status: "submitted"}} = Correspondence.packet(loc, other.id)
   end
 
@@ -116,15 +123,15 @@ defmodule StillWeb.CorrespondenceSafetyLiveTest do
       Correspondence.save_packet(loc, %{title: "New draft", journal_id: j.id, piece_ids: [a.id]})
 
     {:ok, view, _} = live(conn, "/correspondence/writing")
-    assert has_element?(view, ".corr-library-piece", "Away now")
-    refute has_element?(view, ".corr-library-piece", "In preparation")
+    assert has_element?(view, "#work-directory-row-#{a.id} .status-submitted", "Submitted")
+    assert has_element?(view, "#work-directory-row-#{a.id}", "1 preparing")
 
     {:ok, _} =
       Correspondence.respond(loc, sent.id, sent.token, "declined", "Returned", "2026-10-23")
 
     {:ok, reopened, _} = live(conn, "/correspondence/writing")
-    assert has_element?(reopened, ".corr-library-piece", "Preparing again")
-    refute has_element?(reopened, ".corr-library-piece", "never sent")
+    assert has_element?(reopened, "#work-directory-row-#{a.id} .status-preparing", "Preparing")
+    assert has_element?(reopened, "#work-directory-row-#{a.id}", "1 declined")
   end
 
   defp piece(loc, title) do

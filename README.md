@@ -21,7 +21,9 @@ readable reference. Copy includes the displayed poem.
 Menu also lets you rename the current file and export its full words as Markdown
 or PDF. Exported copies stay in a separate folder beside the writing collection.
 
-Correspondence packets keep an ordered selection of saved poems and their destination.
+Correspondence packets keep an ordered selection of saved poems. Assemble and revise
+a packet before choosing its destination. Edit a piece and save back to its packet;
+attach a saved scratch page as a linked cover letter without marking it for Correspondence.
 The manuscript preview expands inserted poems. Save the reviewed packet before exporting
 or marking it sent; changes to its source writing require another review. **Save as PDF**
 in the Mac app creates a clean manuscript with each poem beginning on a new page, under
@@ -31,7 +33,9 @@ packet sent preserves its exact words; later writing changes do not alter that c
 Submission notes remain editable after sending, with stale-edit protection and earlier
 saved words retained locally. Use **Save notes** to keep them; unsaved notes have a local
 recovery copy in the same browser or Mac profile. **Keep nearby** is a personal marker
-for publications you want to return to, shown on the Correspondence desk.
+for publications you want to return to in Places. Home follows preparations,
+outstanding submissions, and recent responses. Works, Places, and Packets share searchable,
+filterable tables. Duplicate a packet for another destination while retaining the original send.
 
 ### Let the past come near
 
