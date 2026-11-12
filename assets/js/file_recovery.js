@@ -162,9 +162,9 @@ export const FileRecovery = {
       if (resize) this.fit()
       this.form.dispatchEvent(new Event("still:writing-display-changed"))
     }
-    this.submitWriting = (read, scratch = false, unplaced = false) => {
+    this.submitWriting = (read, scratch = false, unplaced = false, returnNotebook = false) => {
       this.capture(); this.keepPosition()
-      this.pushEvent("save_file", {writing: this.words(), draft_key: this.key, read, scratch, unplaced})
+      this.pushEvent("save_file", {writing: this.words(), draft_key: this.key, read, scratch, unplaced, return_notebook: returnNotebook})
     }
     this.save = () => this.submitWriting(false)
     this.onFileAction = ({detail}) => {
@@ -185,7 +185,7 @@ export const FileRecovery = {
     this.saveButton = [...document.querySelectorAll("#save-file")].find(button => button.form === this.form)
     this.onNew = () => { this.capture(); this.keepPosition(); this.pushEvent("new_file", {writing: this.words()}) }
     this.newButton?.addEventListener("click", this.onNew)
-    this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); this.submitWriting(event.submitter?.id === "read-file", event.submitter?.id === "save-scratch", event.submitter?.id === "save-unplaced") }
+    this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); this.submitWriting(["read-file", "save-return-notebook"].includes(event.submitter?.id), event.submitter?.id === "save-scratch", event.submitter?.id === "save-unplaced", event.submitter?.id === "save-return-notebook") }
     this.onKey = event => {
       if (event.target !== this.el && event.target?.form !== this.form) return
       const editor = event.target === this.el || this.el.linkedEditor?.owns(event.target) ? event.target : null

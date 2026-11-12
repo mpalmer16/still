@@ -663,9 +663,100 @@ html[data-still-writing-focus] .site-frame:has(.file-now):not(:has([role="alert"
   .site-nav { gap: 17px; }
   .notebook-reader { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 14px; height: 100%; }
   .notebook-index-toggle { display: block; justify-self: start; }
-  .notebook-reader.index-closed #notebook-sidebar, .notebook-reader.index-open #notebook-content { display: none; }
+  .notebook-reader.index-closed #notebook-sidebar, .notebook-reader.index-open #notebook-content, .notebook-reader.index-open .notebook-editor-content { display: none; }
   #notebook-content { padding-inline: 0; }
   #notebook-sidebar { border-right: 0; }
+}
+
+/* A notebook edit keeps the index and nearby echoes around the writing page. */
+.notebook-reader:has(.notebook-echoes) {
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1120px) minmax(170px, 210px);
+  justify-content: center;
+  gap: clamp(24px, 3vw, 56px);
+}
+.notebook-reader.notebook-editing .notebook-editor-content {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 10px 60px;
+  justify-self: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scroll-padding-top: 85px;
+}
+.notebook-reader.notebook-editing .notebook-editor-content .writing-room,
+.notebook-reader.notebook-editing .notebook-editor-content.file-now {
+  width: 100%;
+  max-width: var(--writing-measure, 1120px);
+  margin-inline: auto;
+  padding-top: 0;
+}
+.notebook-reader.notebook-editing .notebook-editor-content .notebook-edit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 10px 0 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--muted) 25%, transparent);
+}
+.notebook-edit-toolbar .reader-reference { color: var(--muted); font-size: 12px; }
+.notebook-reader.notebook-editing .notebook-editor-content .notebook-edit-toolbar > :last-child {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.notebook-reader .notebook-echoes {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-self: stretch;
+  gap: 15px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 15px 0 36px;
+  scrollbar-width: thin;
+}
+.notebook-reader .notebook-echoes .gravity-presence {
+  display: block !important;
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  width: 100% !important;
+  max-width: none;
+  margin: 0 !important;
+  padding: 8px 0 !important;
+  transform: none !important;
+  translate: none !important;
+  animation: none;
+}
+.notebook-reader .notebook-echoes .gravity-door { padding: 5px 0; }
+.notebook-reader .notebook-echoes .gravity-horizon { margin-bottom: 10px; }
+.notebook-reader .notebook-echoes .gravity-words { -webkit-line-clamp: 3; }
+.notebook-reader .notebook-echoes .gravity-title { margin-top: 9px; }
+.notebook-reader .notebook-echoes .gravity-place { margin-top: 6px; }
+@media (max-width: 1100px) {
+  .notebook-reader:has(.notebook-echoes) {
+    grid-template-columns: minmax(160px, 200px) minmax(0, 1fr) minmax(140px, 180px);
+    gap: 22px;
+  }
+}
+@media (max-width: 760px) {
+  .notebook-reader:has(.notebook-echoes) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+  .notebook-reader .notebook-echoes {
+    max-height: 22vh;
+    padding: 8px 2px 18px;
+    border-top: 1px solid color-mix(in srgb, var(--muted) 25%, transparent);
+  }
+  .notebook-reader.notebook-editing .notebook-editor-content { padding-inline: 0; }
 }
 
 

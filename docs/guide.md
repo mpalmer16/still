@@ -21,6 +21,15 @@ and **Explore the room**. The controls stay tucked away until you open it. Close
 the menu or press Escape to return to the same place in your writing. Cmd/Ctrl+S
 still saves directly without opening the menu.
 
+A saved piece that belongs to a notebook stays in that notebook's frame when you
+choose **Edit**. Its index remains beside the editor. **Save** keeps you editing;
+**Save & return to notebook** above the page (also in Menu) returns directly to
+the current words in the same notebook. Cmd/Ctrl+Enter does the same, except when
+you deliberately opened editing from Wander, where it returns to Wander. The
+explicit notebook button always returns to the notebook. Find's query and route
+back to its results stay with the piece. Notebook reading includes echoes and
+linked poems; earlier versions remain read-only.
+
 **File name**, in Menu, shows the current file's name. Change it and choose
 **Save & rename** to keep the latest words under that name in the same folder.
 Its identity, earlier words, notebook number and existing poem links remain.

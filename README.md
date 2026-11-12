@@ -46,7 +46,11 @@ Sometimes the page stays quiet.
 
 **Notebooks** opens each notebook with its index beside the words. Move through
 its pages in order, return to your reading place, or choose **Wander with this**.
-**Find** opens a focused reader and keeps the route back to your search results.
+**Find** opens the piece in its notebook and keeps the route back to your search results.
+**Edit** keeps the notebook index beside the shared writing editor. **Save** keeps
+you editing; **Save & return to notebook** (or Command/Control+Enter) returns to
+that piece's notebook page, with echoes and your search context intact. New pages
+still begin in Write.
 New Lists take the next number in the selected notebook and include it in the
 filename, counting across all its sections. Collections such as Poems can turn
 off automatic numbering when they are added.

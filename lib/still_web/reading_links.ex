@@ -15,6 +15,18 @@ defmodule StillWeb.ReadingLinks do
     )
   end
 
+  @doc "Open the shared editor with the current notebook reading context."
+  def edit(%Entry{file_id: file_id} = entry, context \\ %{}) when is_binary(file_id) do
+    params =
+      entry
+      |> normalized(Map.put(context, "version", nil))
+      |> Map.take(@reader_keys)
+      |> Enum.reject(fn {key, value} -> key == "version" or value in [nil, "", false] end)
+
+    query = URI.encode_query(params)
+    "/writing/#{file_id}/edit" <> if(query == "", do: "", else: "?" <> query)
+  end
+
   @doc "Build a link from a verified Find result without querying each earlier version again."
   def find_result(%{entry: %Entry{} = entry, version: version}, context) do
     context = Map.put(context, "version", if(version, do: version.id))

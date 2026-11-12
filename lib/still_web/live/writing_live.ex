@@ -30,6 +30,12 @@ defmodule StillWeb.WritingLive do
        picker_selected: nil,
        picker_problem: nil,
        reference_return: nil,
+       notebook: nil,
+       notebook_entry: nil,
+       notebook_context: %{},
+       notebook_return: nil,
+       notebook_edit_path: nil,
+       notebook_sidebar_open: false,
        native_exports?:
          System.get_env("STILL_NATIVE") == "true" ||
            Application.get_env(:still, :native_controls, false),
@@ -61,84 +67,102 @@ defmodule StillWeb.WritingLive do
 
     case result do
       {:ok, piece} ->
-        # A save patch acknowledges the submitted words without replacing newer typing.
-        same_editor? =
-          socket.assigns[:piece] && socket.assigns.piece.id == piece.id &&
-            socket.assigns.live_action == :edit && socket.assigns[:editing]
+        notebook_view = notebook_view(piece, params)
 
-        editing = socket.assigns.live_action != :show
-        reading_echo = if editing, do: nil, else: Writing.saved_echo(piece)
-        history = if piece.token, do: Poems.revisions(location, piece.id), else: {:ok, []}
+        if socket.assigns.live_action == :show && notebook_view do
+          {:noreply, push_navigate(socket, to: notebook_view.return_path, replace: true)}
+        else
+          # A save patch acknowledges the submitted words without replacing newer typing.
+          same_editor? =
+            socket.assigns[:piece] && socket.assigns.piece.id == piece.id &&
+              socket.assigns.live_action == :edit && socket.assigns[:editing]
 
-        {revisions, problem} =
-          case history do
-            {:ok, values} -> {values, nil}
-            {:error, message} -> {[], message}
-          end
+          editing = socket.assigns.live_action != :show
+          reading_echo = if editing, do: nil, else: Writing.saved_echo(piece)
+          history = if piece.token, do: Poems.revisions(location, piece.id), else: {:ok, []}
 
-        status = Correspondence.writing_status(location)
-        cursor_problem = if editing && connected?(socket), do: remember(location, piece, beside)
-        placement_options = placement_options(location, piece)
+          {revisions, problem} =
+            case history do
+              {:ok, values} -> {values, nil}
+              {:error, message} -> {[], message}
+            end
 
-        {:noreply,
-         socket
-         |> assign(
-           piece: piece,
-           piece_find_open: false,
-           piece_find_query: "",
-           piece_find_target_line: nil,
-           submission_focus: Map.get(status.focused, piece.id, false),
-           submitted: MapSet.member?(status.submitted, piece.id),
-           draft: words(piece),
-           location: location,
-           save_location:
-             if(params["unplaced"] == "true" && is_nil(piece.token),
-               do: Still.Writing.Files.unplaced_location(location, piece.notebook_id),
-               else: Still.Writing.Files.save_location(location, piece.relative_path)
-             ),
-           editing: editing,
-           wander_return:
-             if(
-               socket.assigns.live_action == :edit && params["from"] == "wander" && piece.entry_id,
-               do: ReadingLinks.wander(piece.entry_id)
-             ),
-           notebooks: Writing.notebooks(),
-           draft_key: draft_key(location, piece),
-           dirty: false,
-           problem:
-             problem || cursor_problem || discovery_problem ||
-               if(same_editor?, do: socket.assigns.problem),
-           revisions: revisions,
-           notice: if(same_editor?, do: socket.assigns.notice),
-           recovery_waiting: false,
-           placement_options: placement_options,
-           placement_draft: %{
-             "section" =>
-               if(Map.get(piece, :unplaced), do: "unplaced", else: piece.notebook || "unplaced"),
-             "list_label" =>
-               if(placement_options, do: placement_label(piece, placement_options), else: "")
-           },
-           placement_preview: nil,
-           unplaced_requested?: params["unplaced"] == "true",
-           resume_active: resume?,
-           reading_echo: reading_echo,
-           echo_attention: if(same_editor?, do: socket.assigns.echo_attention),
-           listening_line: nil,
-           beside: beside,
-           page_title: if(editing, do: "Write", else: Poems.display_title(piece)),
-           delete_confirm: false
-         )
-         |> assign(
-           reference_timer: nil,
-           export_notice: if(same_editor?, do: socket.assigns.export_notice),
-           last_export: if(same_editor?, do: socket.assigns.last_export),
-           reference_return:
-             reference_return(params["reference_return"]) ||
-               if(same_editor?, do: socket.assigns.reference_return)
-         )
-         |> put_references(piece.body, refresh: !same_editor?)
-         |> maybe_reset_field(same_editor?)
-         |> settle(piece.body)}
+          status = Correspondence.writing_status(location)
+          cursor_problem = if editing && connected?(socket), do: remember(location, piece, beside)
+          placement_options = placement_options(location, piece)
+
+          {:noreply,
+           socket
+           |> assign(
+             piece: piece,
+             notebook: notebook_view && notebook_view.notebook,
+             notebook_entry: notebook_view && notebook_view.entry,
+             notebook_context: if(notebook_view, do: notebook_view.context, else: %{}),
+             notebook_return: notebook_view && notebook_view.return_path,
+             notebook_edit_path: notebook_view && notebook_view.edit_path,
+             notebook_sidebar_open: false,
+             piece_find_open: false,
+             piece_find_query: "",
+             piece_find_target_line: nil,
+             submission_focus: Map.get(status.focused, piece.id, false),
+             submitted: MapSet.member?(status.submitted, piece.id),
+             draft: words(piece),
+             location: location,
+             save_location:
+               if(params["unplaced"] == "true" && is_nil(piece.token),
+                 do: Still.Writing.Files.unplaced_location(location, piece.notebook_id),
+                 else: Still.Writing.Files.save_location(location, piece.relative_path)
+               ),
+             editing: editing,
+             wander_return:
+               if(
+                 socket.assigns.live_action == :edit && params["from"] == "wander" &&
+                   piece.entry_id,
+                 do: ReadingLinks.wander(piece.entry_id)
+               ),
+             notebooks: Writing.notebooks(),
+             draft_key: draft_key(location, piece),
+             dirty: false,
+             problem:
+               problem || cursor_problem || discovery_problem ||
+                 if(same_editor?, do: socket.assigns.problem),
+             revisions: revisions,
+             notice: if(same_editor?, do: socket.assigns.notice),
+             recovery_waiting: false,
+             placement_options: placement_options,
+             placement_draft: %{
+               "section" =>
+                 if(Map.get(piece, :unplaced), do: "unplaced", else: piece.notebook || "unplaced"),
+               "list_label" =>
+                 if(placement_options, do: placement_label(piece, placement_options), else: "")
+             },
+             placement_preview: nil,
+             unplaced_requested?: params["unplaced"] == "true",
+             resume_active: resume?,
+             reading_echo: reading_echo,
+             echo_attention: if(same_editor?, do: socket.assigns.echo_attention),
+             listening_line: nil,
+             beside: beside,
+             page_title:
+               if(editing,
+                 do:
+                   if(notebook_view, do: "Edit · " <> notebook_view.notebook.label, else: "Write"),
+                 else: Poems.display_title(piece)
+               ),
+             delete_confirm: false
+           )
+           |> assign(
+             reference_timer: nil,
+             export_notice: if(same_editor?, do: socket.assigns.export_notice),
+             last_export: if(same_editor?, do: socket.assigns.last_export),
+             reference_return:
+               reference_return(params["reference_return"]) ||
+                 if(same_editor?, do: socket.assigns.reference_return)
+           )
+           |> put_references(piece.body, refresh: !same_editor?)
+           |> maybe_reset_field(same_editor?)
+           |> settle(piece.body)}
+        end
 
       {:error, message} ->
         {:noreply,
@@ -471,6 +495,7 @@ defmodule StillWeb.WritingLive do
              )
            ) do
       {socket, piece, action_problem, notice} = finish_file_action(socket, piece, params)
+      socket = put_notebook_view(socket, piece)
       target_key = draft_key(location, piece)
       cursor_problem = remember(location, piece, socket.assigns.beside)
       problem = action_problem || cursor_problem
@@ -501,10 +526,15 @@ defmodule StillWeb.WritingLive do
          target_key: target_key
        })
        |> then(fn updated ->
-         if params["file_action"] == "place" and action_problem do
-           updated
-         else
-           finish_save(updated, piece, params["read"] in [true, "true"])
+         cond do
+           params["file_action"] == "place" and action_problem ->
+             updated
+
+           params["return_notebook"] in [true, "true"] and updated.assigns.notebook_return ->
+             push_navigate(updated, to: updated.assigns.notebook_return)
+
+           true ->
+             finish_save(updated, piece, params["read"] in [true, "true"])
          end
        end)}
     else
@@ -518,6 +548,9 @@ defmodule StillWeb.WritingLive do
          )}
     end
   end
+
+  def handle_event("toggle_index", _, socket),
+    do: {:noreply, update(socket, :notebook_sidebar_open, &(!&1))}
 
   def handle_event("open_piece_find", _, socket) do
     {:noreply,
@@ -725,14 +758,70 @@ defmodule StillWeb.WritingLive do
   def handle_event("confirm_delete", _, socket), do: {:noreply, socket}
 
   defp finish_save(socket, piece, true),
-    do: push_navigate(socket, to: socket.assigns.wander_return || ~p"/writing/#{piece.id}")
+    do:
+      push_navigate(socket,
+        to:
+          socket.assigns.wander_return || socket.assigns.notebook_return ||
+            ~p"/writing/#{piece.id}"
+      )
 
   defp finish_save(%{assigns: %{wander_return: path}} = socket, piece, false)
        when is_binary(path),
        do: push_patch(socket, to: ~p"/writing/#{piece.id}/edit?from=wander", replace: true)
 
-  defp finish_save(socket, piece, false),
-    do: push_patch(socket, to: ~p"/writing/#{piece.id}/edit", replace: true)
+  defp finish_save(socket, piece, false) do
+    path = socket.assigns.notebook_edit_path || ~p"/writing/#{piece.id}/edit"
+
+    path =
+      if socket.assigns.reference_return,
+        do:
+          path <>
+            if(String.contains?(path, "?"), do: "&", else: "?") <>
+            URI.encode_query(%{"reference_return" => socket.assigns.reference_return}),
+        else: path
+
+    push_patch(socket, to: path, replace: true)
+  end
+
+  defp notebook_view(%{token: token, entry_id: id}, params)
+       when is_binary(token) and is_integer(id) do
+    entry = Writing.get_entry(id)
+    notebook = if entry, do: Writing.notebook(Writing.geography(entry).key)
+
+    if notebook && Enum.any?(notebook.entries, &(&1.id == id)) do
+      params = Map.take(params, ~w(from notebook q earlier shown at written))
+
+      params =
+        if params["from"] in ["find", "notebook"],
+          do: params,
+          else: Map.put(params, "from", "notebook")
+
+      context =
+        Still.Writing.ReadingPlace.context(entry, Map.put(params, "notebook", notebook.key))
+
+      %{
+        entry: entry,
+        notebook: notebook,
+        context: context,
+        return_path: ReadingLinks.reader(entry, context),
+        edit_path: ReadingLinks.edit(entry, context)
+      }
+    end
+  end
+
+  defp notebook_view(_, _), do: nil
+
+  defp put_notebook_view(socket, piece) do
+    view = notebook_view(piece, socket.assigns.notebook_context)
+
+    assign(socket,
+      notebook: view && view.notebook,
+      notebook_entry: view && view.entry,
+      notebook_context: if(view, do: view.context, else: %{}),
+      notebook_return: view && view.return_path,
+      notebook_edit_path: view && view.edit_path
+    )
+  end
 
   defp finish_file_action(socket, piece, %{"file_action" => "rename", "name" => name}) do
     filename = rename_filename(name, piece.relative_path)
@@ -984,16 +1073,30 @@ defmodule StillWeb.WritingLive do
   defp reference_return("/?resume_new=1" = path), do: path
 
   defp reference_return(path) when is_binary(path) do
-    case Regex.run(~r|\A/writing/([0-9a-f-]{36})/edit\z|, path) do
-      [_, id] -> if Ecto.UUID.cast(id) != :error, do: path
+    uri = URI.parse(path)
+
+    with nil <- uri.scheme,
+         nil <- uri.host,
+         nil <- uri.fragment,
+         [_, id] <- Regex.run(~r|\A/writing/([0-9a-f-]{36})/edit\z|, uri.path || ""),
+         {:ok, _} <- Ecto.UUID.cast(id) do
+      params =
+        URI.decode_query(uri.query || "")
+        |> Map.take(~w(from notebook q earlier shown at written))
+
+      query = URI.encode_query(params)
+      uri.path <> if(query == "", do: "", else: "?" <> query)
+    else
       _ -> nil
     end
+  rescue
+    _ -> nil
   end
 
   defp reference_return(_), do: nil
 
-  defp surrounding_path(%{token: nil}), do: "/?resume_new=1"
-  defp surrounding_path(piece), do: ~p"/writing/#{piece.id}/edit"
+  defp surrounding_path(%{token: nil}, _), do: "/?resume_new=1"
+  defp surrounding_path(piece, notebook_path), do: notebook_path || ~p"/writing/#{piece.id}/edit"
 
   defp settle(socket, body) do
     if socket.assigns.gravity_timer, do: Process.cancel_timer(socket.assigns.gravity_timer)
@@ -1178,7 +1281,7 @@ defmodule StillWeb.WritingLive do
     ~H"""
     <Layouts.app
       flash={@flash}
-      active={if @editing, do: "write", else: "saved"}
+      active={if @notebook, do: "notebooks", else: if(@editing, do: "write", else: "saved")}
       room_light={@room_light}
       light_open={@light_open}
       room_letters={@room_letters}
@@ -1254,7 +1357,11 @@ defmodule StillWeb.WritingLive do
               name="read"
               value="true"
               class="quiet-link"
-            >{if @wander_return, do: "Save & return to Wander", else: "Read"}</button>
+            >{cond do
+              @wander_return -> "Save & return to Wander"
+              @notebook_return -> "Save & return to notebook"
+              true -> "Read"
+            end}</button>
           </div>
         </footer>
         <section class="writing-file-actions" aria-label="File name and exports">
@@ -1613,136 +1720,197 @@ defmodule StillWeb.WritingLive do
         <.link navigate={~p"/writing"} class="quiet-link">Saved writing</.link>
         <.link navigate={~p"/?new=1"} class="quiet-link">A blank page</.link>
       </div>
-      <div :if={@piece && @editing} class="writing-room file-now">
-        <h1 class="sr-only">Write now</h1>
-        <div class="room-intro">
-          <span class="room-line" aria-hidden="true"></span><span>{if @beside,
-            do: "Alongside these words",
-            else: "Write"}</span>
-        </div>
-        <p :if={@submitted} id="submitted-writing-note" class="file-note" role="status">
-          This piece has been sent. Saving edits creates a new version. The exact words sent are kept in <.link navigate={
-            ~p"/correspondence/writing/#{@piece.id}"
-          }>Correspondence</.link>.
-        </p>
-        <p :if={@problem} id="file-problem" role="alert" class="file-note">{@problem}</p>
-        <p :if={@recovery_problem} id="file-recovery-problem" role="alert" class="file-note">
-          {@recovery_problem}
-        </p>
-        <aside :if={@recovery_waiting} id="file-recovery" class="recovery-note">
-          <p>
-            A local recovery copy is waiting. Bringing it back changes this page; Save updates the file.
-          </p>
-          <div class="recovery-actions">
-            <button id="restore-file-local" phx-click="restore_file_local">Bring it back</button>
-            <button
-              id="keep-file"
-              phx-click="keep_file"
-              data-confirm="Discard this local recovery copy? The saved file stays unchanged."
-            >Keep the file version</button>
-          </div>
-        </aside>
-        <.form
-          for={%{}}
-          as={:writing}
-          id="file-writing-form"
-          phx-change="writing_changed"
-          phx-submit="save_file"
-          class="editor-form"
-          data-authoritative={to_string(@piece.token != nil)}
-          data-unsaved={to_string(@dirty)}
-          data-save-blocked={to_string(@problem != nil)}
-          data-recovery-safe="false"
-          phx-mounted={JS.ignore_attributes(["data-unsaved", "data-recovery-safe"])}
+      <div
+        :if={@piece && @editing}
+        id="writing-editor"
+        data-surface={if @notebook, do: "notebook", else: "writing"}
+        class={
+          if @notebook,
+            do:
+              "notebook-reader notebook-editing #{if @notebook_sidebar_open, do: "index-open", else: "index-closed"}",
+            else: ""
+        }
+      >
+        <button
+          :if={@notebook}
+          type="button"
+          phx-click="toggle_index"
+          class="notebook-index-toggle quiet-link"
+          aria-expanded={to_string(@notebook_sidebar_open)}
+          aria-controls="notebook-sidebar"
+        >Notebook index</button>
+        <StillWeb.NotebookIndex.sidebar
+          :if={@notebook}
+          notebook={@notebook}
+          entry_id={@piece.entry_id}
+          context={@notebook_context}
+        />
+        <article
+          id="writing-editor-content"
+          class={if @notebook, do: "notebook-editor-content", else: ""}
         >
-          <div id={"file-writing-focus-#{@piece.id}"} phx-hook="WritingFocus">
-            <div
-              id={"file-fields-#{@piece.id}"}
-              phx-hook="LinkedWriting"
-              class="file-page"
-              phx-mounted={JS.ignore_attributes(["data-linked-ready"])}
-            >
-              <div
-                id={"file-canonical-#{@piece.id}"}
-                phx-update="ignore"
-                class="file-canonical-fields"
-              >
-                <input id="file-writing-title" name="writing[title]" type="hidden" value="" />
-                <label for="file-writing-body" class="sr-only">Writing</label>
-                <textarea
-                  id="file-writing-body"
-                  name="writing[body]"
-                  class="writing-input file-editor"
-                  aria-describedby="file-keyboard-hint"
-                  phx-hook="FileRecovery"
-                  data-draft-key={@draft_key}
-                  data-persisted={Jason.encode!(words(@piece))}
-                  data-base-token={@piece.token || ""}
-                  data-resume-active={to_string(@resume_active)}
-                  data-document-id={@piece.id}
-                  spellcheck="true"
-                  autocapitalize="off"
-                  autocorrect="off"
-                  wrap="soft"
-                  placeholder="Begin anywhere."
-                  autofocus
-                  phx-debounce="700"
-                >{"\n" <> @draft.body}</textarea>
-              </div>
-              <div
-                data-linked-passages
-                data-markers={Jason.encode!(Enum.map(reference_markers(@linked_segments), & &1.raw))}
-                data-generation={@reference_generation}
-                hidden
-              >
-                <%= for {segment, index} <- Enum.with_index(@linked_segments) do %>
-                  <%= if segment.kind == :text do %>
-                    <div
-                      id={"writing-stretch-#{@piece.id}-#{@reference_generation}-#{index}"}
-                      data-writing-part="text"
-                      phx-update="ignore"
-                    >
-                      <label for={"writing-stretch-input-#{index}"} class="sr-only">Writing passage {div(
-                        index,
-                        2
-                      ) + 1}</label>
-                      <textarea
-                        id={"writing-stretch-input-#{index}"}
-                        class="writing-input file-editor writing-stretch"
-                        data-writing-segment
-                        spellcheck="true"
-                        autocorrect="off"
-                        autocapitalize="off"
-                        wrap="soft"
-                        aria-describedby="file-keyboard-hint"
-                        placeholder={if index == 0, do: "Begin anywhere.", else: "Continue writing…"}
-                      >{"\n" <> segment.raw}</textarea>
-                    </div>
-                  <% else %>
-                    <StillWeb.PoemReference.passage
-                      segment={segment}
-                      editing
-                      return_to={surrounding_path(@piece)}
-                    />
-                  <% end %>
-                <% end %>
-              </div>
+          <nav
+            :if={@notebook}
+            class="notebook-toolbar notebook-edit-toolbar"
+            aria-label="Editing in notebook"
+          >
+            <.link id="back-to-notebook" navigate={@notebook_return} class="quiet-link">Back to notebook</.link>
+            <span class="reader-reference">Editing {Writing.reference_label(@notebook_entry)}</span>
+            <button
+              id="save-return-notebook"
+              form="file-writing-form"
+              type="submit"
+              name="read"
+              value="true"
+              class="quiet-link"
+            >Save &amp; return to notebook</button>
+          </nav>
+          <div id="file-writing-room" class="writing-room file-now">
+            <h1 class="sr-only">
+              {if @notebook, do: "Edit in " <> @notebook.label, else: "Write now"}
+            </h1>
+            <div class="room-intro">
+              <span class="room-line" aria-hidden="true"></span><span>{if @beside,
+                do: "Alongside these words",
+                else: if(@notebook, do: "Edit this piece", else: "Write")}</span>
             </div>
+            <p :if={@submitted} id="submitted-writing-note" class="file-note" role="status">
+              This piece has been sent. Saving edits creates a new version. The exact words sent are kept in <.link navigate={
+                ~p"/correspondence/writing/#{@piece.id}"
+              }>Correspondence</.link>.
+            </p>
+            <p :if={@problem} id="file-problem" role="alert" class="file-note">{@problem}</p>
+            <p :if={@recovery_problem} id="file-recovery-problem" role="alert" class="file-note">
+              {@recovery_problem}
+            </p>
+            <aside :if={@recovery_waiting} id="file-recovery" class="recovery-note">
+              <p>
+                A local recovery copy is waiting. Bringing it back changes this page; Save updates the file.
+              </p>
+              <div class="recovery-actions">
+                <button id="restore-file-local" phx-click="restore_file_local">Bring it back</button>
+                <button
+                  id="keep-file"
+                  phx-click="keep_file"
+                  data-confirm="Discard this local recovery copy? The saved file stays unchanged."
+                >Keep the file version</button>
+              </div>
+            </aside>
+            <.form
+              for={%{}}
+              as={:writing}
+              id="file-writing-form"
+              phx-change="writing_changed"
+              phx-submit="save_file"
+              class="editor-form"
+              data-authoritative={to_string(@piece.token != nil)}
+              data-unsaved={to_string(@dirty)}
+              data-save-blocked={to_string(@problem != nil)}
+              data-recovery-safe="false"
+              phx-mounted={JS.ignore_attributes(["data-unsaved", "data-recovery-safe"])}
+            >
+              <div id={"file-writing-focus-#{@piece.id}"} phx-hook="WritingFocus">
+                <div
+                  id={"file-fields-#{@piece.id}"}
+                  phx-hook="LinkedWriting"
+                  class="file-page"
+                  phx-mounted={JS.ignore_attributes(["data-linked-ready"])}
+                >
+                  <div
+                    id={"file-canonical-#{@piece.id}"}
+                    phx-update="ignore"
+                    class="file-canonical-fields"
+                  >
+                    <input id="file-writing-title" name="writing[title]" type="hidden" value="" />
+                    <label for="file-writing-body" class="sr-only">Writing</label>
+                    <textarea
+                      id="file-writing-body"
+                      name="writing[body]"
+                      class="writing-input file-editor"
+                      aria-describedby="file-keyboard-hint"
+                      phx-hook="FileRecovery"
+                      data-draft-key={@draft_key}
+                      data-persisted={Jason.encode!(words(@piece))}
+                      data-base-token={@piece.token || ""}
+                      data-resume-active={to_string(@resume_active)}
+                      data-document-id={@piece.id}
+                      spellcheck="true"
+                      autocapitalize="off"
+                      autocorrect="off"
+                      wrap="soft"
+                      placeholder="Begin anywhere."
+                      autofocus
+                      phx-debounce="700"
+                    >{"\n" <> @draft.body}</textarea>
+                  </div>
+                  <div
+                    data-linked-passages
+                    data-markers={
+                      Jason.encode!(Enum.map(reference_markers(@linked_segments), & &1.raw))
+                    }
+                    data-generation={@reference_generation}
+                    hidden
+                  >
+                    <%= for {segment, index} <- Enum.with_index(@linked_segments) do %>
+                      <%= if segment.kind == :text do %>
+                        <div
+                          id={"writing-stretch-#{@piece.id}-#{@reference_generation}-#{index}"}
+                          data-writing-part="text"
+                          phx-update="ignore"
+                        >
+                          <label for={"writing-stretch-input-#{index}"} class="sr-only">Writing passage {div(
+                            index,
+                            2
+                          ) + 1}</label>
+                          <textarea
+                            id={"writing-stretch-input-#{index}"}
+                            class="writing-input file-editor writing-stretch"
+                            data-writing-segment
+                            spellcheck="true"
+                            autocorrect="off"
+                            autocapitalize="off"
+                            wrap="soft"
+                            aria-describedby="file-keyboard-hint"
+                            placeholder={
+                              if index == 0, do: "Begin anywhere.", else: "Continue writing…"
+                            }
+                          >{"\n" <> segment.raw}</textarea>
+                        </div>
+                      <% else %>
+                        <StillWeb.PoemReference.passage
+                          segment={segment}
+                          editing
+                          return_to={surrounding_path(@piece, @notebook_edit_path)}
+                        />
+                      <% end %>
+                    <% end %>
+                  </div>
+                </div>
+              </div>
+
+              <p id="file-keyboard-hint" class="sr-only">
+                Tab indents. Shift+Tab removes an indent. Enter continues indentation, returning to the margin after two indented lines. Shift+Enter keeps the indentation. Escape leaves the editor for the page controls. Command or Control+S saves; Command or Control+Enter saves and reads.
+              </p>
+            </.form>
+
+            <aside :if={@beside} class="beside-room">
+              <p class="section-whisper">Written beside</p><.link
+                navigate={~p"/w/#{@beside.id}?read=1"}
+                class="beside-title"
+              >{Writing.opening(@beside)}</.link>
+            </aside>
           </div>
-
-          <p id="file-keyboard-hint" class="sr-only">
-            Tab indents. Shift+Tab removes an indent. Enter continues indentation, returning to the margin after two indented lines. Shift+Enter keeps the indentation. Escape leaves the editor for the page controls. Command or Control+S saves; Command or Control+Enter saves and reads.
-          </p>
-        </.form>
-
-        <aside :if={@beside} class="beside-room">
-          <p class="section-whisper">Written beside</p><.link
-            navigate={~p"/w/#{@beside.id}?read=1"}
-            class="beside-title"
-          >{Writing.opening(@beside)}</.link>
+        </article>
+        <aside
+          :if={@notebook}
+          id="notebook-echoes"
+          class="notebook-echoes"
+          aria-label="Echoes beside this page"
+        >
+          <StillWeb.Echoes.field fragments={@gravity_field} />
         </aside>
       </div>
-      <StillWeb.Echoes.field :if={@piece && @editing} fragments={@gravity_field} />
+      <StillWeb.Echoes.field :if={@piece && @editing && !@notebook} fragments={@gravity_field} />
       <article :if={@piece && !@editing} class="reading-room file-reading">
         <h1 class="sr-only">Saved writing</h1>
         <StillWeb.PieceFind.panel
@@ -1782,7 +1950,7 @@ defmodule StillWeb.WritingLive do
                   segment={segment}
                   id={"linked-poem-#{index}"}
                   query={@piece_find_query}
-                  return_to={surrounding_path(@piece)}
+                  return_to={surrounding_path(@piece, @notebook_edit_path)}
                 />
               <% end %>
             <% end %>

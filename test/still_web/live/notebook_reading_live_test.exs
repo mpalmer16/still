@@ -110,6 +110,23 @@ defmodule StillWeb.NotebookReadingLiveTest do
     assert has_element?(current, "#wander-with-this[href^='/w/#{entry.id}?']")
     assert has_element?(current, "#notebook-content .reader-reference")
 
+    assert has_element?(
+             current,
+             "#notebook-content a[href^='/writing/#{titled_piece.id}/edit?'][href*='from=notebook']",
+             "Edit"
+           )
+
+    assert has_element?(
+             current,
+             "#echo-attention-passage-#{titled_piece.id} [data-echo-line='1']"
+           )
+
+    render_hook(current, "focus_passage", %{"id" => titled_piece.id, "line" => "1"})
+    assert has_element?(current, "[data-echo-line='1'].passage-focused")
+    assert has_element?(current, "#whole-page-echoes")
+    current |> element("#whole-page-echoes") |> render_click()
+    refute has_element?(current, "[data-echo-line='1'].passage-focused")
+
     [payload] =
       current
       |> render()
@@ -126,6 +143,7 @@ defmodule StillWeb.NotebookReadingLiveTest do
 
     {:ok, earlier, _html} = live(conn, ~p"/notebooks/read/#{entry.id}?version=#{version.id}")
     assert has_element?(earlier, ".historical-notice", "Earlier words")
+    refute has_element?(earlier, "#notebook-content a", "Edit")
     refute has_element?(earlier, "#notebook-previous, #notebook-next")
 
     assert earlier
@@ -141,6 +159,68 @@ defmodule StillWeb.NotebookReadingLiveTest do
     assert Writing.get_entry!(entry.id).body == "A title, exactly once:\nCurrent words\n"
 
     assert {:ok, _} = Poems.get(location, latest_piece.id)
+  end
+
+  test "linked file passages open their source in notebook reading", %{
+    conn: conn,
+    folder: folder,
+    location: location
+  } do
+    notebook_key = "Field book references"
+    {:ok, notebook} = Writing.create_notebook(%{key: notebook_key, label: notebook_key})
+    source_path = Path.join([folder, notebook_key, "source.txt"])
+    reader_path = Path.join([folder, notebook_key, "reader.txt"])
+    File.mkdir_p!(Path.dirname(source_path))
+    File.write!(source_path, "Source title\nWords from a linked poem\n")
+
+    File.write!(
+      reader_path,
+      "Before the link\n[[poem: #{notebook_key}/source.txt]]\nAfter the link\n"
+    )
+
+    assert {:ok, pieces} = Poems.list(location)
+    source = Enum.find(pieces, &(&1.relative_path == "#{notebook_key}/source.txt"))
+    reader = Enum.find(pieces, &(&1.relative_path == "#{notebook_key}/reader.txt"))
+    assert source && reader
+
+    {:ok, entry} =
+      Writing.with_collection_snapshot(fn ->
+        entry = Repo.get_by!(Entry, file_id: reader.id)
+        Notebooks.assign_entry(entry, notebook, %{source_order: 2, list_label: "2"})
+      end)
+
+    {:ok, view, _html} = live(conn, ~p"/notebooks/read/#{entry.id}")
+    assert has_element?(view, ".linked-reading .poem-insert", "Words from a linked poem")
+    assert has_element?(view, ".linked-reading .poem-insert-caption a", "Open original")
+    assert has_element?(view, ".linked-reading .poem-insert-caption a[href*='reference_return=']")
+
+    assert has_element?(
+             view,
+             "#echo-attention-linked-passage-0-#{reader.id} [data-echo-line='1']"
+           )
+
+    [reference_payload] =
+      view
+      |> render()
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#copy-notebook-reading")
+      |> LazyHTML.attribute("data-reference-sources")
+
+    assert Jason.decode!(reference_payload)["[[poem: #{notebook_key}/source.txt]]"] ==
+             "Source title\nWords from a linked poem\n"
+
+    view |> element("#open-piece-find") |> render_click()
+
+    render_submit(element(view, "#piece-find-form"), %{
+      "piece_find" => %{"query" => "linked"}
+    })
+
+    assert has_element?(view, "#piece-find-status", "1 matching word")
+    assert has_element?(view, ".poem-insert mark", "linked")
+
+    File.write!(source_path, "Source title\nA changed linked source\n")
+    send(view.pid, {:refresh_notebook_references, reader.id, reader.body})
+    assert has_element?(view, ".poem-insert", "A changed linked source")
   end
 
   test "colon titles add no spaces and keep authored spaces" do
@@ -227,6 +307,20 @@ defmodule StillWeb.NotebookReadingLiveTest do
     assert has_element?(editor, "#writing-body", "Words kept")
     assert Repo.get!(Entry, source.id).body == source.body
     assert Writing.list_versions(source) == []
+  end
+
+  test "a historical literal poem marker remains text instead of a linked passage", %{conn: conn} do
+    source =
+      entry(
+        "historical-literal-reference",
+        "Field book literal marker",
+        "Literal reference",
+        "This marker is authored text: [[poem: missing.txt]]"
+      )
+
+    {:ok, reader, _} = live(conn, ~p"/notebooks/read/#{source.id}")
+    assert has_element?(reader, "#notebook-content", "[[poem: missing.txt]]")
+    refute has_element?(reader, ".poem-insert")
   end
 
   defp entry(key, notebook, title, body) do
