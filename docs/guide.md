@@ -27,6 +27,14 @@ and **Explore the room**. The controls stay tucked away until you open it. Close
 the menu or press Escape to return to the same place in your writing. Cmd/Ctrl+S
 still saves directly without opening the menu.
 
+**Save & start next**, also in Menu, saves the page and opens a blank one in the
+same notebook and section. Cmd/Ctrl+Shift+Enter does the same. The next page shows
+its destination above the editor: a numbered notebook suggests its next number
+across all sections, while Unplaced remains unnumbered. Opening that blank page
+does not reserve a number or create a file. Scratch and writing outside notebooks
+keep their own locations. The current notebook and its default section stay as you
+chose them. If saving fails, your words stay in the current editor.
+
 A saved piece that belongs to a notebook stays in that notebook's frame when you
 choose **Edit**. Its index remains beside the editor. **Save** keeps you editing;
 **Save & return to notebook** above the page (also in Menu) returns directly to

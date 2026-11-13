@@ -14,6 +14,11 @@ to that unfinished page instead. As you write, the controls fall quiet. Your lin
 indentation, and spaces stay yours. Save keeps your words as ordinary text files,
 with earlier versions to return to.
 
+For transcription, **Save & start next** in Menu (Command/Control+Shift+Enter)
+saves the current page and opens a blank one in the same notebook and section.
+Numbered pieces suggest the notebook's next number across all sections; Unplaced
+stays unnumbered. The blank page takes no number and creates no file until you save it.
+
 **Insert poem…** brings another saved poem into the page as a live, read-only
 passage. Its original file keeps the words; the surrounding text file keeps a
 readable reference. Copy includes the displayed poem.

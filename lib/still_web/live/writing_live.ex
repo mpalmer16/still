@@ -113,9 +113,9 @@ defmodule StillWeb.WritingLive do
              draft: words(piece),
              location: location,
              save_location:
-               if(params["unplaced"] == "true" && is_nil(piece.token),
-                 do: Still.Writing.Files.unplaced_location(location, piece.notebook_id),
-                 else: Still.Writing.Files.save_location(location, piece.relative_path)
+               if(piece.token,
+                 do: Still.Writing.Files.save_location(location, piece.relative_path),
+                 else: draft_save_location(location, words(piece))
                ),
              editing: editing,
              wander_return:
@@ -143,7 +143,7 @@ defmodule StillWeb.WritingLive do
                  if(placement_options, do: placement_label(piece, placement_options), else: "")
              },
              placement_preview: nil,
-             unplaced_requested?: params["unplaced"] == "true",
+             unplaced_requested?: is_nil(piece.token) && Map.get(piece, :unplaced, false),
              resume_active: resume?,
              reading_echo: reading_echo,
              echo_attention: if(same_editor?, do: socket.assigns.echo_attention),
@@ -183,6 +183,12 @@ defmodule StillWeb.WritingLive do
          )}
     end
   end
+
+  defp opening(:now, %{"after" => id, "token" => token}, location),
+    do: {Still.Writing.Files.new_after(location, id, token), false, nil}
+
+  defp opening(:now, %{"after" => _}, _location),
+    do: {{:error, "Reopen the saved piece before starting its next page."}, false, nil}
 
   defp opening(:now, %{"new" => "1"} = params, location),
     do: {{:ok, Poems.new(location)}, false, historical_beside(params["beside"])}
@@ -292,13 +298,18 @@ defmodule StillWeb.WritingLive do
 
     draft =
       if is_nil(socket.assigns.piece.token) and draft.unplaced != socket.assigns.draft.unplaced,
-        do: %{draft | relative_path: ""},
+        do: %{draft | relative_path: "", destination_folder: ""},
         else: draft
 
     socket =
       if is_nil(socket.assigns.piece.token) and
-           Map.take(draft, [:unplaced, :relative_path, :notebook_id]) !=
-             Map.take(socket.assigns.draft, [:unplaced, :relative_path, :notebook_id]) do
+           Map.take(draft, [:unplaced, :relative_path, :notebook_id, :destination_folder]) !=
+             Map.take(socket.assigns.draft, [
+               :unplaced,
+               :relative_path,
+               :notebook_id,
+               :destination_folder
+             ]) do
         assign(socket,
           unplaced_requested?: draft.unplaced == "true",
           save_location: draft_save_location(socket.assigns.location, draft)
@@ -505,9 +516,14 @@ defmodule StillWeb.WritingLive do
 
     save =
       cond do
-        params["scratch"] in [true, "true"] -> &Still.Writing.Files.save_to_scratch/3
-        unplaced_save? -> &Still.Writing.Files.save_to_unplaced/3
-        true -> &Poems.save/3
+        params["scratch"] in [true, "true"] ->
+          &Still.Writing.Files.save_to_scratch/3
+
+        unplaced_save? && draft.destination_folder == "" ->
+          &Still.Writing.Files.save_to_unplaced/3
+
+        true ->
+          &Poems.save/3
       end
 
     with :ok <- validate_position(draft.source_order),
@@ -527,45 +543,49 @@ defmodule StillWeb.WritingLive do
       cursor_problem = remember(location, piece, socket.assigns.beside)
       problem = action_problem || cursor_problem
 
-      {:noreply,
-       socket
-       |> assign(
-         piece: piece,
-         draft: words(piece),
-         dirty: false,
-         client_dirty: false,
-         reported_cursor: {piece.id, piece.token, false},
-         problem: problem,
-         notice: notice,
-         draft_key: target_key
-       )
-       |> put_references(piece.body)
-       |> push_event("file-saved", %{
-         id: piece.id,
-         token: piece.token,
-         body: piece.body,
-         title: "",
-         title_line: piece.title_line,
-         relative_path: piece.relative_path,
-         notebook_id: piece.notebook_id,
-         list_label: piece.list_label,
-         source_order: piece.source_order,
-         unplaced: if(Map.get(piece, :unplaced), do: "true", else: ""),
-         source_key: source_key,
-         target_key: target_key
-       })
-       |> then(fn updated ->
-         cond do
-           params["file_action"] == "place" and action_problem ->
-             updated
+      updated =
+        socket
+        |> assign(
+          piece: piece,
+          draft: words(piece),
+          dirty: false,
+          client_dirty: false,
+          reported_cursor: {piece.id, piece.token, false},
+          problem: problem,
+          notice: notice,
+          draft_key: target_key
+        )
+        |> put_references(piece.body)
+        |> push_event("file-saved", %{
+          id: piece.id,
+          token: piece.token,
+          body: piece.body,
+          title: "",
+          title_line: piece.title_line,
+          relative_path: piece.relative_path,
+          notebook_id: piece.notebook_id,
+          list_label: piece.list_label,
+          source_order: piece.source_order,
+          unplaced: if(Map.get(piece, :unplaced), do: "true", else: ""),
+          destination_folder: "",
+          source_key: source_key,
+          target_key: target_key
+        })
 
-           params["return_notebook"] in [true, "true"] and updated.assigns.notebook_return ->
-             push_navigate(updated, to: updated.assigns.notebook_return)
+      cond do
+        params["start_next"] in [true, "true"] && is_nil(problem) ->
+          {:reply, %{starting_next: true},
+           push_navigate(updated, to: ~p"/?after=#{piece.id}&token=#{piece.token}")}
 
-           true ->
-             finish_save(updated, piece, params["read"] in [true, "true"])
-         end
-       end)}
+        params["file_action"] == "place" and action_problem ->
+          {:noreply, updated}
+
+        params["return_notebook"] in [true, "true"] and updated.assigns.notebook_return ->
+          {:noreply, push_navigate(updated, to: updated.assigns.notebook_return)}
+
+        true ->
+          {:noreply, finish_save(updated, piece, params["read"] in [true, "true"])}
+      end
     else
       {:error, message} ->
         {:noreply,
@@ -1246,7 +1266,8 @@ defmodule StillWeb.WritingLive do
       notebook_id: to_string(draft_notebook_id(piece) || ""),
       list_label: Map.get(piece, :list_label) || "",
       source_order: to_string(Map.get(piece, :source_order) || ""),
-      unplaced: if(Map.get(piece, :unplaced), do: "true", else: "")
+      unplaced: if(Map.get(piece, :unplaced), do: "true", else: ""),
+      destination_folder: Map.get(piece, :destination_folder) || ""
     }
   end
 
@@ -1254,6 +1275,9 @@ defmodule StillWeb.WritingLive do
     case {Map.get(piece, :notebook_id), Map.get(piece, :token)} do
       {id, _token} when is_integer(id) ->
         id
+
+      {_, nil} when is_map_key(piece, :destination_folder) ->
+        nil
 
       {_, nil} ->
         case Writing.current_notebook() do
@@ -1273,6 +1297,10 @@ defmodule StillWeb.WritingLive do
     end
   end
 
+  defp draft_save_location(location, %{destination_folder: folder, relative_path: ""})
+       when is_binary(folder) and folder != "",
+       do: Still.Writing.Files.continuation_location(location, folder)
+
   defp draft_save_location(location, %{unplaced: "true"} = draft),
     do: Still.Writing.Files.unplaced_location(location, draft.notebook_id)
 
@@ -1284,7 +1312,8 @@ defmodule StillWeb.WritingLive do
 
   defp save_destination(%{notebook: notebook, section: section, number: number}) do
     if notebook do
-      "#{notebook} · #{section || "Notebook"} · Next List #{number || "not yet numbered"}"
+      "#{notebook} · #{section || "Notebook"} · " <>
+        if(number, do: "Next List #{number}", else: "Unnumbered")
     else
       "No notebook · Unnumbered"
     end
@@ -1316,7 +1345,8 @@ defmodule StillWeb.WritingLive do
       relative_path: blank_nil(draft.relative_path),
       notebook_id: integer_or_nil(draft.notebook_id),
       list_label: blank_nil(draft.list_label),
-      source_order: integer_or_nil(draft.source_order)
+      source_order: integer_or_nil(draft.source_order),
+      destination_folder: blank_nil(draft.destination_folder)
     }
   end
 
@@ -1342,16 +1372,23 @@ defmodule StillWeb.WritingLive do
         do: piece.body,
         else: body
 
-    Map.merge(words(piece), %{
-      body: body,
-      title: "",
-      title_line: Map.get(attrs, "title_line", Map.get(words(piece), :title_line, "")),
-      relative_path: Map.get(attrs, "relative_path", Map.get(words(piece), :relative_path, "")),
-      notebook_id: Map.get(attrs, "notebook_id", Map.get(words(piece), :notebook_id, "")),
-      list_label: Map.get(attrs, "list_label", Map.get(words(piece), :list_label, "")),
-      source_order: Map.get(attrs, "source_order", Map.get(words(piece), :source_order, "")),
-      unplaced: Map.get(attrs, "unplaced", Map.get(words(piece), :unplaced, ""))
-    })
+    draft =
+      Map.merge(words(piece), %{
+        body: body,
+        title: "",
+        title_line: Map.get(attrs, "title_line", Map.get(words(piece), :title_line, "")),
+        relative_path: Map.get(attrs, "relative_path", Map.get(words(piece), :relative_path, "")),
+        notebook_id: Map.get(attrs, "notebook_id", Map.get(words(piece), :notebook_id, "")),
+        list_label: Map.get(attrs, "list_label", Map.get(words(piece), :list_label, "")),
+        source_order: Map.get(attrs, "source_order", Map.get(words(piece), :source_order, "")),
+        unplaced: Map.get(attrs, "unplaced", Map.get(words(piece), :unplaced, "")),
+        destination_folder:
+          Map.get(attrs, "destination_folder", Map.get(words(piece), :destination_folder, ""))
+      })
+
+    if is_nil(piece.token) && draft.unplaced != words(piece).unplaced,
+      do: %{draft | destination_folder: ""},
+      else: draft
   end
 
   defp draft_key(location, %{token: nil}), do: "still:poem-draft:#{location.draft_scope}:new"
@@ -1418,6 +1455,14 @@ defmodule StillWeb.WritingLive do
                                                                                                  else:
                                                                                                    "Save"}</button>
             <button form="file-writing-form" id="new-file" type="button" class="quiet-link">New</button>
+            <button
+              form="file-writing-form"
+              id="save-start-next"
+              type="submit"
+              name="start_next"
+              value="true"
+              class="quiet-link"
+            >Save &amp; start next</button>
             <button
               :if={is_nil(@piece.token)}
               form="file-writing-form"
@@ -1698,6 +1743,12 @@ defmodule StillWeb.WritingLive do
             name="writing[source_order]"
             value={@draft.source_order}
           />
+          <input
+            form="file-writing-form"
+            type="hidden"
+            name="writing[destination_folder]"
+            value={@draft.destination_folder}
+          />
           <.link navigate={~p"/storage"} class="quiet-link">Storage &amp; Backups</.link>
           <button
             :if={is_nil(@piece.token)}
@@ -1882,6 +1933,14 @@ defmodule StillWeb.WritingLive do
               <span class="room-line" aria-hidden="true"></span><span>{if @beside,
                 do: "Alongside these words",
                 else: if(@notebook, do: "Edit this piece", else: "Write")}</span>
+              <span
+                :if={is_nil(@piece.token) && @draft.destination_folder != ""}
+                id="continuing-writing"
+              >
+                {if @draft.unplaced == "true",
+                  do: "#{@save_location.notebook} · Unplaced · Not yet numbered",
+                  else: save_destination(@save_location)}
+              </span>
             </div>
             <p :if={@submitted} id="submitted-writing-note" class="file-note" role="status">
               This piece has been sent. Saving edits creates a new version. The exact words sent are kept in <.link navigate={
@@ -1916,7 +1975,7 @@ defmodule StillWeb.WritingLive do
               data-unsaved={to_string(@dirty)}
               data-save-blocked={to_string(@problem != nil)}
               data-recovery-safe="false"
-              phx-mounted={JS.ignore_attributes(["data-unsaved", "data-recovery-safe"])}
+              phx-mounted={JS.ignore_attributes(["data-unsaved", "data-recovery-safe", "inert"])}
             >
               <div id={"file-writing-focus-#{@piece.id}"} phx-hook="WritingFocus">
                 <div
@@ -1998,7 +2057,7 @@ defmodule StillWeb.WritingLive do
               </div>
 
               <p id="file-keyboard-hint" class="sr-only">
-                Tab indents. Shift+Tab removes an indent. Enter continues indentation, returning to the margin after two indented lines. Shift+Enter keeps the indentation. Escape leaves the editor for the page controls. Command or Control+S saves; Command or Control+Enter saves and reads.
+                Tab indents. Shift+Tab removes an indent. Enter continues indentation, returning to the margin after two indented lines. Shift+Enter keeps the indentation. Escape leaves the editor for the page controls. Command or Control+S saves; Command or Control+Enter saves and reads. Command or Control+Shift+Enter saves and starts the next page.
               </p>
             </.form>
 

@@ -1,6 +1,6 @@
 import {insertEnter, replaceSelection} from "./indentation"
 
-const fields = ["title_line", "relative_path", "notebook_id", "list_label", "source_order", "unplaced"]
+const fields = ["title_line", "relative_path", "notebook_id", "list_label", "source_order", "unplaced", "destination_folder"]
 const equal = (a, b) => a?.body === b?.body && String(a?.title ?? "") === String(b?.title ?? "") &&
   fields.every(field => String(a?.[field] ?? "") === String(b?.[field] ?? ""))
 const valid = value => value && typeof value.body === "string" && typeof (value.title ?? "") === "string"
@@ -66,6 +66,48 @@ export function acknowledgeCopies(storage, source, target, saved) {
 
 export const positionKey = key => key.replace("still:poem-draft:", "still:file-position:")
 
+// Keep Save & start next from changing the submitted words while its save is pending.
+// Retain prior disabled states so releasing the wait does not enable controls that
+// were already unavailable for another reason.
+export function freezeForm(form, additionalControls = []) {
+  const controls = [...new Set([...form.elements, ...form.querySelectorAll("button, input, select, textarea, fieldset"), ...additionalControls].filter(Boolean))]
+  const disabled = controls.map(control => [control, control.disabled])
+  const wasInert = form.inert
+  form.inert = true
+  controls.forEach(control => { control.disabled = true })
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    form.inert = wasInert
+    disabled.forEach(([control, wasDisabled]) => {
+      if (control.isConnected) control.disabled = wasDisabled
+    })
+  }
+}
+
+export function pushStartNext(state, form, pushEvent, payload) {
+  if (state.startNextPending) return false
+  state.startNextPending = true
+  state.releaseStartNext = freezeForm(form, state.startNextControls || [])
+  const release = () => {
+    if (!state.startNextPending) return
+    state.startNextPending = false
+    state.releaseStartNext?.()
+    state.releaseStartNext = null
+  }
+  try {
+    const result = pushEvent("save_file", payload, reply => {
+      if (reply?.starting_next === true) return
+      release()
+    })
+    if (result?.catch) result.catch(release)
+  } catch {
+    release()
+  }
+  return true
+}
+
 export function resumableCopy(storage, key, token, resume) {
   const active = readCopies(storage, key).active
   return resume && active && (active.baseToken ?? null) === token ? active : null
@@ -92,6 +134,11 @@ if (typeof window !== "undefined") {
 }
 
 export const shouldBlockNavigation = (current, baseline, recoverySafe) => !recoverySafe && !equal(current, baseline)
+export function writingShortcut(event, composing) {
+  if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter") return null
+  if (event.shiftKey) return event.isComposing || composing ? null : "start_next"
+  return "read"
+}
 
 export const FileRecovery = {
   mounted() {
@@ -118,6 +165,7 @@ export const FileRecovery = {
         list_label: value("list_label"),
         source_order: value("source_order"),
         unplaced: value("unplaced"),
+        destination_folder: value("destination_folder"),
       }
     }
     this.flags = () => {
@@ -167,12 +215,19 @@ export const FileRecovery = {
       if (resize) this.fit()
       this.form.dispatchEvent(new Event("still:writing-display-changed"))
     }
-    this.submitWriting = (read, scratch = false, unplaced = false, returnNotebook = false) => {
+    this.submitWriting = (read, scratch = false, unplaced = false, returnNotebook = false, startNext = false) => {
+      if (this.startNextPending) return
       this.capture(); this.keepPosition()
-      this.pushEvent("save_file", {writing: this.words(), draft_key: this.key, read, scratch, unplaced, return_notebook: returnNotebook})
+      const payload = {writing: this.words(), draft_key: this.key, read, scratch, unplaced, return_notebook: returnNotebook}
+      if (!startNext) return this.pushEvent("save_file", payload)
+      payload.start_next = true
+      this.startNextControls = ["placement-section", "placement-list-label", "placement-allow-duplicate", "rename-menu-name"]
+        .map(id => document.getElementById(id))
+      pushStartNext(this, this.form, this.pushEvent.bind(this), payload)
     }
     this.save = () => this.submitWriting(false)
     this.onFileAction = ({detail}) => {
+      if (this.startNextPending) return
       this.capture(); this.keepPosition()
       const placement = detail.action === "place" ? {
         section: document.getElementById("placement-section")?.value || "unplaced",
@@ -188,16 +243,19 @@ export const FileRecovery = {
     }
     this.newButton = [...document.querySelectorAll("#new-file")].find(button => button.form === this.form)
     this.saveButton = [...document.querySelectorAll("#save-file")].find(button => button.form === this.form)
-    this.onNew = () => { this.capture(); this.keepPosition(); this.pushEvent("new_file", {writing: this.words()}) }
+    this.onNew = () => { if (this.startNextPending) return; this.capture(); this.keepPosition(); this.pushEvent("new_file", {writing: this.words()}) }
     this.newButton?.addEventListener("click", this.onNew)
-    this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); this.submitWriting(["read-file", "save-return-notebook", "save-return-packet"].includes(event.submitter?.id), event.submitter?.id === "save-scratch", event.submitter?.id === "save-unplaced", event.submitter?.id === "save-return-notebook") }
+    this.onSubmit = event => { event.preventDefault(); event.stopPropagation(); if (this.startNextPending) return; this.submitWriting(["read-file", "save-return-notebook", "save-return-packet"].includes(event.submitter?.id), event.submitter?.id === "save-scratch", event.submitter?.id === "save-unplaced", event.submitter?.id === "save-return-notebook", event.submitter?.id === "save-start-next") }
     this.onKey = event => {
       if (event.target !== this.el && event.target?.form !== this.form) return
       const editor = event.target === this.el || this.el.linkedEditor?.owns(event.target) ? event.target : null
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault(); this.save()
       }
-      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      const shortcut = writingShortcut(event, this.composing)
+      if (shortcut === "start_next") {
+        event.preventDefault(); this.submitWriting(false, false, false, false, true)
+      } else if (shortcut === "read") {
         event.preventDefault(); this.submitWriting(true)
       }
       if (editor && event.key === "Escape" && !document.querySelector("#room-close")) {
@@ -352,8 +410,16 @@ export const FileRecovery = {
       this.el.linkedEditor?.focus()
     }
   },
+  disconnected() {
+    this.startNextPending = false
+    this.releaseStartNext?.()
+    this.releaseStartNext = null
+  },
   updated() { this.fit() },
   destroyed() {
+    this.startNextPending = false
+    this.releaseStartNext?.()
+    this.releaseStartNext = null
     window.removeEventListener("click", this.onLeavingClick, true)
     window.removeEventListener("beforeunload", this.onUnload)
     this.newButton?.removeEventListener("click", this.onNew)

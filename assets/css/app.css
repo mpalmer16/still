@@ -54,6 +54,8 @@ a { color: inherit; text-decoration: none; }
 .writing-room, .reading-room, .archive-room, .threshold-room, .beside-room { width: min(100%, 748px); margin: 0 auto; }
 .writing-room { padding-top: clamp(65px, 10vh, 120px); }
 .room-intro { display: flex; gap: 15px; align-items: center; color: var(--muted); font-size: 11px; letter-spacing: .07em; }
+.room-intro:has(#continuing-writing) { flex-wrap: wrap; }
+#continuing-writing { min-width: 0; letter-spacing: normal; overflow-wrap: anywhere; }
 .room-line { display: inline-block; width: 24px; height: 1px; background: var(--warm); opacity: .6; }
 .return-whisper { color: var(--warm); font-family: var(--serif); font-style: italic; font-size: 15px; letter-spacing: 0; }
 .editor-form { margin-top: 37px; }

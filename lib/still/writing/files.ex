@@ -144,6 +144,57 @@ defmodule Still.Writing.Files do
     }
   end
 
+  @doc "Build a blank continuation draft in the saved piece's exact folder."
+  def new_after(location, saved_id, expected_token) do
+    with_location(location, fn active ->
+      case Repo.get_by(Entry, file_id: saved_id, collection_scope: active.scope) do
+        %Entry{} = entry ->
+          notebook = if entry.notebook_id, do: Repo.get(Notebook, entry.notebook_id)
+
+          cond do
+            snapshot_token(entry) != expected_token or entry.trashed or entry.file_missing ->
+              stale()
+
+            entry.notebook_id &&
+                (is_nil(notebook) or notebook.collection_scope != active.scope) ->
+              {:error, "The saved notebook is unavailable. Reconnect it before continuing."}
+
+            true ->
+              folder = Path.dirname(entry.relative_path)
+
+              with {:ok, path} <- destination_directory(active.folder, folder),
+                   true <- File.dir?(path),
+                   {:ok, source_path} <- safe_path(active.folder, entry.relative_path),
+                   :ok <- fresh_disk(entry, source_path) do
+                {:ok,
+                 new(location)
+                 |> Map.put(:notebook_id, entry.notebook_id)
+                 |> Map.put(
+                   :unplaced,
+                   not is_nil(notebook) and
+                     NotebookSections.unplaced?(notebook, entry.relative_path)
+                 )
+                 |> Map.put(:destination_folder, folder)}
+              else
+                false ->
+                  {:error,
+                   "The saved writing folder is unavailable. Reconnect it before continuing."}
+
+                error ->
+                  error
+              end
+          end
+
+        _ ->
+          stale()
+      end
+    end)
+  end
+
+  def continuation_location(location, folder) when is_binary(folder) do
+    save_location(location, Path.join(folder, "page.txt"))
+  end
+
   def explicit_title(%{title_source: "first_line"}), do: nil
   def explicit_title(%{title_needs_review: true}), do: nil
   def explicit_title(piece), do: piece[:title]
@@ -420,6 +471,7 @@ defmodule Still.Writing.Files do
   def save(location, existing, attrs) when is_map(existing) and is_map(attrs) do
     with_location(location, fn active ->
       with :ok <- recover_pending(active, true),
+           :ok <- validate_destination_folder(active, existing, attrs),
            {:ok, body, line} <- desired_text(existing, attrs),
            {:ok, doc} <- TextFile.decode(body),
            {:ok, role} <- role_for(doc, line),
@@ -1105,12 +1157,23 @@ defmodule Still.Writing.Files do
   defp number_new_list(active, nil, existing, attrs) do
     with {:ok, _} <- synchronize(active) do
       attrs = infer_path_notebook(active, nil, attrs)
+
+      continuation? = continuation_folder?(existing, attrs)
       relative = attrs[:relative_path] || existing[:relative_path]
+
+      relative =
+        if is_nil(relative) and continuation?,
+          do: Path.join(attrs[:destination_folder], "page.txt"),
+          else: relative
 
       nearest =
         if is_binary(relative) and relative != "", do: closest_notebook(active.scope, relative)
 
-      id = selected_notebook_id(existing, attrs) || (nearest && nearest.id)
+      id =
+        if continuation?,
+          do: selected_notebook_id(existing, attrs),
+          else: selected_notebook_id(existing, attrs) || (nearest && nearest.id)
+
       notebook = if is_integer(id), do: Repo.get(Notebook, id)
       label = attrs[:list_label] || existing[:list_label]
       order = number(attrs[:source_order] || existing[:source_order])
@@ -1234,6 +1297,9 @@ defmodule Still.Writing.Files do
 
         base =
           cond do
+            is_binary(attrs[:destination_folder]) ->
+              attrs[:destination_folder]
+
             notebook && notebook.collection_scope == active.scope ->
               Still.Writing.NotebookSections.destination(notebook)
 
@@ -1257,7 +1323,7 @@ defmodule Still.Writing.Files do
               do: filename,
               else: attrs[:list_label] <> "_" <> filename
 
-          name = if is_nil(base), do: filename, else: Path.join(base, filename)
+          name = if base in [nil, "."], do: filename, else: Path.join(base, filename)
           free_name(active.folder, name, 1)
         end
 
@@ -1268,6 +1334,34 @@ defmodule Still.Writing.Files do
         {:error, "Choose a relative filename inside the selected folder."}
     end
   end
+
+  defp validate_destination_folder(_active, %{token: token}, _attrs) when not is_nil(token),
+    do: :ok
+
+  defp validate_destination_folder(active, existing, attrs) do
+    if continuation_folder?(existing, attrs) do
+      with {:ok, path} <- destination_directory(active.folder, attrs[:destination_folder]),
+           true <- File.dir?(path) do
+        :ok
+      else
+        false ->
+          {:error, "The saved writing folder is unavailable. Reconnect it before continuing."}
+
+        error ->
+          error
+      end
+    else
+      :ok
+    end
+  end
+
+  defp continuation_folder?(existing, attrs) do
+    is_nil(existing[:token]) and existing[:relative_path] in [nil, ""] and
+      attrs[:relative_path] in [nil, ""] and is_binary(attrs[:destination_folder])
+  end
+
+  defp destination_directory(root, "."), do: {:ok, root}
+  defp destination_directory(root, relative), do: safe_directory(root, relative)
 
   defp first_filename_line(body) do
     body
