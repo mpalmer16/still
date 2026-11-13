@@ -1006,6 +1006,13 @@ defmodule StillWeb.WritingLive do
   defp rename_filename(_, _), do: ""
 
   @impl true
+  def handle_info(:reader_packet_added, socket) do
+    status = Correspondence.writing_status(socket.assigns.location)
+
+    {:noreply,
+     assign(socket, submission_focus: Map.get(status.focused, socket.assigns.piece.id, false))}
+  end
+
   def handle_info({:refresh_linked_poems, id}, socket) do
     if socket.assigns.piece && socket.assigns.piece.id == id do
       body =
@@ -2015,6 +2022,13 @@ defmodule StillWeb.WritingLive do
       <StillWeb.Echoes.field :if={@piece && @editing && !@notebook} fragments={@gravity_field} />
       <article :if={@piece && !@editing} class="reading-room file-reading">
         <h1 class="sr-only">Saved writing</h1>
+        <.live_component
+          :if={@location.available && Still.Correspondence.ReaderPackets.supported?(@piece)}
+          module={StillWeb.ReaderPacket}
+          id="reader-packet"
+          location={@location}
+          source={@piece}
+        />
         <StillWeb.PieceFind.panel
           open={@piece_find_open}
           query={@piece_find_query}
@@ -2062,6 +2076,14 @@ defmodule StillWeb.WritingLive do
         <p :if={@piece.body == ""} id="file-empty" class="file-note">An empty page, kept here.</p>
         <.submission_mark marked={@submission_focus} piece_id={@piece.id} submitted={@submitted} />
         <div class="file-reading-actions">
+          <button
+            :if={@location.available && Still.Correspondence.ReaderPackets.supported?(@piece)}
+            id="add-to-packet-bottom"
+            type="button"
+            class="quiet-link"
+            aria-haspopup="dialog"
+            phx-click={JS.push_focus() |> JS.push("open", target: "#reader-packet")}
+          >Add to packet…</button>
           <StillWeb.CopyText.copy_text
             id="copy-file-reading"
             body={@piece.body}

@@ -1,4 +1,5 @@
 export function openPieceFind(root = document) {
+  if (root.querySelector("#reader-packet-dialog")) return true
   const query = root.querySelector("#piece-find-query")
   if (query && !query.closest?.("[inert]")) { query.focus(); return true }
   const button = root.querySelector("#open-piece-find")
@@ -14,6 +15,7 @@ export function handleReadingShortcut(event, root = document) {
     return true
   }
   if (event.key === "Escape") {
+    if (root.querySelector("#reader-packet-dialog")) return false
     const close = root.querySelector("#close-piece-find")
     if (!close || close.closest?.("[inert]")) return false
     event.preventDefault()

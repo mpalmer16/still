@@ -90,6 +90,17 @@ defmodule Still.Correspondence do
 
   def overview(location), do: load_overview(location, :all)
 
+  @doc "Lists editable packet drafts without loading their manuscripts or snapshots."
+  def draft_packets(location) do
+    with {:ok, dirs} <- store(location),
+         {:ok, packets} <- records(dirs, :packet) do
+      {:ok,
+       packets
+       |> Enum.filter(&(&1.status == "preparing" and is_nil(&1.snapshot_ref)))
+       |> Enum.sort_by(& &1.updated_at, :desc)}
+    end
+  end
+
   def focused_overview(location, keep_ids \\ []), do: load_overview(location, keep_ids)
 
   defp load_overview(location, selection) do
@@ -381,7 +392,28 @@ defmodule Still.Correspondence do
 
   def save_packet(location, attrs, id \\ nil, token \\ nil)
 
-  def save_packet(location, attrs, id, token) when is_map(attrs) do
+  def save_packet(location, attrs, id, token) when is_map(attrs),
+    do: save_packet_with_sources(location, attrs, id, token, %{})
+
+  def save_packet(_, _, _, _), do: invalid("packet")
+
+  @doc "Starts a packet with the exact saved piece version currently open in the reader."
+  def start_packet(location, piece_id, expected_source_token, title)
+      when is_binary(piece_id) and is_binary(expected_source_token) do
+    save_packet_with_sources(
+      location,
+      %{title: title, piece_ids: [piece_id]},
+      nil,
+      nil,
+      %{piece_id => expected_source_token}
+    )
+  end
+
+  def start_packet(_, _, _, _),
+    do: {:error, "Reopen this writing before starting a packet."}
+
+  defp save_packet_with_sources(location, attrs, id, token, expected_sources)
+       when is_map(attrs) and is_map(expected_sources) do
     with {:ok, vals} <- normalize_packet(attrs),
          {:ok, record_id} <- choose_id(id),
          {:ok, d} <- store(location),
@@ -389,7 +421,7 @@ defmodule Still.Correspondence do
          :ok <- editable(old),
          {:ok, j} <- optional_destination(d, vals.journal_id),
          :ok <- maybe_active_destination(j),
-         {:ok, pieces} <- current_pieces(location, vals.piece_ids),
+         {:ok, pieces} <- current_pieces(location, vals.piece_ids, expected_sources),
          {:ok, letter_token} <- cover_letter_token(location, vals.cover_letter_piece_id),
          now <- now(),
          rec <-
@@ -409,7 +441,34 @@ defmodule Still.Correspondence do
          do: {:ok, saved}
   end
 
-  def save_packet(_, _, _, _), do: invalid("packet")
+  @doc "Adds one current saved piece to a fresh, editable packet draft."
+  def add_to_packet(location, piece_id, packet_id, expected_packet_token, expected_source_token)
+      when is_binary(piece_id) and is_binary(packet_id) and is_binary(expected_packet_token) and
+             is_binary(expected_source_token) do
+    with {:ok, d} <- store(location),
+         {:ok, packet} <- read_record(d, packet_id, :packet),
+         :ok <- fresh(packet, expected_packet_token),
+         :ok <- editable(packet) do
+      if piece_id in packet.piece_ids do
+        {:ok, packet}
+      else
+        with {:ok, [piece]} <-
+               current_pieces(location, [piece_id], %{piece_id => expected_source_token}),
+             next <-
+               packet
+               |> Map.put(:piece_ids, packet.piece_ids ++ [piece_id])
+               |> Map.put(:piece_tokens, Map.put(packet.piece_tokens, piece_id, piece.token))
+               |> Map.put(:updated_at, now())
+               |> Map.delete(:token),
+             {:ok, saved} <- write_record(d, next, :packet, expected_packet_token) do
+          {:ok, saved}
+        end
+      end
+    end
+  end
+
+  def add_to_packet(_, _, _, _, _),
+    do: {:error, "Reopen the Correspondence packet before adding this writing."}
 
   @doc "Duplicates an existing packet as a new, destination-free preparation."
   def duplicate_packet(location, id, token) do
@@ -863,20 +922,37 @@ defmodule Still.Correspondence do
   defp uuid(_, msg), do: {:error, msg}
   defp uuid_value?(v), do: is_binary(v) and Ecto.UUID.cast(v) != :error
 
-  defp current_pieces(loc, ids) do
+  defp current_pieces(loc, ids, expected_sources \\ %{}) do
     with {:ok, all} <- Poems.list(loc) do
       found = Map.new(all, &{&1.id, &1})
 
       if Enum.all?(ids, &Map.has_key?(found, &1)),
-        do:
-          ids
-          |> Enum.map(&Map.fetch!(found, &1))
-          |> expand_linked_pieces(loc),
+        do: validate_expected_sources(loc, ids, found, expected_sources),
         else:
           {:error,
            "One or more selected writings are missing from the active collection. Refresh before continuing."}
     end
   end
+
+  defp validate_expected_sources(location, ids, found, expected_sources) do
+    case Enum.find(ids, fn id ->
+           case Map.fetch(expected_sources, id) do
+             :error -> false
+             {:ok, token} -> not source_token_matches?(Map.fetch!(found, id), token)
+           end
+         end) do
+      nil ->
+        ids
+        |> Enum.map(&Map.fetch!(found, &1))
+        |> expand_linked_pieces(location)
+
+      _stale ->
+        {:error, "This writing changed. Reopen it before adding it to a packet."}
+    end
+  end
+
+  defp source_token_matches?(%{token: token}, token) when is_binary(token), do: true
+  defp source_token_matches?(_, _), do: false
 
   @doc "The exact expanded current words of an ordered packet selection, before it is saved."
   def manuscript_preview(location, ids) when is_list(ids), do: current_pieces(location, ids)
@@ -1747,6 +1823,7 @@ defmodule Still.Correspondence do
 
   defp fresh(%{token: t}, t) when is_binary(t), do: :ok
   defp fresh(_, _), do: {:error, "This record changed on disk. Reopen it before continuing."}
+
   defp date(%Date{} = d), do: {:ok, Date.to_iso8601(d)}
 
   defp date(v) when is_binary(v),

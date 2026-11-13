@@ -19,7 +19,7 @@ test('Command-F and Control-F open only the local piece search', () => {
 test('Escape closes local search once and repeated Escape never leaves reading', () => {
   const close = control(), home = control()
   let opened = true
-  const root = {querySelector: selector => selector === '#close-piece-find' ? (opened ? close : null) : home}
+  const root = {querySelector: selector => selector === '#close-piece-find' ? (opened ? close : null) : null}
   assert.equal(handleReadingShortcut(key('Escape'), root), true)
   opened = false
   for (let i = 0; i < 5; i++) assert.equal(handleReadingShortcut(key('Escape'), root), false)
@@ -29,7 +29,7 @@ test('Escape closes local search once and repeated Escape never leaves reading',
 test('hidden room controls and other pages are left alone', () => {
   const button = control()
   button.closest = () => ({inert: true})
-  assert.equal(openPieceFind({querySelector: () => button}), false)
+  assert.equal(openPieceFind({querySelector: selector => selector === '#open-piece-find' ? button : null}), false)
   const event = key('f', {metaKey: true})
   assert.equal(handleReadingShortcut(event, {querySelector: () => null}), false)
   assert.equal(event.prevented, false)
@@ -42,6 +42,25 @@ test('Command-F returns focus to an already open piece search', () => {
   assert.equal(handleReadingShortcut(event, {querySelector: selector => selector === '#piece-find-query' ? query : null}), true)
   assert.equal(query.focused, true)
   assert.equal(event.prevented, true)
+})
+
+test('a packet chooser keeps Escape and search shortcuts from changing the reading behind it', () => {
+  const modal = {}, close = control(), query = control()
+  query.focus = () => { query.focused = true }
+  const root = {querySelector: selector => ({
+    '#reader-packet-dialog': modal, '#close-piece-find': close, '#piece-find-query': query,
+  })[selector] || null}
+  const escape = key('Escape')
+  assert.equal(handleReadingShortcut(escape, root), false)
+  assert.equal(escape.prevented, false)
+  assert.equal(close.clicks, 0)
+  for (const modifier of ['metaKey', 'ctrlKey']) {
+    const event = key('f', {[modifier]: true})
+    assert.equal(handleReadingShortcut(event, root), true)
+    assert.equal(event.prevented, true)
+  }
+  assert.equal(query.focused, undefined)
+  assert.equal(openPieceFind(root), true)
 })
 
 test('Backspace cannot navigate away from a reader, but remains available while editing', () => {

@@ -24,6 +24,8 @@ or PDF. Exported copies stay in a separate folder beside the writing collection.
 Correspondence packets keep an ordered selection of saved poems. Assemble and revise
 a packet before choosing its destination. Edit a piece and save back to its packet;
 attach a saved scratch page as a linked cover letter without marking it for Correspondence.
+While reading a notebook, a Find result, saved writing, or Wander, **Add to packet…**
+offers an existing draft or a new packet without leaving your reading place.
 The manuscript preview expands inserted poems. Save the reviewed packet before exporting
 or marking it sent; changes to its source writing require another review. **Save as PDF**
 in the Mac app creates a clean manuscript with each poem beginning on a new page, under

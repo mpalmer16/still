@@ -23,6 +23,19 @@ Write or in its notebook and choose **Mark for Correspondence**. This adds the
 piece to Works in its existing location. Pieces already in packets start
 marked. You can remove the mark while keeping the packet history.
 
+**Add to packet…** is also available while reading current writing in a notebook,
+from Find, in Wander, or in Saved writing. Choose an existing draft or **New packet**
+with an optional title. The piece is appended once; its ordinary file stays where it
+is. **Keep reading** closes the chooser at the same page and scroll position, with
+your notebook index and search context intact. **Open packet** is available if you
+want to arrange the manuscript next. Sent packets never appear as choices.
+
+An existing draft keeps its order, destination, cover letter, notes, and review state.
+If another window changes it, refresh the drafts and choose again. A changed source
+piece must be reopened. A current historical List with a stable source key uses its
+saved copy, creating that copy if necessary and leaving the original untouched;
+earlier revisions cannot be added as though they were current writing.
+
 **Edit in Write** opens the same piece from Correspondence. After a submission,
 the editor notes that the piece has been sent. Saving an edit creates a new
 version, and the packet keeps the exact submitted words.

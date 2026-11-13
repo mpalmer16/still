@@ -105,6 +105,7 @@ defmodule StillWeb.EntryLive do
          |> assign(:submission_focus_supported?, focus_supported?)
          |> assign(:submission_focus, submission_focus)
          |> assign(:reading_scope, location.scope)
+         |> assign(:reading_location, location)
          |> assign(
            :reading_context,
            if(focused, do: ReadingPlace.context(entry, params), else: %{})
@@ -538,6 +539,17 @@ defmodule StillWeb.EntryLive do
   end
 
   @impl true
+  def handle_info(:reader_packet_added, socket) do
+    {_, marked?} =
+      submission_focus_state(
+        socket.assigns.reading_location,
+        socket.assigns.entry,
+        socket.assigns.historical_version
+      )
+
+    {:noreply, assign(socket, submission_focus: marked?)}
+  end
+
   def handle_info({:settle_before, id, body}, socket) do
     entry = socket.assigns.entry
 
@@ -1253,6 +1265,15 @@ defmodule StillWeb.EntryLive do
               @entry.origin == "before" -> "From before"
               true -> "Written here"
             end}</span>
+            <.live_component
+              :if={
+                @reading_location.available && Still.Correspondence.ReaderPackets.supported?(@entry)
+              }
+              module={StillWeb.ReaderPacket}
+              id="reader-packet"
+              location={@reading_location}
+              source={@entry}
+            />
             <span :if={@entry.returned_at} class="return-whisper">& now</span>
           </div>
           <h1
@@ -1308,6 +1329,14 @@ defmodule StillWeb.EntryLive do
             phx-click="toggle_wander_submission_focus"
             aria-pressed={to_string(@submission_focus)}
           >{if @submission_focus, do: "Kept for Correspondence", else: "Keep for Correspondence"}</button>
+          <button
+            :if={@reading_location.available && Still.Correspondence.ReaderPackets.supported?(@entry)}
+            id="add-to-packet-bottom"
+            type="button"
+            class="quiet-link"
+            aria-haspopup="dialog"
+            phx-click={JS.push_focus() |> JS.push("open", target: "#reader-packet")}
+          >Add to packet…</button>
           <span
             :if={
               @wander_mode? && @submission_focus_supported? && is_nil(@entry.file_id) &&

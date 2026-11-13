@@ -230,6 +230,15 @@ defmodule StillWeb.NotebookReadingLive do
   end
 
   @impl true
+  def handle_info(:reader_packet_added, socket) do
+    status = Correspondence.writing_status(socket.assigns.location)
+
+    {:noreply,
+     assign(socket,
+       submission_focus: Map.get(status.focused, socket.assigns.entry.file_id, false)
+     )}
+  end
+
   def handle_info({:refresh_notebook_references, id, body}, socket) do
     entry = socket.assigns.entry
 
@@ -296,6 +305,16 @@ defmodule StillWeb.NotebookReadingLive do
               id="wander-with-this"
               class="quiet-link"
             >Wander with this ↗</.link>
+            <.live_component
+              :if={
+                !@version && @location.available &&
+                  Still.Correspondence.ReaderPackets.supported?(@entry)
+              }
+              module={StillWeb.ReaderPacket}
+              id="reader-packet"
+              location={@location}
+              source={@entry}
+            />
             <StillWeb.PieceFind.panel
               open={@piece_find_open?}
               query={@piece_find_query}
@@ -384,6 +403,17 @@ defmodule StillWeb.NotebookReadingLive do
               submitted={@submitted}
             />
             <div class="reading-foot">
+              <button
+                :if={
+                  !@version && @location.available &&
+                    Still.Correspondence.ReaderPackets.supported?(@entry)
+                }
+                id="add-to-packet-bottom"
+                type="button"
+                class="quiet-link"
+                aria-haspopup="dialog"
+                phx-click={JS.push_focus() |> JS.push("open", target: "#reader-packet")}
+              >Add to packet…</button>
               <StillWeb.CopyText.copy_text
                 id="copy-notebook-reading"
                 body={@words.body}
