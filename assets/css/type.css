@@ -1,13 +1,17 @@
-/* The writing changes most; nearby language changes more gently. Room furniture
-   stays quiet at every position of the Letters control. */
+/* The page grows beyond a laptop-sized window, unless the writer chose a width.
+   Leave side lanes for echoes, independently of the Letters control. */
 .site-frame {
   --letter-growth: max(0, calc(var(--letters, .5) - .5));
   --writing-size: calc(17px + var(--letters, .5) * 8px + var(--letter-growth) * 16px);
-  --reading-measure: min(820px, calc(var(--writing-size) * 32));
-  --writing-measure: var(--reading-measure);
+  --reading-measure: calc(min(820px, calc(var(--writing-size) * 32)) + clamp(0px, calc(40vw - 576px), 560px));
+  --writing-measure: min(var(--page-width, var(--reading-measure)), calc(100vw - 480px));
   --list-title-size: calc(24px + var(--letters, .5) * 8px);
   --secondary-size: calc(16px + var(--letters, .5) * 4px + var(--letter-growth) * 8px);
   --peripheral-size: calc(13.5px + var(--letters, .5) * 3px + var(--letter-growth) * 6px);
+}
+
+@media (max-width: 1279px) {
+  .site-frame { --writing-measure: var(--page-width, var(--reading-measure)); }
 }
 
 .site-frame .writing-input {

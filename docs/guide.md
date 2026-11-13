@@ -84,9 +84,11 @@ Spelling** (remember it in your Mac's dictionary, which other Mac apps can also
 use). **Edit → Spelling** includes checking while typing. Grammar checking and
 automatic spelling replacement start off; reading views do not mark spelling.
 
-**Page width**, beside Letters, adjusts the writing surface independently of type
-size. Still remembers the preferred width and limits it to leave room for echoes
-on the current screen. **Reset** returns to the original width.
+**Page width**, beside Letters in the writing Menu, adjusts the page independently
+of type size. Still remembers that choice for writing, notebook reading and Wander,
+and limits it to the space available beside the index and echoes. **Reset** returns
+to an automatic width that grows on larger screens. Notebook contents, Find and
+Saved writing also make more room available in a wide window.
 
 Enter carries the current line's tabs and spaces onto the next line. After two
 consecutive indented lines, Enter returns to the left margin. **Shift+Enter**

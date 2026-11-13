@@ -1001,6 +1001,7 @@ defmodule StillWeb.EntryLive do
         end
       }
       room_light={@room_light}
+      room_width={@room_width}
       light_open={@light_open}
       room_letters={@room_letters}
       letters_open={@letters_open}

@@ -41,8 +41,8 @@ a { color: inherit; text-decoration: none; }
 :is(input, select, textarea, [tabindex]):focus-visible { box-shadow: 0 2px 0 var(--focus-color); }
 [data-phx-session], [data-phx-teleported-src] { display: contents; }
 
-.site-frame { min-height: 100vh; padding: 0 clamp(24px, 5.2vw, 84px) 84px; }
-.site-header { max-width: 1390px; margin: auto; height: 108px; display: flex; align-items: center; justify-content: space-between; }
+.site-frame { --room-gutter: clamp(24px, 2vw, 48px); min-height: 100vh; padding: 0 var(--room-gutter) 84px; }
+.site-header { margin: auto; height: 96px; display: flex; align-items: center; justify-content: space-between; }
 .wordmark { font-family: var(--serif); font-size: 29px; line-height: 1; font-weight: 500; letter-spacing: -.06em; transition: color .25s ease; }
 .wordmark:hover { color: #eef3fa; }
 .wordmark-stop { color: var(--warm); }
@@ -154,7 +154,7 @@ a { color: inherit; text-decoration: none; }
 .beside-room { margin-top: 76px; padding: 25px 0 0 25px; border-left: 1px solid #b1c3dd40; color: var(--muted); }
 .beside-title { font-family: var(--serif); font-size: 18px; }
 
-.archive-room { padding-top: clamp(55px, 8vh, 100px); }
+.archive-room { width: min(100%, clamp(748px, 60vw, 1280px)); padding-top: clamp(36px, 5vh, 64px); }
 .archive-heading h1 { margin: 17px 0 44px; font-family: var(--serif); font-size: clamp(48px, 5.5vw, 68px); font-weight: 400; letter-spacing: -.055em; line-height: 1; }
 .search-form { position: relative; margin-bottom: 44px; }
 .search-input { display: block; width: 100%; padding: 14px 34px 15px 0; border: 0; border-bottom: 1px solid #58677b; border-radius: 0; background: transparent; color: var(--ink); font-family: var(--serif); font-size: 20px; outline: none; transition: border-color .25s ease; }
@@ -233,7 +233,7 @@ a { color: inherit; text-decoration: none; }
 #room-content { transition: opacity 1s ease, filter 1s ease; }
 .room-control { padding: 7px 0; border: 0; background: transparent; color: var(--muted); font-family: var(--serif); font-size: 14px; transition: color .3s ease, opacity .3s ease; }
 .room-control:hover, .room-control:focus-visible { color: var(--ink); }
-.room-light-control { position: fixed; left: clamp(25px, 5.2vw, 84px); bottom: 29px; z-index: 4; display: flex; align-items: center; gap: 27px; }
+.room-light-control { position: fixed; left: var(--room-gutter); bottom: 29px; z-index: 4; display: flex; align-items: center; gap: 27px; }
 #light-toggle::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--warm); box-shadow: 0 0 12px 2px hsl(var(--hue) 20% 42% / .2); margin-right: 11px; opacity: .6; }
 .light-adjustment { position: absolute; left: 0; bottom: 44px; display: flex; align-items: center; gap: 20px; }
 .light-adjustment input[type=range] {
@@ -245,14 +245,14 @@ a { color: inherit; text-decoration: none; }
 .light-adjustment input[type=range]::-moz-range-thumb { height: 8px; width: 8px; border: 1px solid var(--warm); border-radius: 50%; background: var(--night); }
 .light-adjustment button { font-size: 12px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-.place-whisper { position: fixed; right: clamp(25px, 5.2vw, 84px); bottom: 25px; z-index: 4; text-align: right; }
+.place-whisper { position: fixed; right: var(--room-gutter); bottom: 25px; z-index: 4; text-align: right; }
 .place-name { display: block; font-size: 16px; }
 .place-region { display: block; margin-top: 5px; color: var(--faint); font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 9px; letter-spacing: .07em; }
 .place-whisper:hover .place-region { color: var(--muted); }
 .room-landscape { position: fixed; inset: 0; z-index: 3; animation: room-unfold 1.2s ease both; }
 .landscape-revealed #room-content { opacity: .045; filter: blur(3px); }
 .landscape-revealed .place-whisper { opacity: 0; }
-.landscape-close { position: absolute; top: 43px; right: clamp(25px, 5.2vw, 84px); font-size: 13px; }
+.landscape-close { position: absolute; top: 43px; right: var(--room-gutter); font-size: 13px; }
 .landscape-place { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%); color: var(--soft); text-align: center; padding: 12px; border: 0; font-family: var(--serif); font-size: clamp(17px, 1.6vw, 23px); line-height: 1.25; transition: color .4s ease, text-shadow .4s ease; }
 .landscape-place:hover { color: var(--ink); text-shadow: 0 0 30px hsl(var(--hue) 20% 68% / .25); }
 .landscape-name, .landscape-region { display: block; }
@@ -351,7 +351,7 @@ html[data-native-fullscreen="true"] .writing-input { min-height: 42vh; }
 .list-interpretation .quiet-link { color: var(--muted); font-family: var(--serif); }
 
 /* The index is a page of titles in their source places, reached by choice. */
-.notebook-room { width: min(100%, 672px); margin: 0 auto; padding-top: 62px; }
+.notebook-room { width: min(100%, clamp(748px, 60vw, 1280px)); margin: 0 auto; padding-top: clamp(36px, 5vh, 64px); }
 .notebook-heading h1 { margin: 17px 0 24px; font-family: var(--serif); font-size: calc(38px + var(--letters, .5) * 10px); font-weight: 400; line-height: 1.15; letter-spacing: -.04em; overflow-wrap: anywhere; }
 .notebook-order { margin: 0; color: var(--muted); font-family: var(--serif); font-size: 16px; line-height: 1.5; }
 .notebook-back { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 28px; }
@@ -504,7 +504,7 @@ mark { background: hsl(var(--hue, 218) 18% 25%); color: var(--ink); text-decorat
 #storage-problem, #storage-guidance { border-inline-start: 2px solid currentColor; padding-inline-start: .8rem; }
 
 /* Saved file writing shares the room; the shelf and history stay quiet. */
-.file-library { width: min(100%, 850px); margin: 0 auto; padding-top: clamp(36px, 7vh, 85px); }
+.file-library { width: min(100%, clamp(850px, 64vw, 1400px)); margin: 0 auto; padding-top: clamp(36px, 5vh, 64px); }
 .file-heading h1 { margin: 15px 0 28px; font: 400 clamp(46px, 5vw, 64px)/1.1 var(--serif); letter-spacing: -.045em; }
 .file-link { font: 18px/1.5 var(--serif); color: var(--warm); }
 .file-shelf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 70px; margin: 65px 0; }
@@ -542,7 +542,7 @@ mark { background: hsl(var(--hue, 218) 18% 25%); color: var(--ink); text-decorat
 .writing-room.file-now { padding-top: clamp(24px, 4vh, 60px); }
 .file-now .editor-form { margin-top: 24px; }
 .file-page { padding: var(--file-page-inset); border: 1px solid rgb(177 195 221 / .09); background: rgb(177 195 221 / .018); }
-.file-now .file-editor { min-height: 57vh; white-space: pre-wrap; overflow-x: hidden; overflow-wrap: anywhere; }
+.file-now .file-editor { min-height: max(57vh, calc(100dvh - 360px)); white-space: pre-wrap; overflow-x: hidden; overflow-wrap: anywhere; }
 .file-now .file-editor:focus-visible, .file-now .title-input:focus-visible { box-shadow: none; }
 .file-page[data-linked-ready="true"] .file-canonical-fields { display: none; }
 .file-now .file-editor.writing-stretch { min-height: 1.85em; padding: 0; }
@@ -569,11 +569,11 @@ html:has(#poem-picker) { overflow: hidden; }
 .poem-choice-preview { font: 15px/1.6 var(--serif); color: var(--muted); white-space: pre-wrap; }
 .poem-picker-preview #confirm-insert-poem { margin-top: 24px; }
 .file-now .file-writing-footer { margin-top: 24px; }
-.writing-menu-toggle { position: fixed; right: clamp(25px, 5.2vw, 84px); bottom: 25px; z-index: 5; padding: 0; border: 0; background: transparent; color: var(--muted); font: 17px var(--serif); }
+.writing-menu-toggle { position: fixed; right: var(--room-gutter); bottom: 25px; z-index: 5; padding: 0; border: 0; background: transparent; color: var(--muted); font: 17px var(--serif); }
 .writing-menu-toggle:hover, .writing-menu-toggle:focus-visible { color: var(--ink); }
 .writing-menu-backdrop { position: fixed; inset: 0; z-index: 8; background: rgb(0 0 0 / .36); }
 html:has(#writing-menu:not([hidden])) { overflow: hidden; }
-.writing-menu { position: fixed; right: clamp(24px, 5.2vw, 84px); bottom: 26px; z-index: 9; width: min(480px, calc(100vw - 48px)); max-height: calc(100dvh - 52px); overflow-y: auto; overscroll-behavior: contain; padding: 24px 28px; border: 1px solid rgb(177 195 221 / .2); border-radius: 5px; background: var(--night); box-shadow: 0 16px 60px rgb(0 0 0 / .3); }
+.writing-menu { position: fixed; right: var(--room-gutter); bottom: 26px; z-index: 9; width: min(480px, calc(100vw - 48px)); max-height: calc(100dvh - 52px); overflow-y: auto; overscroll-behavior: contain; padding: 24px 28px; border: 1px solid rgb(177 195 221 / .2); border-radius: 5px; background: var(--night); box-shadow: 0 16px 60px rgb(0 0 0 / .3); }
 .writing-menu[hidden], .writing-menu-toggle[hidden] { display: none; }
 .writing-menu-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .writing-menu-heading h2 { margin: 0; font: 400 25px/1.4 var(--serif); color: var(--soft); }
@@ -652,7 +652,7 @@ html[data-still-writing-focus] .site-frame:has(.file-now):not(:has([role="alert"
 .notebook-piece-title { min-width: 0; overflow-wrap: anywhere; }
 .notebook-piece-title .title-word { max-width: 100%; }
 .notebook-piece-number { flex: 0 0 24px; font: 11px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--muted); }
-#notebook-content { width: min(100%, 1120px); justify-self: center; margin: 0; padding: 0 12px 60px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scroll-padding-top: 85px; }
+#notebook-content { width: min(100%, var(--page-width, calc(var(--reading-measure) + 78px))); justify-self: center; margin: 0; padding: 0 12px 60px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scroll-padding-top: 85px; }
 #notebook-content .notebook-toolbar { position: static; width: 100%; margin: 0 0 36px; padding: 18px 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; background: transparent; }
 #notebook-content .reader-reference { color: var(--muted); font-size: 12px; }
 #notebook-content .reading-heading { margin-top: 0; }
@@ -670,7 +670,7 @@ html[data-still-writing-focus] .site-frame:has(.file-now):not(:has([role="alert"
 
 /* A notebook edit keeps the index and nearby echoes around the writing page. */
 .notebook-reader:has(.notebook-echoes) {
-  grid-template-columns: minmax(180px, 220px) minmax(0, 1120px) minmax(170px, 210px);
+  grid-template-columns: clamp(200px, 12vw, 300px) minmax(0, 1fr) clamp(180px, 10vw, 260px);
   justify-content: center;
   gap: clamp(24px, 3vw, 56px);
 }
@@ -818,6 +818,6 @@ html[data-still-writing-focus] .site-frame:has(.file-now):not(:has([role="alert"
 
 /* Local Find opens above the page and keeps its field ready for typing. */
 .piece-find { font-size: 13px; color: var(--muted); }
-#piece-find-form { position: fixed; z-index: 20; top: 100px; right: clamp(24px, 5.2vw, 84px); width: min(440px, calc(100vw - 48px)); display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px 16px; padding: 12px 16px; border: 1px solid #b7c7dd35; background: var(--night); box-shadow: 0 10px 30px #0004; }
+#piece-find-form { position: fixed; z-index: 20; top: 100px; right: var(--room-gutter); width: min(440px, calc(100vw - 48px)); display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px 16px; padding: 12px 16px; border: 1px solid #b7c7dd35; background: var(--night); box-shadow: 0 10px 30px #0004; }
 #piece-find-query { flex: 1 1 180px; min-width: 0; padding: 9px 10px; border: 1px solid #b7c7dd40; background: transparent; color: var(--ink); font-size: 15px; }
 #piece-find-status { grid-column: 1 / -1; grid-row: 2; margin: 0; font-size: 12px; }

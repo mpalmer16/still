@@ -61,6 +61,14 @@ defmodule StillWeb.RoomLiveTest do
     {:ok, piece} =
       Still.Writing.Files.save(location, Still.Writing.Files.new(location), %{body: body})
 
+    old =
+      before(
+        "room-width",
+        "Early Notebooks/Lists 3",
+        "A:Remembered:Page:",
+        "Earlier notebook words"
+      )
+
     {:ok, view, _} = live(conn, ~p"/writing/#{piece.id}/edit")
     view |> element("#page-width-toggle") |> render_click()
     assert has_element?(view, "#room-page-width[min='560'][max='1600']")
@@ -68,6 +76,23 @@ defmodule StillWeb.RoomLiveTest do
     assert Still.Writing.Appearance.width() == 1400
     assert has_element?(view, ".site-frame[style*='--page-width: 1400px']")
     assert File.read!(piece.path) == body
+
+    {:ok, reader, _} = live(conn, ~p"/read/#{piece.entry_id}")
+    assert has_element?(reader, ".site-frame[style*='--page-width: 1400px']")
+    assert render(reader) =~ "An opening"
+    assert Writing.get_entry!(piece.entry_id).body == body
+    assert Writing.list_versions(Writing.get_entry!(piece.entry_id)) == []
+
+    {:ok, wander, _} = live(conn, ~p"/w/#{piece.entry_id}")
+    assert has_element?(wander, ".site-frame[style*='--page-width: 1400px']")
+    assert render(wander) =~ "An opening"
+
+    {:ok, notebook, _} = live(conn, ~p"/notebooks/read/#{old.id}")
+    assert has_element?(notebook, ".site-frame[style*='--page-width: 1400px']")
+    assert render(notebook) =~ "Earlier notebook words"
+    assert Writing.get_entry!(old.id).body == "Earlier notebook words"
+    assert Writing.list_versions(old) == []
+
     view |> element("#letters-toggle") |> render_click()
     refute has_element?(view, "#room-page-form")
     assert Still.Writing.Appearance.width() == 1400
