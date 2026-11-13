@@ -5,7 +5,7 @@ defmodule StillWeb.CorrespondenceCalendarTest do
 
   alias StillWeb.CorrespondenceCalendar
 
-  test "shows a Monday through Sunday six week grid and event details in the agenda" do
+  test "shows a Sunday through Saturday six week grid and event details in the agenda" do
     html =
       calendar_html([
         event("Book launch", "2026-11-12", %{
@@ -22,9 +22,16 @@ defmodule StillWeb.CorrespondenceCalendarTest do
       ])
 
     assert html =~ ~s(id="correspondence-calendar")
-    assert html =~ "Mon"
-    assert html =~ "Sun"
+
+    weekday_headers =
+      html
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query(".corr-calendar-weekday")
+      |> Enum.map(&(LazyHTML.text(&1) |> String.trim()))
+
+    assert weekday_headers == ~w(Sun Mon Tue Wed Thu Fri Sat)
     assert length(Regex.scan(~r/class="corr-calendar-day(?:\s|\")/, html)) == 42
+    assert first_grid_date(html) == "Sunday, November 1, 2026"
     assert html =~ "Book launch"
     assert html =~ "6:30 pm–8:00 pm"
     assert html =~ "Time not provided"
@@ -33,6 +40,14 @@ defmodule StillWeb.CorrespondenceCalendarTest do
     assert html =~ "Bring a notebook"
     assert html =~ ~s(href="https://example.test/event")
     assert html =~ ~s(href="/correspondence/calendar?date=2026-11-12&amp;month=2026-11&amp;q=)
+  end
+
+  test "six week grids start on Sunday for Saturday and cross-year month starts" do
+    assert first_grid_date(calendar_html([], %{month: ~D[2026-08-01]})) ==
+             "Sunday, July 26, 2026"
+
+    assert first_grid_date(calendar_html([], %{month: ~D[2027-01-01]})) ==
+             "Sunday, December 27, 2026"
   end
 
   test "groups the upcoming agenda, includes ongoing events, and omits cancelled events by default" do
@@ -228,6 +243,15 @@ defmodule StillWeb.CorrespondenceCalendarTest do
       Map.merge(%{events: events, today: ~D[2026-11-12], month: ~D[2026-11-01]}, overrides)
 
     render_component(&CorrespondenceCalendar.page/1, assigns)
+  end
+
+  defp first_grid_date(html) do
+    html
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query(".corr-calendar-day-link")
+    |> Enum.at(0)
+    |> LazyHTML.attribute("aria-label")
+    |> Enum.at(0)
   end
 
   defp event(title, date, overrides \\ %{}) do

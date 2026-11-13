@@ -34,6 +34,37 @@ defmodule StillWeb.CalendarLiveTest do
     assert has_element?(view, "nav[aria-label='Correspondence'] a.active", "Calendar")
     refute has_element?(view, ".site-header")
 
+    assert has_element?(
+             view,
+             ".corr-calendar-heading form#calendar-filters.corr-calendar-toolbar"
+           )
+
+    assert has_element?(view, "#calendar-filters h1", "Calendar")
+    assert has_element?(view, "#calendar-filters input[name='calendar[q]']")
+    assert has_element?(view, "#calendar-filters input[name='calendar[cancelled]']")
+    assert has_element?(view, "#calendar-filters input[name='calendar[hidden]']")
+
+    assert has_element?(
+             view,
+             "#calendar-filters .corr-calendar-actions a[href='/correspondence/calendar/events/new']",
+             "Add event"
+           )
+
+    assert has_element?(
+             view,
+             "#calendar-filters .corr-calendar-actions a[href='/correspondence/calendar/import']",
+             "Import calendar events"
+           )
+
+    assert has_element?(view, ".corr-calendar-agenda-heading")
+
+    assert has_element?(
+             view,
+             "#calendar-agenda-events[role='region'][aria-label='Calendar events'][tabindex='0']"
+           )
+
+    refute has_element?(view, "#calendar-agenda-events .corr-calendar-agenda-heading")
+
     view
     |> element("a[href='/correspondence/calendar/events/new']", "Add event")
     |> render_click()

@@ -15,7 +15,7 @@ defmodule StillWeb.CorrespondenceCalendar do
 
   def page(assigns) do
     month_start = Date.beginning_of_month(assigns.month)
-    grid_start = Date.add(month_start, -Date.day_of_week(month_start) + 1)
+    grid_start = Date.add(month_start, 1 - Date.day_of_week(month_start, :sunday))
     dates = Enum.map(0..41, &Date.add(grid_start, &1))
 
     events =
@@ -54,9 +54,20 @@ defmodule StillWeb.CorrespondenceCalendar do
       |> assign(:agenda_more?, agenda_more?)
 
     ~H"""
-    <section id="correspondence-calendar" class="corr-calendar" aria-labelledby="calendar-heading">
+    <section
+      id="correspondence-calendar"
+      class="corr-calendar"
+      data-view={@view}
+      aria-labelledby="calendar-heading"
+    >
       <header class="corr-calendar-heading">
-        <div>
+        <.form
+          for={%{}}
+          id="calendar-filters"
+          class="corr-calendar-toolbar"
+          phx-change="filter_calendar"
+          phx-submit="filter_calendar"
+        >
           <h1 id="calendar-heading">Calendar</h1>
           <nav class="corr-calendar-view-switch" aria-label="Calendar view">
             <.link
@@ -90,52 +101,108 @@ defmodule StillWeb.CorrespondenceCalendar do
               }
             >List</.link>
           </nav>
-        </div>
-        <div class="corr-calendar-header-actions">
-          <.link patch={~p"/correspondence/calendar/events/new"} class="corr-button">Add event</.link>
+          <nav :if={@view == "calendar"} class="corr-calendar-month-nav" aria-label="Calendar month">
+            <.link
+              patch={month_path(@previous_month, @query, @include_cancelled, @include_hidden)}
+              aria-label="Previous month"
+              class="corr-calendar-month-step"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="m15 6-6 6 6 6" />
+              </svg>
+            </.link>
+            <h2>{Calendar.strftime(@month_start, "%B %Y")}</h2>
+            <.link
+              patch={month_path(@next_month, @query, @include_cancelled, @include_hidden)}
+              aria-label="Next month"
+              class="corr-calendar-month-step"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="m9 6 6 6-6 6" />
+              </svg>
+            </.link>
+            <.link
+              patch={month_path(@today, @query, @include_cancelled, @include_hidden)}
+              class="corr-text-link"
+            >Today</.link>
+          </nav>
+          <label class="corr-directory-search">
+            <span class="sr-only">Search calendar events</span>
+            <input
+              type="search"
+              name="calendar[q]"
+              value={@query}
+              placeholder="Search events"
+              phx-debounce="250"
+              autocomplete="off"
+            />
+          </label>
           <details class="corr-popover corr-calendar-actions">
-            <summary>Calendar menu <span aria-hidden="true">⌄</span></summary>
+            <summary>
+              Calendar menu
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </summary>
             <div class="corr-popover-panel">
+              <.link patch={~p"/correspondence/calendar/events/new"}>Add event</.link>
               <.link patch={~p"/correspondence/calendar/import"}>Import calendar events</.link>
+              <div class="corr-calendar-menu-filters">
+                <label class="corr-calendar-cancelled">
+                  <input
+                    type="checkbox"
+                    name="calendar[cancelled]"
+                    value="true"
+                    checked={@include_cancelled}
+                  /> Include cancelled
+                </label>
+                <label class="corr-calendar-hidden">
+                  <input
+                    type="checkbox"
+                    name="calendar[hidden]"
+                    value="true"
+                    checked={@include_hidden}
+                  /> Include hidden
+                </label>
+                <label :if={@view == "list"} class="corr-calendar-range">
+                  <span>Show</span>
+                  <select name="calendar[range]">
+                    <option value="upcoming" selected={@range != "all"}>Upcoming</option>
+                    <option value="all" selected={@range == "all"}>All events</option>
+                  </select>
+                </label>
+              </div>
             </div>
           </details>
-        </div>
+        </.form>
       </header>
-
-      <.form
-        for={%{}}
-        id="calendar-filters"
-        class="corr-directory-toolbar"
-        phx-change="filter_calendar"
-        phx-submit="filter_calendar"
-      >
-        <label class="corr-directory-search">
-          <span class="sr-only">Search calendar events</span>
-          <input
-            type="search"
-            name="calendar[q]"
-            value={@query}
-            placeholder="Search events"
-            phx-debounce="250"
-            autocomplete="off"
-          />
-        </label>
-        <label class="corr-calendar-cancelled">
-          <input type="checkbox" name="calendar[cancelled]" value="true" checked={@include_cancelled} />
-          Include cancelled
-        </label>
-        <label class="corr-calendar-hidden">
-          <input type="checkbox" name="calendar[hidden]" value="true" checked={@include_hidden} />
-          Include hidden
-        </label>
-        <label :if={@view == "list"} class="corr-calendar-range">
-          <span>Show</span>
-          <select name="calendar[range]">
-            <option value="upcoming" selected={@range != "all"}>Upcoming</option>
-            <option value="all" selected={@range == "all"}>All events</option>
-          </select>
-        </label>
-      </.form>
 
       <div :if={@view == "list"} class="corr-calendar-list-view">
         <p class="corr-meta">
@@ -260,54 +327,10 @@ defmodule StillWeb.CorrespondenceCalendar do
         </p>
       </div>
 
-      <nav :if={@view == "calendar"} class="corr-calendar-month-nav" aria-label="Calendar month">
-        <.link
-          patch={month_path(@previous_month, @query, @include_cancelled, @include_hidden)}
-          aria-label="Previous month"
-          class="corr-calendar-month-step"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <path d="m15 6-6 6 6 6" />
-          </svg>
-        </.link>
-        <h2>{Calendar.strftime(@month_start, "%B %Y")}</h2>
-        <.link
-          patch={month_path(@next_month, @query, @include_cancelled, @include_hidden)}
-          aria-label="Next month"
-          class="corr-calendar-month-step"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <path d="m9 6 6 6-6 6" />
-          </svg>
-        </.link>
-        <.link
-          patch={month_path(@today, @query, @include_cancelled, @include_hidden)}
-          class="corr-text-link"
-        >Today</.link>
-      </nav>
-
       <div :if={@view == "calendar"} class="corr-calendar-layout">
         <div class="corr-calendar-grid">
           <div
-            :for={weekday <- ~w(Mon Tue Wed Thu Fri Sat Sun)}
+            :for={weekday <- ~w(Sun Mon Tue Wed Thu Fri Sat)}
             class="corr-calendar-weekday"
           >
             {weekday}
@@ -337,88 +360,98 @@ defmodule StillWeb.CorrespondenceCalendar do
         </div>
 
         <aside class="corr-calendar-agenda" aria-labelledby="calendar-agenda-heading">
-          <h2 id="calendar-agenda-heading">
-            {if @selected_date, do: Calendar.strftime(@selected_date, "%B %-d"), else: "Coming up"}
-          </h2>
-          <.link
-            :if={@selected_date}
-            patch={month_path(@today, @query, @include_cancelled, @include_hidden)}
-            class="corr-calendar-all-upcoming"
-          >All upcoming dates</.link>
-          <p :if={@agenda == []} class="corr-calendar-empty">
-            <%= if @selected_date do %>
-              Nothing planned for this day.
-            <% else %>
-              No upcoming events.
-              <.link patch={~p"/correspondence/calendar/import"}>Import events</.link>
-            <% end %>
-          </p>
-          <section :for={{date, events} <- @agenda} class="corr-calendar-agenda-day">
-            <h3>{Calendar.strftime(date, "%A, %B %-d")}</h3>
-            <article
-              :for={event <- events}
-              class={"corr-calendar-event status-#{value(event, :status) || "scheduled"}"}
-            >
-              <p :if={event_range(event)} class="corr-calendar-event-range">{event_range(event)}</p>
-              <span class="corr-calendar-event-time">{event_time(event)}</span>
-              <span :if={value(event, :recurrence_label)} class="corr-calendar-recurrence">{value(
-                event,
-                :recurrence_label
-              )}</span>
-              <h4>{value(event, :title)}</h4>
-              <p :if={value(event, :category)} class="corr-calendar-category">
-                {category_label(value(event, :category))}
-              </p>
-              <p :if={value(event, :timezone)} class="corr-calendar-timezone">
-                {value(event, :timezone)}
-              </p>
-              <p :if={value(event, :venue)} class="corr-calendar-venue">
-                {value(event, :venue)}<span :if={value(event, :address)}> · {value(event, :address)}</span>
-              </p>
-              <p :if={value(event, :status) == "cancelled"} class="corr-calendar-cancelled-label">
-                Cancelled
-              </p>
-              <p :if={value(event, :notes)} class="corr-calendar-notes">{value(event, :notes)}</p>
-              <a
-                :if={safe_url(value(event, :url))}
-                href={safe_url(value(event, :url))}
-                target="_blank"
-                rel="noopener noreferrer"
-              >Event details ↗</a>
-              <div class="corr-calendar-event-actions">
-                <.link patch={~p"/correspondence/calendar/events/#{value(event, :id)}/edit"}>Edit</.link>
-                <button
-                  :if={!truthy?(value(event, :hidden))}
-                  type="button"
-                  phx-click="hide_calendar_event"
-                  phx-value-id={value(event, :id)}
-                  phx-value-date={occurrence_date(event)}
-                >Hide {if recurring?(event), do: "this date", else: "event"}</button>
-                <button
-                  :if={!truthy?(value(event, :hidden)) && recurring?(event)}
-                  type="button"
-                  phx-click="hide_calendar_series"
-                  phx-value-id={value(event, :id)}
-                >Hide series</button>
-                <button
-                  :if={truthy?(value(event, :hidden)) && truthy?(value(event, :series_hidden))}
-                  type="button"
-                  phx-click="restore_calendar_series"
-                  phx-value-id={value(event, :id)}
-                >{if recurring?(event), do: "Show series", else: "Show event"}</button>
-                <button
-                  :if={truthy?(value(event, :hidden)) && !truthy?(value(event, :series_hidden))}
-                  type="button"
-                  phx-click="restore_calendar_event"
-                  phx-value-id={value(event, :id)}
-                  phx-value-date={occurrence_date(event)}
-                >Restore this date</button>
-              </div>
-            </article>
-          </section>
-          <p :if={@agenda_more?} class="corr-calendar-more-occurrences">
-            Showing the next 40 occurrences.
-          </p>
+          <header class="corr-calendar-agenda-heading">
+            <h2 id="calendar-agenda-heading">
+              {if @selected_date, do: Calendar.strftime(@selected_date, "%B %-d"), else: "Coming up"}
+            </h2>
+            <.link
+              :if={@selected_date}
+              patch={month_path(@today, @query, @include_cancelled, @include_hidden)}
+              class="corr-calendar-all-upcoming"
+            >All upcoming dates</.link>
+          </header>
+          <div
+            id="calendar-agenda-events"
+            class="corr-calendar-agenda-events"
+            tabindex="0"
+            role="region"
+            aria-label="Calendar events"
+          >
+            <p :if={@agenda == []} class="corr-calendar-empty">
+              <%= if @selected_date do %>
+                Nothing planned for this day.
+              <% else %>
+                No upcoming events.
+                <.link patch={~p"/correspondence/calendar/import"}>Import events</.link>
+              <% end %>
+            </p>
+            <section :for={{date, events} <- @agenda} class="corr-calendar-agenda-day">
+              <h3>{Calendar.strftime(date, "%A, %B %-d")}</h3>
+              <article
+                :for={event <- events}
+                class={"corr-calendar-event status-#{value(event, :status) || "scheduled"}"}
+              >
+                <p :if={event_range(event)} class="corr-calendar-event-range">{event_range(event)}</p>
+                <span class="corr-calendar-event-time">{event_time(event)}</span>
+                <span :if={value(event, :recurrence_label)} class="corr-calendar-recurrence">{value(
+                  event,
+                  :recurrence_label
+                )}</span>
+                <h4>{value(event, :title)}</h4>
+                <p :if={value(event, :category)} class="corr-calendar-category">
+                  {category_label(value(event, :category))}
+                </p>
+                <p :if={value(event, :timezone)} class="corr-calendar-timezone">
+                  {value(event, :timezone)}
+                </p>
+                <p :if={value(event, :venue)} class="corr-calendar-venue">
+                  {value(event, :venue)}<span :if={value(event, :address)}> · {value(event, :address)}</span>
+                </p>
+                <p :if={value(event, :status) == "cancelled"} class="corr-calendar-cancelled-label">
+                  Cancelled
+                </p>
+                <p :if={value(event, :notes)} class="corr-calendar-notes">{value(event, :notes)}</p>
+                <a
+                  :if={safe_url(value(event, :url))}
+                  href={safe_url(value(event, :url))}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >Event details ↗</a>
+                <div class="corr-calendar-event-actions">
+                  <.link patch={~p"/correspondence/calendar/events/#{value(event, :id)}/edit"}>Edit</.link>
+                  <button
+                    :if={!truthy?(value(event, :hidden))}
+                    type="button"
+                    phx-click="hide_calendar_event"
+                    phx-value-id={value(event, :id)}
+                    phx-value-date={occurrence_date(event)}
+                  >Hide {if recurring?(event), do: "this date", else: "event"}</button>
+                  <button
+                    :if={!truthy?(value(event, :hidden)) && recurring?(event)}
+                    type="button"
+                    phx-click="hide_calendar_series"
+                    phx-value-id={value(event, :id)}
+                  >Hide series</button>
+                  <button
+                    :if={truthy?(value(event, :hidden)) && truthy?(value(event, :series_hidden))}
+                    type="button"
+                    phx-click="restore_calendar_series"
+                    phx-value-id={value(event, :id)}
+                  >{if recurring?(event), do: "Show series", else: "Show event"}</button>
+                  <button
+                    :if={truthy?(value(event, :hidden)) && !truthy?(value(event, :series_hidden))}
+                    type="button"
+                    phx-click="restore_calendar_event"
+                    phx-value-id={value(event, :id)}
+                    phx-value-date={occurrence_date(event)}
+                  >Restore this date</button>
+                </div>
+              </article>
+            </section>
+            <p :if={@agenda_more?} class="corr-calendar-more-occurrences">
+              Showing the next 40 occurrences.
+            </p>
+          </div>
         </aside>
       </div>
     </section>
