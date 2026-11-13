@@ -1,6 +1,8 @@
 defmodule Still.Correspondence.PacketNotes do
   @moduledoc "Ongoing, independently versioned notes attached to a correspondence packet."
 
+  import Ecto.Query
+
   alias Still.{Correspondence, LocalRecord, Repo, Storage}
   alias Still.Writing.CollectionLock
 
@@ -23,6 +25,27 @@ defmodule Still.Correspondence.PacketNotes do
       end)
     end
   end
+
+  @doc "Reads notes for a set of validated packets with one scoped query."
+  def bodies(location, packets) when is_list(packets) do
+    with {:ok, active} <- active_location(location) do
+      ids = packets |> Enum.map(&Map.get(&1, :id)) |> Enum.filter(&is_binary/1) |> Enum.uniq()
+      fallbacks = Map.new(packets, &{Map.get(&1, :id), Map.get(&1, :preparation_notes) || ""})
+
+      if ids == [] do
+        {:ok, fallbacks}
+      else
+        CollectionLock.with_lock(Repo.config()[:database], fn ->
+          with :ok <- ensure_current_scope(active.scope),
+               {:ok, saved} <- saved_bodies(active.scope, ids) do
+            {:ok, Map.merge(fallbacks, saved)}
+          end
+        end)
+      end
+    end
+  end
+
+  def bodies(_, _), do: {:error, "Reopen Correspondence before reading packet notes."}
 
   @doc "Saves ongoing notes with stale-edit protection and a preserved prior version."
   def save(location, packet_id, body, expected_token)
@@ -127,6 +150,21 @@ defmodule Still.Correspondence.PacketNotes do
           {:error, message} -> {:error, message}
         end
     end
+  end
+
+  defp saved_bodies(scope, ids) do
+    rows =
+      Repo.all(
+        from r in LocalRecord,
+          where: r.scope == ^scope and r.kind == @kind and r.record_key in ^ids
+      )
+
+    Enum.reduce_while(rows, {:ok, %{}}, fn row, {:ok, acc} ->
+      case decode_notes(row, row.record_key) do
+        {:ok, notes} -> {:cont, {:ok, Map.put(acc, row.record_key, notes.body)}}
+        {:error, message} -> {:halt, {:error, message}}
+      end
+    end)
   end
 
   defp decode_notes(%LocalRecord{data: %{"packet_id" => id, "body" => body}} = row, id)

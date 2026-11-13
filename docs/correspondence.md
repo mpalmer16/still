@@ -48,10 +48,13 @@ participation across packets, so a newer preparation or rejection cannot hide
 an existing submission or acceptance. Open a work for its current text,
 earlier versions, and exact sent copies.
 
-Packets can be searched by title, destination, or their contents, filtered by
+Packets can be searched by title, destination, their contents, latest saved private
+notes, cover letters, and recorded replies, filtered by
 status and whether a destination is chosen, and sorted by activity, title,
 destination, or sent date. Sent packet contents and destination names come from
-the historical record. **Prepare a packet** can begin before any place is chosen.
+the historical record. Drafts search their current linked or inline letter; sent
+packets search the exact letter recorded when sent. Clearing saved notes removes
+their earlier wording from search. **Prepare a packet** can begin before any place is chosen.
 
 **Places** is a single searchable table. Search names, keywords, descriptions, guidelines,
 and your notes. Combine filters for active or inactive places, kept nearby, reach,

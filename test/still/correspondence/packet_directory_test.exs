@@ -89,4 +89,31 @@ defmodule Still.Correspondence.PacketDirectoryTest do
 
     assert dest_first.packet.id == "newer"
   end
+
+  test "correspondence text combines with existing terms within each packet and its filters" do
+    packets = [
+      %{id: "draft", title: "April", piece_ids: ["poem"], status: "preparing"},
+      %{id: "other", title: "Other", piece_ids: [], status: "declined"}
+    ]
+
+    texts = %{
+      "draft" => ["Café\n\tconversation", "Dear editors", ["Return in autumn"]],
+      "other" => ["Only here: winter"]
+    }
+
+    result =
+      PacketDirectory.browse(
+        packets,
+        [],
+        [%{id: "poem", body: "A heron waits"}],
+        %{q: "CAFE\u0301 heron editors autumn", status: "preparing"},
+        texts
+      )
+
+    assert Enum.map(result.rows, & &1.packet.id) == ["draft"]
+    assert PacketDirectory.browse(packets, [], [], %{q: "conversation winter"}, texts).rows == []
+
+    assert PacketDirectory.browse(packets, [], [], %{q: "editors", status: "declined"}, texts).rows ==
+             []
+  end
 end

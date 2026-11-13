@@ -43,6 +43,7 @@ recovery copy in the same browser or Mac profile. **Keep nearby** is a personal 
 for publications you want to return to in Places. Home follows preparations,
 outstanding submissions, and recent responses. Works, Places, and Packets share searchable,
 filterable tables. Duplicate a packet for another destination while retaining the original send.
+Packets search also finds saved private notes, cover letters, and recorded replies.
 
 Correspondence also has a local calendar and an event list. Add or edit your own
 events, repeat them, hide individual dates or a whole series, and review curated

@@ -337,7 +337,8 @@ defmodule StillWeb.CorrespondenceLive do
             socket.assigns.overview.packets,
             socket.assigns.overview.journals,
             Map.get(socket.assigns.overview, :packet_pieces, socket.assigns.overview.pieces),
-            params
+            params,
+            Map.get(socket.assigns.overview, :packet_search_texts, %{})
           )
       )
 
@@ -462,7 +463,12 @@ defmodule StillWeb.CorrespondenceLive do
   end
 
   defp load_overview(socket, location, action) do
-    case Correspondence.focused_overview(location) do
+    result =
+      if action == :packets,
+        do: Correspondence.packet_directory_overview(location),
+        else: Correspondence.focused_overview(location)
+
+    case result do
       {:ok, overview} ->
         {events, events_problem} =
           if action == :home do
@@ -1104,7 +1110,8 @@ defmodule StillWeb.CorrespondenceLive do
         socket.assigns.overview.packets,
         socket.assigns.overview.journals,
         Map.get(socket.assigns.overview, :packet_pieces, socket.assigns.overview.pieces),
-        filters
+        filters,
+        Map.get(socket.assigns.overview, :packet_search_texts, %{})
       )
 
     {:noreply, push_patch(socket, to: directory_path(:packets, directory.filters), replace: true)}

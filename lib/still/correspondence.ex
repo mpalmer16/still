@@ -103,12 +103,17 @@ defmodule Still.Correspondence do
 
   def focused_overview(location, keep_ids \\ []), do: load_overview(location, keep_ids)
 
-  defp load_overview(location, selection) do
+  @doc "The packet directory with current saved correspondence text for local search."
+  def packet_directory_overview(location), do: load_overview(location, [], true)
+
+  defp load_overview(location, selection, include_packet_text? \\ false) do
     with {:ok, dirs} <- store(location),
          {:ok, journals} <- records(dirs, :journal),
          {:ok, packets} <- records(dirs, :packet),
          {:ok, packets} <- attach_snapshots(packets, dirs),
-         {:ok, pieces} <- Poems.list(location) do
+         {:ok, pieces} <- Poems.list(location),
+         {:ok, packet_search_texts} <-
+           packet_search_texts(location, packets, pieces, include_packet_text?) do
       packet_ids = MapSet.new(Enum.flat_map(packets, & &1.piece_ids))
       packet_pieces = Enum.filter(pieces, &MapSet.member?(packet_ids, &1.id))
 
@@ -134,8 +139,35 @@ defmodule Still.Correspondence do
          journals: Enum.sort_by(journals, &String.downcase(&1.name)),
          packets: Enum.sort_by(packets, & &1.updated_at, :desc),
          pieces: pieces,
-         packet_pieces: packet_pieces
+         packet_pieces: packet_pieces,
+         packet_search_texts: packet_search_texts
        }}
+    end
+  end
+
+  defp packet_search_texts(_location, _packets, _pieces, false), do: {:ok, %{}}
+
+  defp packet_search_texts(location, packets, pieces, true) do
+    with {:ok, notes} <- Still.Correspondence.PacketNotes.bodies(location, packets) do
+      works = Map.new(pieces, &{&1.id, &1})
+
+      {:ok,
+       Map.new(packets, fn packet ->
+         letter =
+           cond do
+             packet.snapshot_ref ->
+               packet.snapshot.cover_letter
+
+             packet.cover_letter_piece_id ->
+               Map.get(works, packet.cover_letter_piece_id, %{})[:body]
+
+             true ->
+               packet.cover_letter
+           end
+
+         {packet.id,
+          [Map.fetch!(notes, packet.id), letter, Enum.map(packet.events, &Map.get(&1, :note))]}
+       end)}
     end
   end
 

@@ -179,7 +179,7 @@ defmodule StillWeb.CorrespondenceDirectories do
             type="search"
             name="packets[q]"
             value={@packets.filters["q"]}
-            placeholder="Title, destination, or work"
+            placeholder="Title, writing, notes, or reply"
             phx-debounce="250"
             autocomplete="off"
           />

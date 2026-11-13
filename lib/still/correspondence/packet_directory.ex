@@ -4,7 +4,7 @@ defmodule Still.Correspondence.PacketDirectory do
   @statuses ~w(all preparing submitted awaiting declined accepted withdrawn)
   @sorts ~w(recent title destination sent_date)
 
-  def browse(packets, journals, pieces, params \\ %{}) do
+  def browse(packets, journals, pieces, params \\ %{}, correspondence_texts \\ %{}) do
     f = canonical(params)
     places = Map.new(list(journals), &{get(&1, :id), &1})
     works = Map.new(list(pieces), &{get(&1, :id), &1})
@@ -27,6 +27,7 @@ defmodule Still.Correspondence.PacketDirectory do
             Enum.map(ids, &(Map.get(snapshot_by_id, &1) || Map.get(works, &1)))
             |> Enum.reject(&is_nil/1),
           piece_count: length(ids),
+          correspondence_text: Map.get(correspondence_texts, get(packet, :id), []),
           submitted_on: submitted_date(packet),
           date: display_date(packet)
         }
@@ -66,6 +67,7 @@ defmodule Still.Correspondence.PacketDirectory do
         get(row.packet, :title),
         row.destination_name,
         get(row.packet, :status),
+        row.correspondence_text,
         Enum.map(
           row.pieces,
           &[get(&1, :title), get(&1, :body), get(&1, :notebook), get(&1, :list_label)]
