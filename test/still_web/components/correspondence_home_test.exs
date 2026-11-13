@@ -106,7 +106,7 @@ defmodule StillWeb.CorrespondenceHomeTest do
 
     assert html =~ "Coming up"
     assert html =~ ~s(href="/correspondence/calendar")
-    assert html =~ "18 Nov 2026 · 18:30"
+    assert html =~ "18 Nov 2026 · 6:30 pm"
     assert html =~ "Poetry reading"
     assert html =~ "North Window Books"
     assert html =~ "Every third Wednesday"

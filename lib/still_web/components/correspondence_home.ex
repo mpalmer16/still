@@ -2,6 +2,8 @@ defmodule StillWeb.CorrespondenceHome do
   @moduledoc "The quiet overview for correspondence packets and their history."
   use StillWeb, :html
 
+  alias StillWeb.CalendarTime
+
   attr :overview, :map, required: true
   attr :desk, :map, default: %{}
   attr :icons, :map, default: %{}
@@ -279,10 +281,7 @@ defmodule StillWeb.CorrespondenceHome do
   defp sort_date(packet), do: value(packet, :updated_at, "") |> to_string()
 
   defp event_time(event) do
-    case value(event, :start_time) do
-      time when is_binary(time) and time != "" -> time
-      _ -> "Time not provided"
-    end
+    CalendarTime.format(value(event, :start_time)) || "Time not provided"
   end
 
   defp calendar_day_path(event) do

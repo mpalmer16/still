@@ -26,7 +26,7 @@ defmodule StillWeb.CorrespondenceCalendarTest do
     assert html =~ "Sun"
     assert length(Regex.scan(~r/class="corr-calendar-day(?:\s|\")/, html)) == 42
     assert html =~ "Book launch"
-    assert html =~ "18:30–20:00"
+    assert html =~ "6:30 pm–8:00 pm"
     assert html =~ "Time not provided"
     assert html =~ "North Room"
     assert html =~ "Central time"
@@ -129,6 +129,8 @@ defmodule StillWeb.CorrespondenceCalendarTest do
         events: [
           event("Weekly reading", "2026-11-13", %{
             id: "rec-1",
+            start_time: "09:05",
+            end_time: "12:00",
             recurrence: %{frequency: "weekly"},
             recurrence_label: "Every week"
           }),
@@ -137,6 +139,7 @@ defmodule StillWeb.CorrespondenceCalendarTest do
       })
 
     assert html =~ ~s(id="calendar-events-table")
+    assert html =~ "9:05 am–12:00 pm"
     assert html =~ ~s(name="calendar[hidden]")
     assert html =~ ~s(name="calendar[range]")
 

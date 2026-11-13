@@ -51,9 +51,11 @@ defmodule StillWeb.CalendarLiveTest do
 
     assert {:ok, [event]} = Calendar.list(loc)
     assert event.title == "My reading"
+    assert event.start_time == "19:00"
     assert event.recurrence["frequency"] == "weekly"
     assert String.starts_with?(event.external_id, "still-")
     assert has_element?(view, ".corr-calendar-event", "My reading")
+    assert has_element?(view, ".corr-calendar-event-time", "7:00 pm")
     assert has_element?(view, ".corr-calendar-recurrence", "Every week")
     refute has_element?(view, "script", "authored notes")
 
@@ -122,16 +124,19 @@ defmodule StillWeb.CalendarLiveTest do
       "external_id" => "cal-reading",
       "title" => "Curated reading",
       "date" => date,
+      "start_time" => "19:00",
       "notes" => "Old note",
       "recurrence" => %{"frequency" => "weekly"}
     }
 
     review(view, Jason.encode!([row]))
     assert has_element?(view, "#calendar-import-preview", "1 new")
+    assert has_element?(view, "#calendar-import-preview", "7:00 pm")
     assert {:ok, []} = Calendar.list(loc)
     view |> element("#confirm-calendar-import") |> render_click()
     assert has_element?(view, "#calendar-import-result", "Added 1")
     {:ok, [event]} = Calendar.list(loc)
+    assert event.start_time == "19:00"
     {:ok, _} = Calendar.set_hidden(loc, event.id, event.token, true)
     changed = row |> Map.put("title", "Updated reading") |> Map.delete("notes")
     review(view, Jason.encode!([changed]))

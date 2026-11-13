@@ -264,12 +264,40 @@ defmodule StillWeb.CorrespondenceCalendar do
         <.link
           patch={month_path(@previous_month, @query, @include_cancelled, @include_hidden)}
           aria-label="Previous month"
-        >‹</.link>
+          class="corr-calendar-month-step"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="m15 6-6 6 6 6" />
+          </svg>
+        </.link>
         <h2>{Calendar.strftime(@month_start, "%B %Y")}</h2>
         <.link
           patch={month_path(@next_month, @query, @include_cancelled, @include_hidden)}
           aria-label="Next month"
-        >›</.link>
+          class="corr-calendar-month-step"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="m9 6 6 6-6 6" />
+          </svg>
+        </.link>
         <.link
           patch={month_path(@today, @query, @include_cancelled, @include_hidden)}
           class="corr-text-link"
@@ -446,8 +474,8 @@ defmodule StillWeb.CorrespondenceCalendar do
   defp event_date(_), do: nil
 
   defp event_time(event) do
-    start = value(event, :start_time)
-    finish = value(event, :end_time)
+    start = StillWeb.CalendarTime.format(value(event, :start_time))
+    finish = StillWeb.CalendarTime.format(value(event, :end_time))
 
     cond do
       start && finish -> "#{start}–#{finish}"

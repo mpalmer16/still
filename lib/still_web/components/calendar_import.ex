@@ -222,7 +222,7 @@ defmodule StillWeb.CalendarImport do
     <dl>
       <div :for={{key, label} <- @fields}>
         <dt>{label}</dt>
-        <dd>{if @attrs[key] in [nil, ""], do: "Not set", else: @attrs[key]}</dd>
+        <dd>{display_value(key, @attrs[key])}</dd>
       </div>
       <div>
         <dt>Recurrence</dt>
@@ -234,6 +234,13 @@ defmodule StillWeb.CalendarImport do
     </dl>
     """
   end
+
+  defp display_value(_key, value) when value in [nil, ""], do: "Not set"
+
+  defp display_value(key, value) when key in ["start_time", "end_time"],
+    do: StillWeb.CalendarTime.format(value)
+
+  defp display_value(_key, value), do: value
 
   defp upload_error(:too_large), do: "The file is too large. Choose a file no larger than 1 MB."
   defp upload_error(:not_accepted), do: "Choose a .json file."
