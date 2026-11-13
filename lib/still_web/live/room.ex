@@ -66,6 +66,13 @@ defmodule StillWeb.Room do
   end
 
   defp handle_event("close_room", _params, socket) do
+    fallback =
+      if socket.assigns.writing_menu_open,
+        do: %{id: "writing-menu-toggle", clear_return: true},
+        else: %{}
+
+    focus = editor_focus(socket, fallback)
+
     {:halt,
      socket
      |> assign(:light_open, false)
@@ -73,7 +80,7 @@ defmodule StillWeb.Room do
      |> assign(:width_open, false)
      |> assign(:landscape_open, false)
      |> assign(:writing_menu_open, false)
-     |> push_event("room-focus", editor_focus(socket))}
+     |> push_event("room-focus", focus)}
   end
 
   defp handle_event("toggle_writing_menu", _, socket) do
@@ -166,13 +173,16 @@ defmodule StillWeb.Room do
      |> assign(:light_open, false)
      |> assign(:letters_open, false)
      |> assign(:width_open, false)
-     |> push_event("room-focus", editor_focus(socket))}
+     |> push_event(
+       "room-focus",
+       editor_focus(socket, %{id: "writing-menu-toggle", clear_return: true})
+     )}
   end
 
-  defp editor_focus(socket) do
+  defp editor_focus(socket, fallback) do
     if Map.get(socket.assigns, :editing, false) && Map.has_key?(socket.assigns, :piece),
       do: %{id: "file-writing-body", clear_return: true},
-      else: %{}
+      else: fallback
   end
 
   defp parse_integer(value) when is_binary(value), do: Integer.parse(value)

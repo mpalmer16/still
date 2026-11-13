@@ -63,6 +63,9 @@ Sometimes the page stays quiet.
 
 ### Read a notebook
 
+The notebook catalog lists Current, Early, then Other notebooks. Its bottom-right
+**Menu** holds **Add a notebook**, the current-notebook choice, **Light**, and **Letters**.
+
 **Notebooks** opens each notebook with its index beside the words. Move through
 its pages in order, return to your reading place, or choose **Wander with this**.
 **Find** opens the piece in its notebook and keeps the route back to your search results.

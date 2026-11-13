@@ -10,6 +10,7 @@ defmodule StillWeb.Layouts do
   attr :room_letters, :integer, default: 50
   attr :letters_open, :boolean, default: false
   attr :writing_controls, :boolean, default: false
+  attr :notebook_controls, :boolean, default: false
   attr :writing_menu_open, :boolean, default: false
   attr :writing_picker_open, :boolean, default: false
   attr :file_exports, :boolean, default: false
@@ -39,6 +40,9 @@ defmodule StillWeb.Layouts do
   slot :writing_overlay
 
   def app(assigns) do
+    assigns =
+      assign(assigns, :menu_controls, assigns.writing_controls || assigns.notebook_controls)
+
     ~H"""
     <div
       id={if @file_exports, do: "writing-export-status"}
@@ -51,9 +55,9 @@ defmodule StillWeb.Layouts do
       <div class="room-light" aria-hidden="true"></div>
       <div
         id="room-content"
-        inert={@landscape_open || @writing_picker_open || (@writing_controls && @writing_menu_open)}
+        inert={@landscape_open || @writing_picker_open || (@menu_controls && @writing_menu_open)}
         aria-hidden={
-          if @landscape_open || @writing_picker_open || (@writing_controls && @writing_menu_open),
+          if @landscape_open || @writing_picker_open || (@menu_controls && @writing_menu_open),
             do: "true"
         }
       >
@@ -95,7 +99,7 @@ defmodule StillWeb.Layouts do
         <main id="page-content" tabindex="-1">{render_slot(@inner_block)}</main>
       </div>
 
-      <%= if @writing_controls do %>
+      <%= if @menu_controls do %>
         <button
           id="writing-menu-toggle"
           type="button"
@@ -124,13 +128,19 @@ defmodule StillWeb.Layouts do
           phx-key="Escape"
         >
           <header class="writing-menu-heading">
-            <h2 id="writing-menu-heading">Writing</h2>
+            <h2 id="writing-menu-heading">
+              {if @notebook_controls, do: "Notebooks", else: "Writing"}
+            </h2>
             <button
               id="writing-menu-close"
               type="button"
               phx-click="close_writing_menu"
               class="quiet-link"
-              aria-label="Close menu and return to writing"
+              aria-label={
+                if @notebook_controls,
+                  do: "Close menu and return to notebooks",
+                  else: "Close menu and return to writing"
+              }
             >Close</button>
           </header>
           {render_slot(@writing_menu)}
@@ -219,7 +229,7 @@ defmodule StillWeb.Layouts do
   defp room_tools(assigns) do
     ~H"""
     <div
-      class={if @writing_controls, do: "writing-menu-room-controls", else: "room-light-control"}
+      class={if @menu_controls, do: "writing-menu-room-controls", else: "room-light-control"}
       inert={@landscape_open}
     >
       <button
@@ -326,7 +336,7 @@ defmodule StillWeb.Layouts do
       type="button"
       phx-click="toggle_landscape"
       class={
-        if @writing_controls,
+        if @menu_controls,
           do: "quiet-link writing-menu-room-link",
           else: "place-whisper room-control"
       }
@@ -337,14 +347,14 @@ defmodule StillWeb.Layouts do
       inert={@landscape_open}
       aria-hidden={if @landscape_open, do: "true"}
     >
-      <span :if={!@writing_controls} class="place-name">{Still.Writing.Geography.reference_label(
+      <span :if={!@menu_controls} class="place-name">{Still.Writing.Geography.reference_label(
         @place,
         Map.get(@place, :source_number)
       )}</span>
-      <span :if={!@writing_controls && region_label(@place.region) != ""} class="place-region">{region_label(
+      <span :if={!@menu_controls && region_label(@place.region) != ""} class="place-region">{region_label(
         @place.region
       )}</span>
-      <span :if={@writing_controls}>Explore the room</span>
+      <span :if={@menu_controls}>Explore the room</span>
     </button>
     """
   end

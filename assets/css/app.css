@@ -192,6 +192,7 @@ html:has(#reader-packet-dialog) { overflow: hidden; }
 .more-link:hover { color: var(--ink); }
 .archive-foot { display: flex; justify-content: flex-end; padding-top: 35px; }
 .flash-stack { position: fixed; bottom: 24px; right: 24px; z-index: 10; }
+.site-frame:has(.notebook-room) > .flash-stack { right: auto; left: var(--room-gutter); }
 .flash { max-width: 320px; padding: 15px 19px; border: 1px solid #b7c7dd38; background: #1b2534; color: var(--ink); font-size: 13px; line-height: 1.5; box-shadow: 0 15px 40px #0004; }
 .flash[hidden] { display: none; }
 
@@ -611,6 +612,9 @@ html:has(#writing-menu:not([hidden])) { overflow: hidden; }
 .writing-menu-room-controls input[type=range] { flex: 1 1 140px; width: 140px; min-width: 0; }
 .writing-menu-room-link { margin-top: 10px; color: var(--muted); font-size: 13px; }
 .writing-menu .submission-focus { margin: 16px 0; }
+.notebook-menu-details { margin-top: 18px; }
+.notebook-menu-details > summary { color: var(--soft); font-size: 14px; }
+.notebook-menu-details .still-form-panel { margin: 14px 0 0; padding: 0; border: 0; background: transparent; }
 .writing-file-actions { margin: 12px 0 22px; padding: 18px 0; border-block: 1px solid rgb(177 195 221 / .12); }
 .writing-file-actions label { display: block; margin-bottom: 8px; font-size: 12px; color: var(--soft); }
 .writing-rename-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }

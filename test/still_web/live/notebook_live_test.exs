@@ -10,6 +10,7 @@ defmodule StillWeb.NotebookLiveTest do
     File.mkdir_p!(Path.join(root, "writing"))
     assert {:ok, _} = Still.Storage.set_folder(Path.join(root, "writing"))
     {:ok, view, _} = live(conn, ~p"/notebooks")
+    view |> element("#writing-menu-toggle") |> render_click()
     view |> form("#new-notebook", notebook: %{label: "Poems", numbered: false}) |> render_submit()
     assert Writing.notebook("Poems").numbered == false
     assert has_element?(view, ".notebook-order", "without notebook numbers")
@@ -63,33 +64,64 @@ defmodule StillWeb.NotebookLiveTest do
     on_exit(fn -> File.rm_rf!(folder) end)
     assert {:ok, _} = Still.Storage.set_folder(folder)
     {:ok, view, _html} = live(conn, ~p"/notebooks")
+    view |> element("#writing-menu-toggle") |> render_click()
 
-    view
-    |> form("#new-notebook",
-      notebook: %{
-        label: "Field book 07c",
-        key: "Field books/07c",
-        relative_path: "Field books/07c",
-        series: "Field books",
-        number_label: "07c",
-        description: "Pocket notebook",
-        pen: "Blue pencil"
-      }
-    )
-    |> render_submit()
+    attrs = %{
+      label: "Field book 07c",
+      key: "Field books/07c",
+      relative_path: "Field books/07c",
+      series: "Field books",
+      number_label: "07c",
+      description: "Pocket notebook",
+      pen: "Blue pencil"
+    }
+
+    view |> form("#new-notebook", notebook: attrs) |> render_change()
+    view |> form("#new-notebook", notebook: attrs) |> render_submit()
 
     notebook = Writing.notebook("Field books/07c")
     assert File.dir?(Path.join(folder, "Field books/07c"))
     assert notebook.entries == []
     assert Writing.notebooks() |> Enum.any?(&(&1.key == notebook.key))
+    assert has_element?(view, "#writing-menu[hidden]")
+    assert has_element?(view, "#notebook-index")
 
+    view |> element("#writing-menu-toggle") |> render_click()
+    assert has_element?(view, "#writing-menu:not([hidden])")
+    assert has_element?(view, "#new-notebook input[name='notebook[label]']:not([value])")
+
+    view |> element("#writing-menu-close") |> render_click()
     view |> element(".notebook-back") |> render_click()
+    view |> element("#writing-menu-toggle") |> render_click()
 
     view
     |> element("form[phx-submit=choose_current]")
     |> render_submit(%{"id" => to_string(notebook.id)})
 
     assert Writing.current_notebook().id == notebook.id
+  end
+
+  @tag :tmp_dir
+  test "the notebook menu keeps an invalid Add a notebook form available", %{
+    conn: conn,
+    tmp_dir: root
+  } do
+    folder = Path.join(root, "writing")
+    File.mkdir_p!(folder)
+    assert {:ok, _} = Still.Storage.set_folder(folder)
+    {:ok, view, _html} = live(conn, ~p"/notebooks")
+
+    view |> element("#writing-menu-toggle") |> render_click()
+
+    view
+    |> form("#new-notebook", notebook: %{label: "Poems", year: "0"})
+    |> render_submit()
+
+    assert has_element?(view, "#writing-menu:not([hidden])")
+    assert has_element?(view, "#new-notebook")
+    assert has_element?(view, "#new-notebook input[name='notebook[label]'][value='Poems']")
+    assert has_element?(view, "#new-notebook [role=alert]")
+    assert has_element?(view, "#add-notebook-details")
   end
 
   test "the catalog leads to every List in its original order without taking Now", %{conn: conn} do

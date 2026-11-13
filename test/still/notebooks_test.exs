@@ -116,12 +116,12 @@ defmodule Still.NotebooksTest do
     piece("No source place:", notebook: nil, source_order: 0)
 
     assert Enum.map(Writing.notebooks(), & &1.key) == [
-             @lists,
-             "Early Notebooks/Lists 2",
-             "Early Notebooks/Lists 10",
              "Current Notebooks/2025 Oct - Dec",
              @notebook,
-             "Current Notebooks/2026/Notebook 10"
+             "Current Notebooks/2026/Notebook 10",
+             @lists,
+             "Early Notebooks/Lists 2",
+             "Early Notebooks/Lists 10"
            ]
 
     notebook = Writing.notebook(@notebook)
@@ -214,7 +214,9 @@ defmodule Still.NotebooksTest do
     catalog = Writing.notebooks()
     assert length(catalog) == 10
     assert Enum.sum(Enum.map(catalog, & &1.count)) == 540
-    assert Enum.map(Enum.take(catalog, 8), & &1.label) == Enum.map(1..8, &"Lists #{&1}")
+
+    assert Enum.map(catalog, & &1.label) ==
+             ["2025 Oct - Dec", "Notebook 1"] ++ Enum.map(1..8, &"Lists #{&1}")
 
     first = Writing.notebook(@lists)
     assert first.count == 137

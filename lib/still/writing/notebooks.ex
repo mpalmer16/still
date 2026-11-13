@@ -417,8 +417,8 @@ defmodule Still.Writing.Notebooks do
     if is_integer(value) and value >= 0, do: value
   end
 
-  defp region_order(:early), do: 0
-  defp region_order(:current), do: 1
+  defp region_order(:current), do: 0
+  defp region_order(:early), do: 1
   defp region_order(_region), do: 2
 
   defp natural_key(key) do

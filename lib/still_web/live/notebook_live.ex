@@ -21,20 +21,32 @@ defmodule StillWeb.NotebookLive do
   end
 
   @impl true
+  def handle_event("change_notebook", %{"notebook" => attrs}, socket) do
+    {:noreply, assign(socket, :notebook_form, to_form(Notebook.changeset(%Notebook{}, attrs)))}
+  end
+
   def handle_event("create_notebook", %{"notebook" => attrs}, socket) do
     case Writing.create_folder_notebook(attrs) do
       {:ok, notebook} ->
         {:noreply,
          socket
          |> put_flash(:info, "Notebook added.")
+         |> assign(:writing_menu_open, false)
+         |> assign(:light_open, false)
+         |> assign(:letters_open, false)
+         |> assign(:notebook_form, to_form(Notebook.changeset(%Notebook{}, %{})))
          |> assign(:notebooks, Writing.notebooks())
-         |> push_patch(to: ~p"/notebooks?notebook=#{notebook.key}")}
+         |> push_patch(to: ~p"/notebooks?notebook=#{notebook.key}")
+         |> push_event("room-focus", %{id: "page-content", clear_return: true})}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :notebook_form, to_form(changeset))}
 
       {:error, message} ->
-        {:noreply, put_flash(socket, :error, message)}
+        {:noreply,
+         socket
+         |> assign(:notebook_form, to_form(Notebook.changeset(%Notebook{}, attrs)))
+         |> put_flash(:error, message)}
     end
   end
 
@@ -162,6 +174,8 @@ defmodule StillWeb.NotebookLive do
       light_open={@light_open}
       room_letters={@room_letters}
       letters_open={@letters_open}
+      notebook_controls
+      writing_menu_open={@writing_menu_open}
       landscape_open={@landscape_open}
       places={@places}
       place={@place}
@@ -169,6 +183,106 @@ defmodule StillWeb.NotebookLive do
       return_beside={@return_beside}
       return_list={@return_list}
     >
+      <:writing_menu>
+        <details
+          id="add-notebook-details"
+          class="notebook-menu-details"
+          phx-mounted={JS.ignore_attributes(["open"])}
+        >
+          <summary>Add a notebook</summary>
+          <.form
+            for={@notebook_form}
+            id="new-notebook"
+            phx-change="change_notebook"
+            phx-submit="create_notebook"
+            class="still-form-panel"
+          >
+            <label>Notebook name
+            <input
+              name="notebook[label]"
+              value={@notebook_form[:label].value}
+              required
+              maxlength="200"
+              placeholder="Notebook 2"
+            /></label>
+            <details class="still-form-options">
+              <summary>Folder and notebook details</summary>
+              <div class="still-form-grid">
+                <label class="still-field-wide">
+                  Folder inside your writing folder
+                  <input
+                    name="notebook[relative_path]"
+                    value={@notebook_form[:relative_path].value}
+                    maxlength="1024"
+                    placeholder="Uses the notebook name by default"
+                  />
+                </label>
+                <label class="still-field-wide">Original notebook label
+                <input name="notebook[key]" value={@notebook_form[:key].value} maxlength="1024" /></label>
+                <label class="still-field-wide">
+                  <input type="hidden" name="notebook[numbered]" value="false" />
+                  <input
+                    type="checkbox"
+                    name="notebook[numbered]"
+                    value="true"
+                    checked={@notebook_form[:numbered].value in [true, "true"]}
+                  /> Number new Lists automatically
+                  <span>Turn off for a collection of poems or other writing without notebook numbers.</span>
+                </label>
+                <label>Series
+                <input name="notebook[series]" value={@notebook_form[:series].value} maxlength="200" /></label>
+                <label>Year
+                <input
+                  name="notebook[year]"
+                  value={@notebook_form[:year].value}
+                  type="number"
+                  min="1"
+                  max="9999"
+                /></label>
+                <label>Number as written
+                <input
+                  name="notebook[number_label]"
+                  value={@notebook_form[:number_label].value}
+                  maxlength="100"
+                /></label>
+                <label>Pen
+                <input name="notebook[pen]" value={@notebook_form[:pen].value} maxlength="500" /></label>
+                <label class="still-field-wide">Description <textarea
+                  name="notebook[description]"
+                  rows="2"
+                >{@notebook_form[:description].value}</textarea></label>
+              </div>
+            </details>
+            <button class="still-form-action" type="submit">Add notebook</button>
+            <p :if={@notebook_form.source.action} role="alert">
+              That notebook could not be added. Check the details and use a distinct name or original label.
+            </p>
+          </.form>
+        </details>
+        <details
+          id="current-notebook-details"
+          class="notebook-menu-details"
+          phx-mounted={JS.ignore_attributes(["open"])}
+        >
+          <summary>Current notebook</summary>
+          <form phx-submit="choose_current" class="still-form-panel still-form-inline">
+            <label>
+              Current notebook
+              <select name="id">
+                <option value="">None selected</option>
+                <option
+                  :for={item <- Enum.filter(@notebooks, &Map.get(&1, :managed, false))}
+                  value={item.id}
+                  selected={item.current}
+                >
+                  {item.label}
+                </option>
+              </select>
+            </label>
+            <button class="still-form-action" type="submit">Choose</button>
+          </form>
+        </details>
+      </:writing_menu>
       <div class="notebook-room">
         <p :if={@problem} class="recovery-note" role="alert">{@problem}</p>
         <div :if={is_nil(@notebook)} class="notebook-heading">
@@ -204,67 +318,6 @@ defmodule StillWeb.NotebookLive do
                 </.link>
               </li>
             </ul>
-          </section>
-          <section class="notebook-region" aria-label="Add a notebook">
-            <h2 class="section-whisper">Add a notebook</h2>
-            <.form
-              for={@notebook_form}
-              id="new-notebook"
-              phx-submit="create_notebook"
-              class="still-form-panel"
-            >
-              <label>Notebook name
-              <input name="notebook[label]" required maxlength="200" placeholder="Notebook 2" /></label>
-              <details class="still-form-options">
-                <summary>Folder and notebook details</summary>
-                <div class="still-form-grid">
-                  <label class="still-field-wide">
-                    Folder inside your writing folder
-                    <input
-                      name="notebook[relative_path]"
-                      maxlength="1024"
-                      placeholder="Uses the notebook name by default"
-                    />
-                  </label>
-                  <label class="still-field-wide">Original notebook label
-                  <input name="notebook[key]" maxlength="1024" /></label>
-                  <label class="still-field-wide">
-                    <input type="hidden" name="notebook[numbered]" value="false" />
-                    <input type="checkbox" name="notebook[numbered]" value="true" checked />
-                    Number new Lists automatically
-                    <span>Turn off for a collection of poems or other writing without notebook numbers.</span>
-                  </label>
-                  <label>Series <input name="notebook[series]" maxlength="200" /></label>
-                  <label>Year <input name="notebook[year]" type="number" min="1" max="9999" /></label>
-                  <label>Number as written <input name="notebook[number_label]" maxlength="100" /></label>
-                  <label>Pen <input name="notebook[pen]" maxlength="500" /></label>
-                  <label class="still-field-wide">Description <textarea
-                    name="notebook[description]"
-                    rows="2"
-                  ></textarea></label>
-                </div>
-              </details>
-              <button class="still-form-action" type="submit">Add notebook</button>
-              <p :if={@notebook_form.source.action} role="alert">
-                That notebook could not be added. Check the details and use a distinct name or original label.
-              </p>
-            </.form>
-            <form phx-submit="choose_current" class="still-form-panel still-form-inline">
-              <label>
-                Current notebook
-                <select name="id">
-                  <option value="">None selected</option>
-                  <option
-                    :for={item <- Enum.filter(@notebooks, &Map.get(&1, :managed, false))}
-                    value={item.id}
-                    selected={item.current}
-                  >
-                    {item.label}
-                  </option>
-                </select>
-              </label>
-              <button class="still-form-action" type="submit">Choose</button>
-            </form>
           </section>
         </div>
 
@@ -453,7 +506,7 @@ defmodule StillWeb.NotebookLive do
   end
 
   defp regions,
-    do: [early: "Early notebooks", current: "Current notebooks", elsewhere: "Other notebooks"]
+    do: [current: "Current notebooks", early: "Early notebooks", elsewhere: "Other notebooks"]
 
   defp section_open?(notebook, section, selected_id) do
     length(notebook.sections) == 1 or not Map.get(notebook, :current, false) or
