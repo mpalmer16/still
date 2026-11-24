@@ -25,7 +25,7 @@ defmodule StillWeb.CorrespondenceEditorialTest do
   test "empty editorial spaces offer honest first steps and usable navigation", %{conn: conn} do
     {:ok, home, _} = live(conn, "/correspondence")
     assert has_element?(home, "#correspondence-home")
-    assert has_element?(home, "h1#home-heading", "Home")
+    assert has_element?(home, "h1#home-heading", "Correspondence")
     assert has_element?(home, ".corr-home-overview", "Works")
     assert has_element?(home, ".corr-home-overview", "Places")
     assert has_element?(home, ".corr-home-overview", "Packets")

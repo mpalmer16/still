@@ -136,13 +136,15 @@ defmodule StillWeb.CorrespondenceDirectories do
                   Also {state_summary(row.status_counts, row.status)}
                 </p>
               </td>
-              <td class="corr-directory-actions">
-                <.link patch={~p"/correspondence/writing/#{row.piece.id}"}>Open</.link><.link patch={
-                  ~p"/correspondence/packets/new?piece=#{row.piece.id}"
-                }>Prepare packet</.link><.link
-                  :if={row.latest_packet}
-                  patch={~p"/correspondence/packets/#{row.latest_packet.id}"}
-                >Latest packet</.link>
+              <td>
+                <div class="corr-directory-actions">
+                  <.link patch={~p"/correspondence/writing/#{row.piece.id}"}>Open</.link><.link patch={
+                    ~p"/correspondence/packets/new?piece=#{row.piece.id}"
+                  }>Prepare packet</.link><.link
+                    :if={row.latest_packet}
+                    patch={~p"/correspondence/packets/#{row.latest_packet.id}"}
+                  >Latest packet</.link>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -162,8 +164,8 @@ defmodule StillWeb.CorrespondenceDirectories do
       <header class="corr-directory-heading">
         <h1 id="packets-heading">Packets</h1><.link
           patch={~p"/correspondence/packets/new"}
-          class="corr-button"
-        >Prepare a packet <span>+</span></.link>
+          class="corr-button corr-button-primary"
+        >Prepare a packet <span aria-hidden="true">+</span></.link>
       </header>
       <.form
         for={%{}}

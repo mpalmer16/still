@@ -154,7 +154,7 @@ defmodule Still.ListInterpretationTest do
   test "a pending List survives visits while room settings and the recent path remain independent" do
     {:ok, old_writer} = Writing.save_entry(nil, "a saved page")
     {:ok, visited} = Writing.save_entry(nil, "a page to wander through")
-    {:ok, _} = Writing.set_room_light(156)
+    {:ok, _} = Writing.Appearance.set_color("sepia")
     {:ok, _} = Writing.set_room_letters(29)
     {:ok, _} = Writing.remember_visit(old_writer)
     {:ok, _} = Writing.remember_writing(old_writer)
@@ -165,7 +165,7 @@ defmodule Still.ListInterpretationTest do
     {:ok, _} = Writing.remember_visit(visited)
     assert Writing.current_list_draft?()
     assert Enum.map(Writing.recent_entries(), & &1.id) == [visited.id, old_writer.id]
-    assert Writing.room_light() == 156
+    assert Writing.Appearance.color() == "sepia"
     assert Writing.room_letters() == 29
 
     {:ok, list} = Writing.save_entry(nil, "water:", writing_form: "list")
@@ -177,7 +177,7 @@ defmodule Still.ListInterpretationTest do
     {:ok, _} = Writing.begin_writing(nil, writing_form: "list")
     {:ok, _} = Writing.begin_writing()
     refute Writing.current_list_draft?()
-    assert Writing.room_light() == 156
+    assert Writing.Appearance.color() == "sepia"
     assert Writing.room_letters() == 29
   end
 

@@ -1,15 +1,17 @@
 defmodule Still.Correspondence.PlaceDirectory do
   @moduledoc "Pure, bounded query for the Places directory."
+  alias Still.Correspondence.SubmissionWindows
 
   @search_fields ~w(name description keywords interests guidelines notes reach_note windows fee website submission_url response_expectation)
   @statuses ~w(active all inactive)
-  @nearby ~w(all nearby not_nearby)
+  @nearby ~w(all nearby maybe pass not_nearby)
+  @windows ~w(all open check)
   @reaches ~w(all approachable stretch long_shot unknown)
   @simultaneous ~w(all allowed not_allowed unknown)
   @histories ~w(all never_sent awaiting sent)
   @sorts ~w(name reach window last_sent)
 
-  def browse(journals, packets, params) do
+  def browse(journals, packets, params, today \\ NaiveDateTime.to_date(NaiveDateTime.local_now())) do
     canonical = canonical(params)
     journals = list(journals)
     packets_by_journal = packets |> list() |> Enum.group_by(&get(&1, :journal_id))
@@ -17,7 +19,9 @@ defmodule Still.Correspondence.PlaceDirectory do
     matches =
       journals
       |> Enum.map(fn journal ->
-        {journal, summary(get(packets_by_journal, get(journal, :id), []))}
+        history = summary(get(packets_by_journal, get(journal, :id), []))
+        window_status = SubmissionWindows.status(get(journal, :submission_window), today)
+        {journal, Map.put(history, :window_status, window_status)}
       end)
       |> Enum.filter(fn {journal, history} -> matches?(journal, history, canonical) end)
       |> Enum.sort_by(fn {journal, history} -> sort_key(journal, history, canonical.sort) end)
@@ -50,6 +54,7 @@ defmodule Still.Correspondence.PlaceDirectory do
       q: query(value(p, :q)),
       status: enum(value(p, :status), @statuses, "active"),
       nearby: enum(value(p, :nearby), @nearby, "all"),
+      window: enum(value(p, :window), @windows, "all"),
       reach: enum(value(p, :reach), @reaches, "all"),
       simultaneous: enum(value(p, :simultaneous), @simultaneous, "all"),
       history: enum(value(p, :history), @histories, "all"),
@@ -62,12 +67,21 @@ defmodule Still.Correspondence.PlaceDirectory do
   defp matches?(journal, history, f) do
     (f.status == "all" or f.status == "inactive" == truthy?(get(journal, :inactive))) and
       nearby?(journal, f.nearby) and (f.reach == "all" or reach(journal) == f.reach) and
+      (f.window == "all" or f.window == Atom.to_string(history.window_status)) and
       simultaneous?(journal, f.simultaneous) and history?(history, f.history) and
       search?(journal, f.q)
   end
 
   defp nearby?(_j, "all"), do: true
-  defp nearby?(j, filter), do: truthy?(get(j, :shortlisted)) == (filter == "nearby")
+  defp nearby?(j, "not_nearby"), do: !nearby?(j, "nearby")
+
+  defp nearby?(j, filter) do
+    mark =
+      get(j, :impression) || if(truthy?(get(j, :shortlisted)), do: "nearby", else: "unmarked")
+
+    mark == filter
+  end
+
   defp simultaneous?(_j, "all"), do: true
 
   defp simultaneous?(j, f) do
@@ -105,7 +119,17 @@ defmodule Still.Correspondence.PlaceDirectory do
   end
 
   defp sort_key(j, _history, "reach"), do: {reach_rank(reach(j)), name_key(j), id_key(j)}
-  defp sort_key(j, _history, "window"), do: {normalize(get(j, :windows)), name_key(j), id_key(j)}
+
+  defp sort_key(j, _history, "window") do
+    start =
+      case get(j, :submission_window) do
+        %{"mode" => "dates", "opens" => opens} -> {0, opens}
+        %{"mode" => "always"} -> {1, ""}
+        _ -> {2, normalize(get(j, :windows))}
+      end
+
+    {start, name_key(j), id_key(j)}
+  end
 
   defp sort_key(j, history, "last_sent") do
     case history.last_sent_at do

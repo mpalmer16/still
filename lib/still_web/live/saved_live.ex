@@ -157,11 +157,18 @@ defmodule StillWeb.SavedLive do
 
   @impl true
   def render(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :needs_location_choice,
+        assigns.reconciliation.missing != [] || assigns.reconciliation.ambiguous != []
+      )
+
     ~H"""
     <Layouts.app
       flash={@flash}
       active="saved"
-      room_light={@room_light}
+      room_color={@room_color}
       light_open={@light_open}
       room_letters={@room_letters}
       letters_open={@letters_open}
@@ -171,9 +178,6 @@ defmodule StillWeb.SavedLive do
     >
       <div class="file-library">
         <header class="file-heading">
-          <span class="section-whisper">{if @trash?,
-            do: "Earlier pages, set aside",
-            else: "The pages you have kept"}</span>
           <h1>{if @trash?, do: "Trash.", else: "Saved writing."}</h1>
           <.link id="new-writing" navigate={~p"/?new=1"} class="file-link">A blank page</.link>
         </header>
@@ -216,15 +220,20 @@ defmodule StillWeb.SavedLive do
             >Use Still's saved words</button>
           </article>
         </section>
-        <section :if={!@trash? && @location.available} id="file-reconciliation" class="recovery-note">
-          <h2>File locations</h2>
-          <p :if={@reconciliation.missing != [] || @reconciliation.ambiguous != []}>
+        <details
+          :if={!@trash? && @location.available}
+          id="file-reconciliation"
+          class="file-reconciliation"
+          open={@needs_location_choice}
+        >
+          <summary>File locations</summary>
+          <p :if={@needs_location_choice}>
             Some saved writing needs a location choice.
           </p>
-          <p :if={@reconciliation.missing == [] && @reconciliation.ambiguous == []}>
+          <p :if={!@needs_location_choice}>
             Add a readable text file when you want Still to keep its place here.
           </p>
-          <ul>
+          <ul :if={@needs_location_choice}>
             <li :for={missing <- @reconciliation.missing} id={"missing-file-#{missing.id}"}>
               <span>{Map.get(missing, :path) || Map.get(missing, :relative_path) || "Unknown location"}</span><span>Location needs confirmation.</span>
               <form phx-submit="relink_file">
@@ -257,7 +266,7 @@ defmodule StillWeb.SavedLive do
             </label>
             <button type="submit" class="quiet-link">Add this file</button>
           </form>
-        </section>
+        </details>
         <section
           :if={@confirmation}
           id="purge-confirmation"

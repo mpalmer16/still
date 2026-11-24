@@ -80,6 +80,11 @@ The writing root is stored in machine-local Still settings scoped to the local d
 
 AppKit provides a normal Dock application, persistent window placement, native fullscreen, and standard editing menus. Cmd+N opens fresh writing, Cmd+O opens Saved writing, Cmd+S saves immediately, Cmd+K opens Find, Cmd+F opens Find in This Piece in a reader, and Ctrl+Cmd+F enters fullscreen. Save and Open Writing are also in the File menu. Typing keeps a local recovery copy; Save writes the ordinary text file. WKWebView shows the existing application without tabs or an address bar. On load, the window gives keyboard focus to the writer without moving an already focused selection. It accepts navigation only to its own local origin.
 
+Use **Window → Show Next in Menu Bar** for a quick view of up to five items from
+**Today** while Still is open. Opening the menu retrieves current titles from the
+local backend. Choose a title to open that item, or choose **Open Next** to go
+to **Correspondence → Next**.
+
 The native titlebar sits above the WebView. Its double-click follows the Mac's Desktop & Dock preference. The app's standard Zoom frame fills the usable display between the menu bar and Dock; AppKit owns the zoom and restore behavior. New windows begin at 90% of that space, capped at 1700×1040 points. The exact former 1120×820 default is enlarged once; a custom saved frame is preserved. Subsequent sizing and placement use the same native frame autosave. Window → Zoom is also available, and fullscreen remains separate.
 
 Fullscreen entry and exit update `html[data-native-fullscreen]` for the room's layout without creating another writing mode. The signal is refreshed after every complete document load. WebKit swipe-history gestures, pinch magnification, and link previews are disabled so they do not compete with Still's movement and type-size control. The shell supplies no custom pointer image and changes no system accessibility preferences.

@@ -139,7 +139,7 @@ defmodule StillWeb.ArchiveLive do
     <Layouts.app
       flash={@flash}
       active="pages"
-      room_light={@room_light}
+      room_color={@room_color}
       light_open={@light_open}
       room_letters={@room_letters}
       letters_open={@letters_open}
@@ -151,21 +151,22 @@ defmodule StillWeb.ArchiveLive do
       return_list={@return_list}
     >
       <div class="archive-room">
-        <div class="archive-heading">
-          <span class="section-whisper">A few words are enough</span>
+        <header class="archive-heading">
           <h1>{if @written, do: "Saved writing.", else: "Find."}</h1>
-          <.link navigate={~p"/notebooks"} class="quiet-link notebook-browse">Browse notebooks</.link>
-          <.link
-            :if={@reading_bookmark}
-            navigate={ReadingLinks.resume(@reading_bookmark)}
-            id="continue-reading"
-            class="quiet-link"
-          >Continue reading</.link>
+          <div class="archive-heading-actions">
+            <.link navigate={~p"/notebooks"} class="quiet-link">Browse notebooks</.link>
+            <.link
+              :if={@reading_bookmark}
+              navigate={ReadingLinks.resume(@reading_bookmark)}
+              id="continue-reading"
+              class="quiet-link"
+            >Continue reading</.link>
+          </div>
           <p :if={@collection_problem} id="search-collection-problem" role="alert">
             {@collection_problem}
             <button type="button" phx-click="retry" class="quiet-link">Try again</button>
           </p>
-        </div>
+        </header>
         <p :if={@written} class="archive-hint">
           Choose Save to write these words to your selected folder. Unsaved drafts remain on this
           Mac for recovery.
@@ -206,7 +207,7 @@ defmodule StillWeb.ArchiveLive do
             phx-mounted={JS.focus(to: "#search-query")}
             phx-debounce="120"
           />
-          <span class="search-mark" aria-hidden="true">⌕</span>
+          <span class="search-mark" aria-hidden="true"></span>
           <p id="search-hint" class="search-hint">Remembered words can be anywhere in the piece.</p>
           <input type="hidden" name="search[written]" value={to_string(@written)} />
           <input type="hidden" name="search[earlier]" value="false" />

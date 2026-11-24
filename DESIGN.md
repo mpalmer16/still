@@ -4,13 +4,13 @@ Open Still and write. Arrival resumes the current page; the wordmark or native C
 
 The Lists provide the form: colon titles, authored breaks, blank space, indentation, voices, interruptions, and long endings. The room leaves those shapes intact. It does not turn voices into conversations with a machine or fragments into a common template. Imported writing is editable; its earlier words and source relationships remain available.
 
-## Place and light
+## Place and color
 
 Provenance gives Before a geography. Pieces from one source artifact occupy the closest neighborhood. Other pieces from the same physical notebook are near; distinct notebooks sit elsewhere. The two source folders inside the current Notebook 1 belong to one place. These positions describe source relationships, not a timeline.
 
-The place name is a small whisper at the edge of the room. Opening it reveals scattered notebook names in darkness, with Now below them. There are no points, edges, folder controls, counts, or breadcrumbs. Only notebooks that hold writing appear. The landscape covers the page without destroying the editor or its pending words.
+The place name is a small whisper at the edge of the room. Opening it reveals scattered notebook names against the room’s color, with Now below them. There are no points, edges, folder controls, counts, or breadcrumbs. Only notebooks that hold writing appear. The landscape covers the page without destroying the editor or its pending words.
 
-Light belongs to the room rather than a settings screen. One continuous control moves between smooth dark greys and blues, with no grain or texture. It persists between visits. Place changes the light's position and adds a small tonal difference; it does not assign a mood to the words or replace the writer's chosen light. Letters, beside Light, adjusts the writing through a useful 17–33px range, with the existing 21px midpoint. Titles and nearby language change at their own restrained scales; navigation and notebook names remain quiet. In native fullscreen the room keeps its quiet colors without fading readable text below useful contrast. The writing surface uses a very faint shadow edge when focused; other controls keep their visible keyboard focus, and increased-contrast or forced-color preferences retain a clear editor outline; Escape lets Tab leave the indented writing surface. The map is a modal keyboard region, and narrow windows present its existing places as a scrollable sequence.
+Color offers Graphite, Sepia, Night blue, Forest, Plum, and Light. The writing room remembers its choice independently of Correspondence. Place moves the light and subtly shifts its tone within the chosen palette. Letters, beside Color, adjusts the writing from 17 to 33px, with a 21px midpoint. Titles and nearby language change at their own restrained scales while navigation and notebook names stay quiet. In native fullscreen the room keeps its colors and readable contrast. The writing surface uses a faint shadow edge when focused. Other controls keep their visible keyboard focus, and increased-contrast or forced-color preferences retain a clear editor outline. Escape lets Tab leave the indented writing surface. The map is a modal keyboard region, and narrow windows present its existing places as a scrollable sequence.
 
 ## Attraction
 
@@ -30,7 +30,7 @@ focus leans toward it. Its source home stays put, its authored stanza sets the
 boundary, and leaving lets it close again. It neither invents a continuation nor
 moves on its own to ask for attention. Reduced motion leaves a direct, still reveal.
 
-The field is scarce; weakly related pieces remain imperceptible. Its positions describe a relationship to the current words rather than a ranking. Source neighborhoods remain an open geography. Dark light has no theme names or swatches, and motion settles after an arrival or crossing. Cards, dashboards, and explanations of why a piece was recommended would make the interface compete with the writing.
+The field is scarce; weakly related pieces remain imperceptible. Its positions describe a relationship to the current words rather than a ranking. Source neighborhoods remain an open geography. Motion settles after an arrival or crossing. Cards, dashboards, and explanations of why a piece was recommended would make the interface compete with the writing.
 
 ## A word travels
 
@@ -41,7 +41,7 @@ reachable below. These are authored stanzas, never generated collages. A source 
 its saved edition remain one family for discovery and pairing. Nothing is filed,
 scored, rearranged, or saved by wandering here.
 
-The page follows the room's light and letters. Its columns become a reading sequence
+The page follows the room's color and letters. Its columns become a reading sequence
 in a narrow window. Saved reading can also offer one historical companion beneath
 the words, using the same scarce literal evidence as the existing field. Its own
 historical original is excluded. Now continues to hold the writer's current page.

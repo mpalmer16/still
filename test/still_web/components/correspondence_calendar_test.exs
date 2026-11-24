@@ -98,7 +98,29 @@ defmodule StillWeb.CorrespondenceCalendarTest do
     html = calendar_html([], %{query: "open mic"})
     assert html =~ ~s(href="/correspondence/calendar?month=2026-10&amp;q=open+mic")
     assert html =~ ~s(href="/correspondence/calendar?month=2026-12&amp;q=open+mic")
-    assert html =~ ~s(href="/correspondence/calendar?month=2026-11&amp;q=open+mic")
+
+    assert html =~
+             ~s(href="/correspondence/calendar?date=2026-11-12&amp;month=2026-11&amp;q=open+mic")
+  end
+
+  test "calendar exposes scoped items and an add action for the selected day" do
+    html =
+      render_component(&CorrespondenceCalendar.page/1, %{
+        today: ~D[2026-11-12],
+        month: ~D[2026-11-01],
+        selected_date: ~D[2026-11-13],
+        events: [],
+        tasks: [
+          %{id: "task-1", title: "Send the pages", date: "2026-11-13", kind: "due"},
+          %{id: "bad", title: "Ignore malformed task", date: "tomorrow", kind: "due"}
+        ]
+      })
+
+    assert html =~ ~s(href="/correspondence/next?edit=task-1")
+    assert html =~ ~s(href="/correspondence/next?on=2026-11-13")
+    assert html =~ "Send the pages"
+    assert html =~ "Due"
+    refute html =~ "Ignore malformed task"
   end
 
   test "calendar weeks cross year boundaries and selected ongoing events use the selected date" do

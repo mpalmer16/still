@@ -107,103 +107,107 @@ defmodule StillWeb.CalendarImport do
           A calendar file is an array of event objects. Required fields are <code>external_id</code>, <code>title</code>, and <code>date</code>; every event has a stable external ID so another
           import can propose an update instead of creating a duplicate.
         </p>
-        <table>
-          <thead>
-            <tr>
-              <th>Field</th><th>Type</th><th>Meaning</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <th>external_id</th><td>string, required</td><td>
-                Stable source identifier, up to 200 characters. Reuse it to update the same event.
-              </td>
-            </tr>
-            <tr>
-              <th>title</th><td>string, required</td><td>Event title, up to 300 characters.</td>
-            </tr>
-            <tr>
-              <th>date</th><td>date string, required</td><td>YYYY-MM-DD anchor date.</td>
-            </tr>
-            <tr>
-              <th>start_time</th><td>time string</td><td>
-                Optional 24-hour HH:MM. Omission means unconfirmed, not all-day.
-              </td>
-            </tr>
-            <tr>
-              <th>end_time</th><td>time string</td><td>
-                Optional 24-hour HH:MM; requires start_time and cannot be earlier on the same date.
-              </td>
-            </tr>
-            <tr>
-              <th>end_date</th><td>date string</td><td>
-                Optional inclusive YYYY-MM-DD date on or after date; events can span up to 366 days.
-              </td>
-            </tr>
-            <tr>
-              <th>timezone</th><td>string</td><td>
-                Optional display label, such as America/Chicago.
-              </td>
-            </tr>
-            <tr>
-              <th>venue</th><td>string</td><td>Optional venue name.</td>
-            </tr>
-            <tr>
-              <th>address</th><td>string</td><td>Optional venue address.</td>
-            </tr>
-            <tr>
-              <th>url</th><td>HTTP(S) URL string</td><td>Optional link. Still does not fetch it.</td>
-            </tr>
-            <tr>
-              <th>notes</th><td>string</td><td>Optional private notes, up to 10,000 characters.</td>
-            </tr>
-            <tr>
-              <th>category</th><td>enum string</td><td>
-                Optional reading, workshop, deadline, or other (default other).
-              </td>
-            </tr>
-            <tr>
-              <th>status</th><td>enum string</td><td>
-                Optional scheduled or cancelled (default scheduled).
-              </td>
-            </tr>
-            <tr>
-              <th>recurrence</th><td>object or null</td><td>
-                Optional repeat rule; omit or use null for a one-time event.
-              </td>
-            </tr>
-            <tr>
-              <th>recurrence.frequency</th><td>enum string, required in rule</td><td>
-                daily, weekly, monthly, or yearly.
-              </td>
-            </tr>
-            <tr>
-              <th>recurrence.interval</th><td>integer</td><td>
-                Optional 1–100 repeat interval (default 1).
-              </td>
-            </tr>
-            <tr>
-              <th>recurrence.until</th><td>date string</td><td>
-                Optional inclusive stop date, on or after the event date.
-              </td>
-            </tr>
-            <tr>
-              <th>recurrence.weekday</th><td>enum string</td><td>
-                Optional monday through sunday; pair with week_of_month for a monthly weekday pattern.
-              </td>
-            </tr>
-            <tr>
-              <th>recurrence.week_of_month</th><td>integer</td><td>
-                Optional -1 (last), or 1–5; pair with weekday. Monthly only; event date must match.
-              </td>
-            </tr>
-            <tr>
-              <th>recurrence.excluded_dates</th><td>array of date strings</td><td>
-                Optional unique YYYY-MM-DD dates to skip, up to 500.
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="corr-table-scroll" role="region" aria-label="Calendar JSON fields" tabindex="0">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Field</th><th scope="col">Type</th><th scope="col">Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th>external_id</th><td>string, required</td><td>
+                  Stable source identifier, up to 200 characters. Reuse it to update the same event.
+                </td>
+              </tr>
+              <tr>
+                <th>title</th><td>string, required</td><td>Event title, up to 300 characters.</td>
+              </tr>
+              <tr>
+                <th>date</th><td>date string, required</td><td>YYYY-MM-DD anchor date.</td>
+              </tr>
+              <tr>
+                <th>start_time</th><td>time string</td><td>
+                  Optional 24-hour HH:MM. Omission means unconfirmed, not all-day.
+                </td>
+              </tr>
+              <tr>
+                <th>end_time</th><td>time string</td><td>
+                  Optional 24-hour HH:MM; requires start_time and cannot be earlier on the same date.
+                </td>
+              </tr>
+              <tr>
+                <th>end_date</th><td>date string</td><td>
+                  Optional inclusive YYYY-MM-DD date on or after date; events can span up to 366 days.
+                </td>
+              </tr>
+              <tr>
+                <th>timezone</th><td>string</td><td>
+                  Optional display label, such as America/Chicago.
+                </td>
+              </tr>
+              <tr>
+                <th>venue</th><td>string</td><td>Optional venue name.</td>
+              </tr>
+              <tr>
+                <th>address</th><td>string</td><td>Optional venue address.</td>
+              </tr>
+              <tr>
+                <th>url</th><td>HTTP(S) URL string</td><td>
+                  Optional link. Still does not fetch it.
+                </td>
+              </tr>
+              <tr>
+                <th>notes</th><td>string</td><td>Optional private notes, up to 10,000 characters.</td>
+              </tr>
+              <tr>
+                <th>category</th><td>enum string</td><td>
+                  Optional reading, workshop, deadline, or other (default other).
+                </td>
+              </tr>
+              <tr>
+                <th>status</th><td>enum string</td><td>
+                  Optional scheduled or cancelled (default scheduled).
+                </td>
+              </tr>
+              <tr>
+                <th>recurrence</th><td>object or null</td><td>
+                  Optional repeat rule; omit or use null for a one-time event.
+                </td>
+              </tr>
+              <tr>
+                <th>recurrence.frequency</th><td>enum string, required in rule</td><td>
+                  daily, weekly, monthly, or yearly.
+                </td>
+              </tr>
+              <tr>
+                <th>recurrence.interval</th><td>integer</td><td>
+                  Optional 1–100 repeat interval (default 1).
+                </td>
+              </tr>
+              <tr>
+                <th>recurrence.until</th><td>date string</td><td>
+                  Optional inclusive stop date, on or after the event date.
+                </td>
+              </tr>
+              <tr>
+                <th>recurrence.weekday</th><td>enum string</td><td>
+                  Optional monday through sunday; pair with week_of_month for a monthly weekday pattern.
+                </td>
+              </tr>
+              <tr>
+                <th>recurrence.week_of_month</th><td>integer</td><td>
+                  Optional -1 (last), or 1–5; pair with weekday. Monthly only; event date must match.
+                </td>
+              </tr>
+              <tr>
+                <th>recurrence.excluded_dates</th><td>array of date strings</td><td>
+                  Optional unique YYYY-MM-DD dates to skip, up to 500.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <p>
           Reusing an <code>external_id</code> proposes an update to that event, never a duplicate.
           Still previews changed values beside the saved values and skips unchanged events. The

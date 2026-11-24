@@ -31,25 +31,42 @@ a packet before choosing its destination. Edit a piece and save back to its pack
 attach a saved scratch page as a linked cover letter without marking it for Correspondence.
 While reading a notebook, a Find result, saved writing, or Wander, **Add to packet…**
 offers an existing draft or a new packet without leaving your reading place.
-The manuscript preview expands inserted poems. Save the reviewed packet before exporting
-or marking it sent; changes to its source writing require another review. **Save as PDF**
+The manuscript preview expands inserted poems. Save the reviewed packet using the button
+at the top before exporting or marking it sent; it uses the room's accent color when changes
+need saving. Changes to source writing require another review. **Save as PDF**
 in the Mac app creates a clean manuscript with each poem beginning on a new page, under
 `<collection> Exports/Packets`. Plain text and DOCX downloads remain available. Cover
 letters and private submission notes are excluded from manuscript exports. Marking a
 packet sent preserves its exact words; later writing changes do not alter that copy.
 Submission notes remain editable after sending, with stale-edit protection and earlier
 saved words retained locally. Use **Save notes** to keep them; unsaved notes have a local
-recovery copy in the same browser or Mac profile. **Keep nearby** is a personal marker
-for publications you want to return to in Places. Home follows preparations,
+recovery copy in the same browser or Mac profile. In Places, mark publications **Nearby**,
+**Maybe**, or **Pass for now**. The views above the list let you return to those places,
+and the first line of your notes appears under each name. Home follows preparations,
 outstanding submissions, and recent responses. Works, Places, and Packets share searchable,
 filterable tables. Duplicate a packet for another destination while retaining the original send.
 Packets search also finds saved private notes, cover letters, and recorded replies.
 
-Correspondence also has a local calendar and an event list. Add or edit your own
-events, repeat them, hide individual dates or a whole series, and review curated
-JSON imports before applying them. The [calendar import schema](docs/calendar-import.schema.json)
-defines the fields and repeat rules for a curated list. Times remain as provided;
-Still does not fetch events or contact a calendar service.
+Record exact dates or **Always open** on a place to see its journal submission period.
+The closing date is included. Places with unconfirmed timing stay under **Dates to confirm**
+with their original window notes. Choose **Reading periods** in Calendar to see each
+journal's full date range on a month timeline, alongside year-round and unconfirmed
+dates. Search the timeline or narrow it with **Nearby only**. The **Calendar menu**
+offers JSON exports for **Dates to confirm** and **All reading periods**.
+
+Use **Export JSON** in the Places, Calendar or Funding menu to copy that list's saved
+records, including notes. Calendar exports show each recurring series once.
+
+Calendar has **Events**, **Funding** and **Reading periods** views. Events and funding
+dates can also be browsed as lists. Add or edit events, repeat them,
+hide individual dates or a whole series, and review curated JSON imports before
+applying them. The [calendar import schema](docs/calendar-import.schema.json) defines
+event fields and repeat rules. Save local grants, fellowships, residencies, prizes and
+scholarships in Funding, or use its add-only JSON import described by the
+[funding import schema](docs/funding-import.schema.json). Funding import duplicates
+are identified by normalized name, funder and cycle; imports never overwrite saved
+records. Published openings and deadlines appear in the Funding calendar view.
+Use the optional `highlighted` field to mark opportunities for a closer look.
 
 ### Let the past come near
 
@@ -64,7 +81,7 @@ Sometimes the page stays quiet.
 ### Read a notebook
 
 The notebook catalog lists Current, Early, then Other notebooks. Its bottom-right
-**Menu** holds **Add a notebook**, the current-notebook choice, **Light**, and **Letters**.
+**Menu** holds **Add a notebook**, the current-notebook choice, **Color**, and **Letters**.
 
 **Notebooks** opens each notebook with its index beside the words. Move through
 its pages in order, return to your reading place, or choose **Wander with this**.
@@ -97,6 +114,12 @@ correspondence retains its exact submitted text.
 
 ### Make room for what comes next
 
+**Next** holds things you want to do or keep in view. Open **Correspondence → Next**
+to search the table, switch between Open, Today, Upcoming, and History, or sort
+the items. Use the quick **Add item** field at the top for a title, or add notes,
+a plan date, or a deadline. From a saved Correspondence record, use **Add to Next**
+to keep a link back to it. In Calendar, pick a day to see its events and dated items from Next.
+
 **Correspondence** holds the life around the work: places to consider, manuscripts
 to arrange, submissions to remember, replies to keep. **Then & now** places an
 earlier or submitted version beside today's words, so you can see what changed.
@@ -117,7 +140,7 @@ Echoes follow shared words in your own writing. They offer company, without
 inventing an interpretation.
 
 Current new writing lives in ordinary text files. Stable identities, indexes,
-revisions, notebook metadata, Places and correspondence live in the local
+revisions, notebook metadata, Next items, Places and correspondence live in the local
 database alongside historical notebooks and Lists. Earlier words, recovery
 copies, Trash and one verified database backup each have their place. The
 [guide](docs/guide.md) explains how to care for both the text folder and database.

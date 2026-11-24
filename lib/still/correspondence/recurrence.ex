@@ -124,7 +124,10 @@ defmodule Still.Correspondence.Recurrence do
         fn key, acc -> Map.put(acc, key, value(event, key)) end
       )
 
-    Map.merge(base, %{
+    event
+    |> Map.take([:funding_id, :highlighted])
+    |> Map.merge(base)
+    |> Map.merge(%{
       id: value(event, :id),
       token: value(event, :token),
       date: day,

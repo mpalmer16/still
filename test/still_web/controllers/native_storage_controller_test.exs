@@ -1,7 +1,7 @@
 defmodule StillWeb.NativeStorageControllerTest do
   use StillWeb.ConnCase
 
-  alias Still.{Correspondence, Poems, Storage}
+  alias Still.{Correspondence, Next, Poems, Storage}
   alias Still.Correspondence.PacketExports
   @moduletag :tmp_dir
 
@@ -66,6 +66,52 @@ defmodule StillWeb.NativeStorageControllerTest do
 
     assert is_binary(response["error"])
     assert Storage.status().last_backup == nil
+  end
+
+  test "native Next items require authorization and expose only today's limited titles", %{
+    conn: conn,
+    token: token,
+    folder: folder
+  } do
+    assert conn |> get(~p"/native/next-items") |> json_response(403)
+    assert {:ok, _} = Storage.set_folder(folder)
+    location = Storage.collection_location()
+    today = Date.to_iso8601(Next.today())
+
+    {:ok, _} =
+      Next.save(location, %{
+        "title" => "Today plan",
+        "notes" => "Private plan notes",
+        "planned_on" => today
+      })
+
+    {:ok, _} =
+      Next.save(location, %{
+        "title" => "Overdue deadline",
+        "notes" => "Private deadline notes",
+        "due_on" => Date.to_iso8601(Date.add(Next.today(), -1))
+      })
+
+    {:ok, _} =
+      Next.save(location, %{
+        "title" => "Future only",
+        "planned_on" => Date.to_iso8601(Date.add(Next.today(), 1))
+      })
+
+    {:ok, _} = Next.save(location, %{"title" => "Undated only", "notes" => "Do not expose"})
+
+    response =
+      conn
+      |> put_req_header("x-still-native-token", token)
+      |> get(~p"/native/next-items")
+
+    assert get_resp_header(response, "cache-control") == ["no-store"]
+    assert %{"available" => true, "tasks" => tasks} = json_response(response, 200)
+    assert Enum.map(tasks, & &1["title"]) |> Enum.sort() == ["Overdue deadline", "Today plan"]
+    assert Enum.all?(tasks, &(Map.keys(&1) |> Enum.sort() == ["id", "title"]))
+    refute inspect(tasks) =~ "Private"
+    refute inspect(tasks) =~ "Future only"
+    refute inspect(tasks) =~ "Undated only"
   end
 
   test "packet PDF input is source-bound and returns ordered manuscripts with page breaks", %{

@@ -10,27 +10,28 @@ defmodule Still.RoomLettersTest do
     assert Writing.list_entries() == []
   end
 
-  test "changing letters preserves the light, return path, recent writing and earlier words" do
+  test "changing letters preserves the color, return path, recent writing and earlier words" do
     {:ok, entry} = Writing.save_entry(nil, "First words\n\tand their continuation")
     {:ok, current} = Writing.save_entry(entry, "Later words", checkpoint: true)
     {:ok, _} = Writing.remember_writing(current)
     {:ok, _} = Writing.remember_visit(current)
-    {:ok, 214} = Writing.set_room_light(214)
+    {:ok, "forest"} = Writing.Appearance.set_color("forest")
     previous = Repo.get!(RoomState, 1)
     versions = Writing.list_versions(current)
 
     assert {:ok, 23} = Writing.set_room_letters(23)
     assert Writing.room_letters() == 23
     assert Repo.get!(RoomState, 1) == %{previous | letters: 23}
+    assert Writing.Appearance.color() == "forest"
     assert Writing.get_entry!(current.id) == current
     assert Writing.list_versions(current) == versions
 
     # Subsequent changes to other room fields must not reset the chosen letters.
-    assert {:ok, 130} = Writing.set_room_light(130)
+    assert {:ok, "sepia"} = Writing.Appearance.set_color("sepia")
     assert {:ok, _} = Writing.begin_writing(current)
     assert {:ok, _} = Writing.remember_visit(current)
     assert Writing.room_letters() == 23
-    assert Writing.room_light() == 130
+    assert Writing.Appearance.color() == "sepia"
     assert Writing.current_writing() == nil
     assert Writing.current_beside().id == current.id
     assert Writing.recent_entries() == [current]
@@ -49,7 +50,7 @@ defmodule Still.RoomLettersTest do
       assert Writing.room_letters() == 100
     end
 
-    assert Writing.room_light() == 38
+    assert Writing.Appearance.color() == "graphite"
     assert Writing.list_entries() == []
   end
 end

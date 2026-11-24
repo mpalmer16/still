@@ -4,6 +4,7 @@ defmodule StillWeb.CorrespondenceHome do
 
   alias StillWeb.CalendarTime
 
+  attr :planning, :any, default: nil
   attr :overview, :map, required: true
   attr :desk, :map, default: %{}
   attr :icons, :map, default: %{}
@@ -31,27 +32,45 @@ defmodule StillWeb.CorrespondenceHome do
     ~H"""
     <section id="correspondence-home" class="corr-home" aria-labelledby="home-heading">
       <header class="corr-home-header">
-        <h1 id="home-heading">Home</h1>
-        <.link patch={~p"/correspondence/packets/new"} class="corr-home-primary-action">Prepare a packet</.link>
+        <div class="corr-home-heading-copy">
+          <h1 id="home-heading">Correspondence</h1>
+          <.link
+            patch={~p"/correspondence/packets/new"}
+            class="corr-button corr-button-primary corr-home-primary-action"
+          >Prepare a packet <span aria-hidden="true">↗</span></.link>
+        </div>
+        <div class="corr-home-postmark" aria-hidden="true">
+          <span class="corr-home-envelope"></span>
+        </div>
       </header>
 
       <nav class="corr-home-overview" aria-label="Correspondence collection">
         <.link patch={~p"/correspondence/writing"} class="corr-home-summary">
-          <strong>{length(@pieces)}</strong><span>Works</span>
+          <span>Works</span><strong>{length(@pieces)}</strong><span
+            class="corr-summary-arrow"
+            aria-hidden="true"
+          >↗</span>
         </.link>
         <.link patch={~p"/correspondence/journals"} class="corr-home-summary">
-          <strong>{length(@journals)}</strong><span>Places</span>
+          <span>Places</span><strong>{length(@journals)}</strong><span
+            class="corr-summary-arrow"
+            aria-hidden="true"
+          >↗</span>
         </.link>
         <.link patch={~p"/correspondence/packets"} class="corr-home-summary">
-          <strong>{@packet_count}</strong><span>Packets</span>
+          <span>Packets</span><strong>{@packet_count}</strong><span
+            class="corr-summary-arrow"
+            aria-hidden="true"
+          >↗</span>
         </.link>
       </nav>
+
+      <.planning_view :if={@planning} result={@planning} />
 
       <div class="corr-home-columns">
         <section class="corr-home-section corr-home-preparing" aria-labelledby="preparing-heading">
           <header class="corr-home-section-heading">
             <h2 id="preparing-heading">Preparing</h2>
-            <.link patch={~p"/correspondence/packets"}>All packets</.link>
           </header>
           <article :for={packet <- @preparing_packets} class="corr-home-packet">
             <div class="corr-home-meta"><span>In preparation</span></div>
@@ -78,7 +97,6 @@ defmodule StillWeb.CorrespondenceHome do
             </div>
           </article>
           <p :if={@preparing_packets == []} class="corr-home-empty">No packets are being prepared.</p>
-          <.link patch={~p"/correspondence/packets/new"} class="corr-home-create-link">Prepare a packet</.link>
         </section>
 
         <section class="corr-home-section corr-home-awaiting" aria-labelledby="awaiting-heading">
@@ -149,36 +167,119 @@ defmodule StillWeb.CorrespondenceHome do
             <.link patch={~p"/correspondence/calendar/import"}>Import events</.link>
           </div>
         </section>
-      </div>
 
-      <section class="corr-home-section corr-home-history" aria-labelledby="history-heading">
-        <header class="corr-home-section-heading">
-          <h2 id="history-heading">Recent responses</h2>
-          <.link patch={~p"/correspondence/packets"}>Packet history</.link>
-        </header>
-        <article
-          :for={{packet, event} <- @recent_responses}
-          class="corr-home-packet corr-home-response"
-        >
-          <div class="corr-home-meta">
-            <span>{reply_status(packet, event)}</span><time>{display_date(value(event, :date))}</time>
-          </div>
-          <p>
-            <span>{journal_name(@journals, value(packet, :journal_id)) || packet_title(packet)}</span>
-            <span aria-hidden="true"> · </span>
-            <.link patch={~p"/correspondence/packets/#{packet.id}"}>{packet_title(packet)}</.link>
+        <section class="corr-home-section corr-home-history" aria-labelledby="history-heading">
+          <header class="corr-home-section-heading">
+            <h2 id="history-heading">Recent responses</h2>
+            <.link patch={~p"/correspondence/packets"}>Packet history</.link>
+          </header>
+          <article
+            :for={{packet, event} <- @recent_responses}
+            class="corr-home-packet corr-home-response"
+          >
+            <div class="corr-home-meta">
+              <span data-response={value(event, :status, value(packet, :status))}>{reply_status(
+                packet,
+                event
+              )}</span><time>{display_date(value(event, :date))}</time>
+            </div>
+            <p>
+              <span>{journal_name(@journals, value(packet, :journal_id)) || packet_title(packet)}</span>
+              <span aria-hidden="true"> · </span>
+              <.link patch={~p"/correspondence/packets/#{packet.id}"}>{packet_title(packet)}</.link>
+            </p>
+            <p :if={has_text?(value(event, :note))} class="corr-home-response-note">
+              {summary_text(value(event, :note), 160)}
+            </p>
+          </article>
+          <p :if={@recent_responses == []} class="corr-home-empty">
+            Recorded responses will appear here.
           </p>
-          <p :if={has_text?(value(event, :note))} class="corr-home-response-note">
-            {summary_text(value(event, :note), 160)}
-          </p>
-        </article>
-        <p :if={@recent_responses == []} class="corr-home-empty">
-          Recorded responses will appear here.
-        </p>
-      </section>
+        </section>
+      </div>
     </section>
     """
   end
+
+  attr :result, :any, required: true
+
+  defp planning_view(%{result: {:error, message}} = assigns) do
+    assigns = assign(assigns, :message, message)
+
+    ~H"""
+    <section class="corr-home-section" aria-labelledby="planning-heading">
+      <h2 id="planning-heading">Planning</h2>
+      <p role="alert">{@message}</p>
+    </section>
+    """
+  end
+
+  defp planning_view(%{result: {:ok, plan}} = assigns) do
+    assigns = assign(assigns, :plan, plan)
+
+    ~H"""
+    <section id="correspondence-planning" class="corr-home-section" aria-labelledby="planning-heading">
+      <header class="corr-home-section-heading">
+        <h2 id="planning-heading">Planning</h2>
+        <.link navigate={~p"/correspondence/next"}>Next</.link>
+      </header>
+      <nav class="corr-home-actions corr-planning-controls" aria-label="Planning horizon">
+        <.link
+          :for={days <- [30, 60, 90]}
+          patch={~p"/correspondence?#{%{days: days, monitor: @plan.monitor?}}"}
+          aria-current={if days == @plan.days, do: "true"}
+        >{days} days</.link>
+        <.link patch={~p"/correspondence?#{%{days: @plan.days, monitor: !@plan.monitor?}}"}>{if @plan.monitor?,
+          do: "Hide monitored",
+          else: "Show monitored"}</.link>
+      </nav>
+      <div class="corr-planning-groups">
+        <div :for={
+          {label, rows} <- [
+            {"Work on now", @plan.now},
+            {"Next 30 days", @plan.near},
+            {if(@plan.days == 30, do: "Open or undated", else: "Later or undated"), @plan.later}
+          ]
+        }>
+          <h3>{label}</h3>
+          <p :if={rows == []} class="corr-home-empty">Nothing selected.</p>
+          <article :for={row <- rows} class="corr-home-packet">
+            <.link :if={row.type != "funding_application"} patch={planning_path(row)}>{row.title}</.link>
+            <.link :if={row.type == "funding_application"} navigate={planning_path(row)}>{row.title}</.link>
+            <p :if={row.context} class="corr-home-destination">{row.context}</p>
+            <p class="corr-home-meta">
+              <span :if={row.action_on}>{row.action_label} {display_date(row.action_on)}</span>
+              <span :if={row.opens && (row.opens != row.action_on || row.action_label != "Opens")}>
+                Opens {display_date(row.opens)}
+              </span>
+              <span :if={
+                row.closes &&
+                  (row.closes != row.action_on || row.action_label not in ["Closes", "Deadline"])
+              }>{if row.type in ["funding", "funding_application"], do: "Deadline", else: "Closes"} {display_date(
+                row.closes
+              )}</span>
+            </p>
+            <p :if={row.facts != []} class="corr-home-destination">{Enum.join(row.facts, " · ")}</p>
+          </article>
+        </div>
+      </div>
+      <div :if={Map.get(@plan, :awaiting_funding, []) != []} id="funding-awaiting-decisions">
+        <h3>Funding awaiting decision</h3>
+        <article :for={row <- @plan.awaiting_funding} class="corr-home-packet">
+          <.link navigate={planning_path(row)}>{row.title}</.link>
+          <p class="corr-home-destination">{Enum.join(row.facts, " · ")}</p>
+        </article>
+      </div>
+    </section>
+    """
+  end
+
+  defp planning_path(%{type: "funding_application", id: id}),
+    do: ~p"/correspondence/funding/applications/#{id}"
+
+  defp planning_path(%{type: "funding", id: id}), do: ~p"/correspondence/funding/#{id}"
+  defp planning_path(%{type: "journal", id: id}), do: ~p"/correspondence/journals/#{id}"
+  defp planning_path(%{type: "packet", id: id}), do: ~p"/correspondence/packets/#{id}"
 
   defp value(map, key, default \\ nil)
 

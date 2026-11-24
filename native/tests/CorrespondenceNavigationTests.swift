@@ -13,6 +13,13 @@ struct CorrespondenceNavigationTests {
         let remoteHTTP = URL(string: "http://journal.example/submit")!
         let export = URL(string: "http://localhost:4040/correspondence/packets/123/export/docx")!
         let exportText = URL(string: "http://localhost:4040/correspondence/packets/123/export/txt")!
+        let fundingSchema = URL(string: "http://localhost:4040/correspondence/funding/schema")!
+        let calendarSchema = URL(string: "http://localhost:4040/correspondence/calendar/schema")!
+        let invalidSchema = URL(string: "http://localhost:4040/correspondence/places/schema")!
+        let fundingImport = URL(string: "http://localhost:4040/correspondence/funding/import")!
+        let calendarImport = URL(string: "http://localhost:4040/correspondence/calendar/import")!
+        let placesImport = URL(string: "http://localhost:4040/correspondence/journals/import")!
+        let genericImport = URL(string: "http://localhost:4040/import")!
 
         precondition(CorrespondenceNavigationPolicy.decide(local, localPort: 4040, userInitiated: false) == .allowInApp)
         precondition(CorrespondenceNavigationPolicy.decide(loopback, localPort: 4040, userInitiated: true) == .allowInApp)
@@ -33,6 +40,19 @@ struct CorrespondenceNavigationTests {
             statusCode: 200, contentDisposition: "inline"))
         precondition(!CorrespondenceNavigationPolicy.shouldDownloadResponse(url: external, localPort: 4040,
             statusCode: 200, contentDisposition: "attachment"))
-        print("Correspondence navigation checks passed: local routes, deliberate web links, successful attachment responses, and blocked schemes/redirects.")
+        precondition(CorrespondenceNavigationPolicy.isJSONSchemaDownload(fundingSchema))
+        precondition(CorrespondenceNavigationPolicy.isJSONSchemaDownload(calendarSchema))
+        precondition(!CorrespondenceNavigationPolicy.isJSONSchemaDownload(invalidSchema))
+        precondition(CorrespondenceNavigationPolicy.shouldDownloadResponse(url: fundingSchema, localPort: 4040,
+            statusCode: 200, contentDisposition: "attachment; filename=still-funding.schema.json"))
+        precondition(CorrespondenceNavigationPolicy.shouldDownloadResponse(url: calendarSchema, localPort: 4040,
+            statusCode: 200, contentDisposition: "attachment; filename=funding-import.schema.json"))
+        precondition(!CorrespondenceNavigationPolicy.shouldDownloadResponse(url: fundingSchema, localPort: 4040,
+            statusCode: 200, contentDisposition: "inline"))
+        precondition(CorrespondenceNavigationPolicy.importPanelCopy(for: fundingImport).title == "Import Funding")
+        precondition(CorrespondenceNavigationPolicy.importPanelCopy(for: calendarImport).title == "Import Calendar Events")
+        precondition(CorrespondenceNavigationPolicy.importPanelCopy(for: placesImport).title == "Import Places")
+        precondition(CorrespondenceNavigationPolicy.importPanelCopy(for: genericImport).title == "Import JSON")
+        print("Correspondence navigation checks passed: local routes, manuscript and schema attachments, page-specific JSON imports, deliberate web links, and blocked schemes/redirects.")
     }
 }

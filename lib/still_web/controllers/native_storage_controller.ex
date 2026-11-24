@@ -1,13 +1,32 @@
 defmodule StillWeb.NativeStorageController do
   use StillWeb, :controller
 
-  alias Still.Storage
+  alias Still.{Next, Storage}
   alias Still.Correspondence.PacketExports
   alias Still.Writing.Exports
 
   plug :authorize
 
   def show(conn, _params), do: json(conn, Storage.status())
+
+  def next_items(conn, _params) do
+    conn = put_resp_header(conn, "cache-control", "no-store")
+
+    case Next.list(Storage.collection_location()) do
+      {:ok, items} ->
+        today =
+          items
+          |> Next.view("today", Next.today())
+          |> Enum.take(5)
+          |> Enum.map(&Map.take(&1, [:id, :title]))
+
+        json(conn, %{available: true, tasks: today})
+
+      {:error, _message} ->
+        json(conn, %{available: false, tasks: []})
+    end
+  end
+
   def update(conn, %{"folder" => folder}), do: respond(conn, Storage.set_folder(folder))
   def update(conn, _params), do: respond(conn, {:error, "Choose an existing local folder."})
   def delete(conn, _params), do: respond(conn, Storage.clear_folder())

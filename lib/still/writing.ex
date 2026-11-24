@@ -415,27 +415,6 @@ defmodule Still.Writing do
 
   def place_distance(left, right), do: Geography.distance(left, right)
 
-  def room_light do
-    case Repo.get(RoomState, 1) do
-      nil -> 38
-      state -> state.light
-    end
-  end
-
-  def set_room_light(light) when is_integer(light) do
-    light = light |> max(0) |> min(360)
-
-    case Repo.insert(%RoomState{id: 1, light: light},
-           on_conflict: [set: [light: light]],
-           conflict_target: :id
-         ) do
-      {:ok, _state} -> {:ok, light}
-      error -> error
-    end
-  end
-
-  def set_room_light(_light), do: {:error, :invalid_light}
-
   def room_letters do
     case Repo.get(RoomState, 1) do
       nil -> 50

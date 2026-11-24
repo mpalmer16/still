@@ -5,15 +5,16 @@ defmodule StillWeb.Room do
   import Phoenix.LiveView, only: [attach_hook: 4, push_event: 3]
 
   alias Still.Writing
+  alias Still.Writing.Appearance
 
   def on_mount(:default, _params, _session, socket) do
     {:cont,
      socket
-     |> assign(:room_light, Writing.room_light())
+     |> assign(:room_color, Appearance.color())
      |> assign(:light_open, false)
      |> assign(:room_letters, Writing.room_letters())
      |> assign(:letters_open, false)
-     |> assign(:room_width, Still.Writing.Appearance.width())
+     |> assign(:room_width, Appearance.width())
      |> assign(:width_open, false)
      |> assign(:writing_menu_open, false)
      |> assign(:landscape_open, false)
@@ -34,7 +35,7 @@ defmodule StillWeb.Room do
      |> assign(:letters_open, false)
      |> assign(:width_open, false)
      |> assign(:landscape_open, false)
-     |> maybe_focus(opening, "room-light-angle")}
+     |> maybe_focus(opening, "room-color")}
   end
 
   defp handle_event("toggle_letters", _params, socket) do
@@ -102,16 +103,14 @@ defmodule StillWeb.Room do
     if socket.assigns.writing_menu_open, do: close_writing_menu(socket), else: {:halt, socket}
   end
 
-  defp handle_event("change_light", %{"light" => %{"angle" => value}}, socket) do
-    with {angle, ""} <- parse_integer(value),
-         {:ok, saved} <- Writing.set_room_light(angle) do
-      {:halt, assign(socket, :room_light, saved)}
-    else
-      _ -> {:halt, socket}
+  defp handle_event("change_room_color", %{"appearance" => %{"color" => color}}, socket) do
+    case Appearance.set_color(color) do
+      {:ok, saved} -> {:halt, assign(socket, :room_color, saved)}
+      {:error, _} -> {:halt, socket}
     end
   end
 
-  defp handle_event("change_light", _params, socket), do: {:halt, socket}
+  defp handle_event("change_room_color", _params, socket), do: {:halt, socket}
 
   defp handle_event("change_letters", %{"letters" => %{"size" => value}}, socket) do
     with {letters, ""} <- parse_integer(value),
@@ -141,7 +140,7 @@ defmodule StillWeb.Room do
 
   defp handle_event("change_width", %{"page" => %{"width" => value}}, socket) do
     with {width, ""} <- parse_integer(value),
-         {:ok, saved} <- Still.Writing.Appearance.set_width(width) do
+         {:ok, saved} <- Appearance.set_width(width) do
       {:halt,
        socket
        |> assign(:room_width, saved)
@@ -154,7 +153,7 @@ defmodule StillWeb.Room do
   defp handle_event("change_width", _, socket), do: {:halt, socket}
 
   defp handle_event("reset_width", _, socket) do
-    case Still.Writing.Appearance.set_width(0) do
+    case Appearance.set_width(0) do
       {:ok, _} ->
         {:halt,
          socket |> assign(:room_width, 0) |> push_event("writing-width-changed", %{width: 0})}

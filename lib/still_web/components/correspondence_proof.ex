@@ -8,6 +8,13 @@ defmodule StillWeb.CorrespondenceProof do
   attr :plain, :boolean, default: false
 
   def reading(assigns) do
+    assigns =
+      assign(assigns,
+        change_summary: status(assigns.comparison),
+        show_legend:
+          !assigns.plain && assigns.comparison.detailed? && !assigns.comparison.body_same?
+      )
+
     ~H"""
     <section id="work-proof" class="corr-proof" aria-labelledby="proof-heading">
       <header class="proof-heading">
@@ -17,11 +24,6 @@ defmodule StillWeb.CorrespondenceProof do
             · across its versions
           </p>
           <h1 id="proof-heading">Then &amp; now<span>.</span></h1>
-          <p>
-            {if @comparison.source.kind == :sent,
-              do: "The words that traveled. The words you have kept working on.",
-              else: "A page as it was. A page as it is."}
-          </p>
         </div>
         <.link
           id="close-proof"
@@ -58,13 +60,9 @@ defmodule StillWeb.CorrespondenceProof do
         </nav>
       </div>
 
-      <div id="proof-status" class="proof-status" role="status">
-        <p>{status(@comparison)}</p>
-        <div
-          :if={!@plain && @comparison.detailed? && !@comparison.body_same?}
-          class="proof-legend"
-          aria-label="Change markings"
-        >
+      <div :if={@change_summary || @show_legend} id="proof-status" class="proof-status" role="status">
+        <p :if={@change_summary}>{@change_summary}</p>
+        <div :if={@show_legend} class="proof-legend" aria-label="Change markings">
           <span><i class="proof-old-swatch" aria-hidden="true"></i>Earlier passage</span>
           <span><i class="proof-new-swatch" aria-hidden="true"></i>Current passage</span>
         </div>
@@ -102,7 +100,7 @@ defmodule StillWeb.CorrespondenceProof do
         >
           <header>
             <div class="proof-page-top">
-              <span class="proof-eyebrow">Current</span><span>Current saved page</span>
+              <span class="proof-eyebrow">Current</span>
             </div>
             <p class="proof-destination">Here, in your collection</p>
             <h3 class={if !@plain && !@comparison.title_same?, do: "proof-title-changed"}>
@@ -151,7 +149,7 @@ defmodule StillWeb.CorrespondenceProof do
 
   defp status(%{spacing_only?: true}), do: "The changes are in spacing or line breaks."
   defp status(%{detailed?: false}), do: "These longer versions are shown as complete pages."
-  defp status(_), do: "Read what changed, or let the two versions speak for themselves."
+  defp status(_), do: nil
 
   defp date(nil), do: "Date not recorded"
   defp date(%Date{} = date), do: Calendar.strftime(date, "%d %b %Y")

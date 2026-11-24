@@ -5,7 +5,7 @@ defmodule StillWeb.Layouts do
 
   attr :flash, :map, required: true
   attr :active, :string, default: "write"
-  attr :room_light, :integer, default: 38
+  attr :room_color, :string, default: "graphite"
   attr :light_open, :boolean, default: false
   attr :room_letters, :integer, default: 50
   attr :letters_open, :boolean, default: false
@@ -47,9 +47,14 @@ defmodule StillWeb.Layouts do
     <div
       id={if @file_exports, do: "writing-export-status"}
       phx-hook={if @file_exports, do: "WritingExports"}
-      class={"site-frame #{if @landscape_open, do: "landscape-revealed"}"}
+      class={[
+        "site-frame",
+        if(@correspondence, do: "correspondence-frame", else: "writing-frame"),
+        @landscape_open && "landscape-revealed"
+      ]}
+      data-color={@room_color}
       spellcheck="false"
-      style={"--light: #{@room_light}; --letters: #{@room_letters / 100}; --place-x: #{@place.x}%; --place-y: #{@place.y}%; --place-tone: #{@place.tone};#{if @room_width > 0, do: " --page-width: #{@room_width}px;"}"}
+      style={"--letters: #{@room_letters / 100}; --place-x: #{@place.x}%; --place-y: #{@place.y}%; --place-tone: #{@place.tone};#{if @room_width > 0, do: " --page-width: #{@room_width}px;"}"}
     >
       <a href="#page-content" class="skip-link">Skip to the page</a>
       <div class="room-light" aria-hidden="true"></div>
@@ -192,7 +197,14 @@ defmodule StillWeb.Layouts do
           All notebooks
         </.link>
       </section>
-      <.flash_group flash={@flash} />
+      <.flash_group
+        flash={@flash}
+        connection_message={
+          if @correspondence,
+            do: "Connection lost. Reconnecting to Still…",
+            else: "Connection lost. This browser keeps a copy while you write."
+        }
+      />
     </div>
     """
   end
@@ -208,6 +220,7 @@ defmodule StillWeb.Layouts do
   defp region_label(region), do: to_string(region)
 
   attr :flash, :map, required: true
+  attr :connection_message, :string, default: "Connection lost. Reconnecting to Still…"
 
   def flash_group(assigns) do
     ~H"""
@@ -220,7 +233,7 @@ defmodule StillWeb.Layouts do
         phx-disconnected={JS.remove_attribute("hidden")}
         phx-connected={JS.set_attribute({"hidden", ""})}
       >
-        Connection lost. This browser keeps a copy while you write.
+        {@connection_message}
       </p>
     </div>
     """
@@ -239,7 +252,7 @@ defmodule StillWeb.Layouts do
         aria-expanded={to_string(@light_open)}
         aria-controls="room-light-form"
         class="room-control"
-      >Light</button>
+      >Color</button>
       <button
         id="letters-toggle"
         type="button"
@@ -288,23 +301,19 @@ defmodule StillWeb.Layouts do
       <form
         :if={@light_open}
         id="room-light-form"
-        phx-change="change_light"
-        phx-submit="change_light"
+        phx-change="change_room_color"
         class="light-adjustment"
       >
-        <label for="room-light-angle" class="sr-only">Change the light</label>
-        <input
-          id="room-light-angle"
-          name="light[angle]"
-          type="range"
-          min="0"
-          max="360"
-          step="1"
-          value={@room_light}
-          phx-debounce="100"
-          aria-label="Change the light"
-          aria-valuetext={"Light position #{@room_light} of 360"}
-        />
+        <label for="room-color" class="sr-only">Writing room color</label>
+        <select id="room-color" name="appearance[color]">
+          <option
+            :for={{label, color} <- Still.Appearance.choices(:writing)}
+            value={color}
+            selected={color == @room_color}
+          >
+            {label}
+          </option>
+        </select>
         <button id="room-close" type="button" phx-click="close_room" class="light-done room-control">Done</button>
       </form>
       <form

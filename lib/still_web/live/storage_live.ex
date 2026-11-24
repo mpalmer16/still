@@ -87,7 +87,7 @@ defmodule StillWeb.StorageLive do
     <Layouts.app
       flash={@flash}
       active="storage"
-      room_light={@room_light}
+      room_color={@room_color}
       light_open={@light_open}
       room_letters={@room_letters}
       letters_open={@letters_open}

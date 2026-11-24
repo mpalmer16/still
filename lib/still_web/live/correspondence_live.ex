@@ -1,12 +1,19 @@
 defmodule StillWeb.CorrespondenceLive do
   use StillWeb, :live_view
 
-  alias Still.{Correspondence, Poems, Storage}
+  on_mount {StillWeb.CorrespondenceWorkspace, :appearance}
+
+  alias Still.{Correspondence, Next, Poems, Storage}
 
   alias Still.Correspondence.{
     Appearance,
     Calendar,
     CalendarImport,
+    Funding,
+    FundingImport,
+    Planning,
+    FundingApplications,
+    SubmissionWindows,
     Recurrence,
     Icons,
     PacketExports,
@@ -22,10 +29,20 @@ defmodule StillWeb.CorrespondenceLive do
     CorrespondenceHome,
     CorrespondenceCalendar,
     CorrespondenceDirectories,
+    CorrespondenceFunding,
     CorrespondenceImport,
     CorrespondencePlaces,
-    CorrespondenceWork
+    CorrespondenceWork,
+    CorrespondenceWorkspace
   }
+
+  @funding_actions [
+    :funding,
+    :funding_applications,
+    :new_funding,
+    :funding_opportunity,
+    :import_funding
+  ]
 
   @impl true
   def mount(_params, _session, socket) do
@@ -35,6 +52,7 @@ defmodule StillWeb.CorrespondenceLive do
      socket
      |> allow_upload(:places, accept: ~w(.json), max_entries: 1, max_file_size: 1_048_576)
      |> allow_upload(:events, accept: ~w(.json), max_entries: 1, max_file_size: 1_048_576)
+     |> allow_upload(:funding, accept: ~w(.json), max_entries: 1, max_file_size: 1_048_576)
      |> assign(
        notice: nil,
        problem: nil,
@@ -57,9 +75,20 @@ defmodule StillWeb.CorrespondenceLive do
        packet_search: "",
        import_plan: nil,
        import_result: nil,
+       funding_opportunities: [],
+       funding_filters: %{},
+       funding_today: nil,
+       funding_opportunity: nil,
+       funding_form: nil,
+       funding_import_plan: nil,
+       funding_import_result: nil,
+       json_export: nil,
+       json_export_label: nil,
+       planning: nil,
        upcoming_events: [],
        events_problem: nil,
        calendar_events: [],
+       calendar_tasks: [],
        calendar_today: NaiveDateTime.local_now() |> NaiveDateTime.to_date(),
        calendar_month:
          NaiveDateTime.local_now() |> NaiveDateTime.to_date() |> Date.beginning_of_month(),
@@ -70,6 +99,10 @@ defmodule StillWeb.CorrespondenceLive do
        calendar_view: "calendar",
        calendar_page: 1,
        calendar_range: "upcoming",
+       calendar_source: "events",
+       calendar_nearby_windows: false,
+       reading_periods: nil,
+       reading_periods_problem: nil,
        calendar_event: nil,
        calendar_event_form: %{},
        calendar_import_plan: nil,
@@ -92,6 +125,7 @@ defmodule StillWeb.CorrespondenceLive do
 
   @impl true
   def handle_params(params, _uri, socket) do
+    socket = assign(socket, json_export: nil, json_export_label: nil)
     location = Storage.collection_location()
     action = socket.assigns.live_action
 
@@ -125,7 +159,10 @@ defmodule StillWeb.CorrespondenceLive do
              )}
 
           action in [:home, :collection, :journals, :import_journals, :packets] ->
-            load_overview(socket, location, action)
+            load_overview(socket, location, action, params)
+
+          action in @funding_actions ->
+            load_funding(socket, location, action, params)
 
           action in [:new_calendar_event, :edit_calendar_event] ->
             load_calendar_event(socket, location, params["id"])
@@ -153,17 +190,121 @@ defmodule StillWeb.CorrespondenceLive do
           do: put_directory(socket, action, params),
           else: socket
 
-      {:noreply, load_place_icons(socket)}
+      {:noreply, socket |> load_place_icons() |> load_next_links(action)}
     end
+  end
+
+  defp load_next_links(socket, action) do
+    source =
+      case action do
+        :piece -> {"piece", socket.assigns.piece}
+        :journal -> {"journal", socket.assigns.journal}
+        :packet -> {"packet", socket.assigns.packet}
+        :edit_calendar_event -> {"event", socket.assigns.calendar_event}
+        :funding_opportunity -> {"funding", socket.assigns.funding_opportunity}
+        _ -> nil
+      end
+
+    with nil <- socket.assigns.problem,
+         {type, %{id: id}} <- source,
+         target = %{type: type, id: id} do
+      location = socket.assigns.location
+
+      case Next.for_target(location, target) do
+        {:ok, tasks} ->
+          assign(socket,
+            next_target: target,
+            related_tasks: Next.view(tasks, "open", Next.today())
+          )
+
+        {:error, _} ->
+          assign(socket, next_target: target, related_tasks: [])
+      end
+    else
+      _ -> assign(socket, next_target: nil, related_tasks: [])
+    end
+  end
+
+  defp load_funding(socket, location, action, params) do
+    socket =
+      assign(socket,
+        location: location,
+        overview: empty_overview(),
+        piece: nil,
+        journal: nil,
+        packet: nil,
+        problem: nil,
+        funding_today: NaiveDateTime.local_now() |> NaiveDateTime.to_date(),
+        funding_opportunity: nil,
+        funding_applications: [],
+        funding_form: nil,
+        funding_import_plan: nil,
+        funding_import_result: nil
+      )
+
+    case action do
+      :funding ->
+        {:noreply,
+         socket
+         |> assign(page_title: "Funding", funding_filters: params)
+         |> refresh_funding_directory()}
+
+      :funding_applications ->
+        filter = if params["status"] in ["sent", "drafts"], do: params["status"], else: "all"
+
+        socket =
+          assign(socket, page_title: "Funding applications", funding_application_filter: filter)
+
+        case FundingApplications.directory(location, filter) do
+          {:ok, applications} -> {:noreply, assign(socket, funding_applications: applications)}
+          {:error, message} -> {:noreply, assign(socket, problem: message)}
+        end
+
+      :new_funding ->
+        {:noreply,
+         assign(socket, page_title: "Add funding opportunity", funding_form: funding_form(%{}))}
+
+      :funding_opportunity ->
+        with {:ok, opportunity} <- Funding.get(location, params["id"]),
+             {:ok, applications} <- FundingApplications.list(location) do
+          {:noreply,
+           assign(socket,
+             page_title: opportunity.name,
+             funding_opportunity: opportunity,
+             funding_applications:
+               Enum.filter(applications, &(&1["opportunity_id"] == opportunity.id)),
+             funding_form: funding_form(opportunity)
+           )}
+        else
+          {:error, message} ->
+            {:noreply, assign(socket, page_title: "Funding opportunity", problem: message)}
+        end
+
+      :import_funding ->
+        {:noreply, assign(socket, page_title: "Import Funding")}
+    end
+  end
+
+  defp refresh_funding_directory(socket) do
+    case Funding.list(socket.assigns.location) do
+      {:ok, opportunities} -> assign(socket, funding_opportunities: opportunities)
+      {:error, message} -> assign(socket, funding_opportunities: [], problem: message)
+    end
+  end
+
+  defp funding_form(opportunity) do
+    attrs = Map.new(Funding.atom_fields(), &{Atom.to_string(&1), Map.get(opportunity, &1)})
+    to_form(attrs, as: :funding)
   end
 
   defp load_calendar(socket, location, params) do
     today = NaiveDateTime.local_now() |> NaiveDateTime.to_date()
 
-    month =
-      case Date.from_iso8601(to_string(params["month"] || "") <> "-01") do
-        {:ok, date} -> date
-        _ -> Date.beginning_of_month(today)
+    source =
+      case params do
+        %{"show" => source} when source in ["events", "funding", "reading"] -> source
+        %{"windows" => "true"} -> "reading"
+        _ -> "events"
       end
 
     selected =
@@ -172,10 +313,31 @@ defmodule StillWeb.CorrespondenceLive do
         _ -> nil
       end
 
+    month =
+      case Date.from_iso8601(to_string(params["month"] || "") <> "-01") do
+        {:ok, date} -> date
+        _ -> Date.beginning_of_month(selected || today)
+      end
+
+    nearby_only? = source == "reading" && params["nearby_windows"] == "true"
+
     query =
       if is_binary(params["q"]),
         do: params["q"] |> String.trim() |> String.slice(0, 300),
         else: ""
+
+    {reading_periods, reading_periods_problem} =
+      if source == "reading" && socket.assigns.live_action == :calendar do
+        case Correspondence.journals(location) do
+          {:ok, places} ->
+            {SubmissionWindows.monthly_timeline(places, month, today, nearby_only?, query), nil}
+
+          {:error, message} ->
+            {nil, message}
+        end
+      else
+        {nil, nil}
+      end
 
     socket =
       assign(socket,
@@ -188,10 +350,15 @@ defmodule StillWeb.CorrespondenceLive do
         calendar_month: month,
         calendar_selected: selected,
         calendar_query: query,
-        calendar_cancelled: params["cancelled"] == "true",
-        calendar_hidden: params["hidden"] == "true",
-        calendar_view: if(params["view"] == "list", do: "list", else: "calendar"),
+        calendar_cancelled: source == "events" && params["cancelled"] == "true",
+        calendar_hidden: source == "events" && params["hidden"] == "true",
+        calendar_view:
+          if(source != "reading" && params["view"] == "list", do: "list", else: "calendar"),
         calendar_range: if(params["range"] == "all", do: "all", else: "upcoming"),
+        calendar_source: source,
+        calendar_nearby_windows: nearby_only?,
+        reading_periods: reading_periods,
+        reading_periods_problem: reading_periods_problem,
         calendar_page:
           case Integer.parse(to_string(params["page"] || "1")) do
             {page, ""} when page > 0 -> min(page, 100_000)
@@ -204,9 +371,29 @@ defmodule StillWeb.CorrespondenceLive do
           )
       )
 
-    case Calendar.list(location) do
-      {:ok, events} -> {:noreply, assign(socket, calendar_events: events, problem: nil)}
-      {:error, message} -> {:noreply, assign(socket, calendar_events: [], problem: message)}
+    result =
+      case {socket.assigns.live_action, source} do
+        {:import_calendar, _} -> {:ok, []}
+        {:calendar, "reading"} -> {:ok, []}
+        {:calendar, "funding"} -> Calendar.funding_entries(location)
+        {:calendar, "events"} -> Calendar.list(location)
+      end
+
+    tasks =
+      if socket.assigns.live_action == :calendar && source == "events",
+        do: Next.list(location),
+        else: {:ok, []}
+
+    with {:ok, events} <- result, {:ok, tasks} <- tasks do
+      {:noreply,
+       assign(socket,
+         calendar_events: events,
+         calendar_tasks: Next.calendar_entries(tasks),
+         problem: nil
+       )}
+    else
+      {:error, message} ->
+        {:noreply, assign(socket, calendar_events: [], calendar_tasks: [], problem: message)}
     end
   end
 
@@ -285,11 +472,13 @@ defmodule StillWeb.CorrespondenceLive do
     )
   end
 
+  defp calendar_occurrences(%{calendar_source: "reading"}), do: []
+
   defp calendar_occurrences(assigns) do
     grid_start =
       assigns.calendar_month
       |> Date.beginning_of_month()
-      |> then(&Date.add(&1, 1 - Date.day_of_week(&1)))
+      |> then(&Date.add(&1, 1 - Date.day_of_week(&1, :sunday)))
 
     agenda_start = assigns.calendar_selected || assigns.calendar_today
     agenda_end = if assigns.calendar_selected, do: agenda_start, else: Date.add(agenda_start, 366)
@@ -462,7 +651,7 @@ defmodule StillWeb.CorrespondenceLive do
     end
   end
 
-  defp load_overview(socket, location, action) do
+  defp load_overview(socket, location, action, params) do
     result =
       if action == :packets,
         do: Correspondence.packet_directory_overview(location),
@@ -482,6 +671,10 @@ defmodule StillWeb.CorrespondenceLive do
 
         {:noreply,
          assign(socket,
+           planning:
+             if(action == :home,
+               do: Planning.load(location, overview, params)
+             ),
            upcoming_events: events,
            events_problem: events_problem,
            location: location,
@@ -500,6 +693,7 @@ defmodule StillWeb.CorrespondenceLive do
         {:noreply,
          assign(socket,
            location: location,
+           planning: nil,
            overview: empty_overview(),
            problem: message,
            page_title: title_for(action)
@@ -726,6 +920,10 @@ defmodule StillWeb.CorrespondenceLive do
   defp collection_problem(_), do: "Choose an available collection folder to use Correspondence."
 
   @impl true
+  def handle_event("dismiss_correspondence_notice", _, socket),
+    do: {:noreply, assign(socket, notice: nil)}
+
+  @impl true
   def handle_event(
         "compare_work",
         %{"proof" => %{"source" => key}},
@@ -799,6 +997,222 @@ defmodule StillWeb.CorrespondenceLive do
     {:noreply, assign(socket, import_plan: nil, import_result: result, problem: nil)}
   end
 
+  def handle_event(
+        "filter_funding",
+        %{"funding" => params},
+        %{assigns: %{live_action: :funding}} = socket
+      ) do
+    filters = Map.take(params, ~w(q kind deadline))
+    {:noreply, push_patch(socket, to: ~p"/correspondence/funding?#{filters}", replace: true)}
+  end
+
+  def handle_event(
+        "set_funding_highlight",
+        %{"id" => id, "highlighted" => value},
+        %{assigns: %{live_action: :funding, funding_opportunities: opportunities}} = socket
+      )
+      when is_binary(id) and value in ["true", "false"] do
+    with %{id: ^id} = item <- Enum.find(opportunities, &(&1.id == id)),
+         {:ok, saved} <- Funding.set_highlighted(socket.assigns.location, item, value == "true") do
+      rows = Enum.map(opportunities, fn row -> if row.id == id, do: saved, else: row end)
+
+      {:noreply,
+       assign(socket,
+         funding_opportunities: rows,
+         problem: nil,
+         notice: nil,
+         json_export: nil,
+         json_export_label: nil
+       )}
+    else
+      nil ->
+        {:noreply, socket}
+
+      {:error, message} ->
+        {:noreply,
+         socket
+         |> refresh_funding_directory()
+         |> assign(problem: message, notice: nil, json_export: nil, json_export_label: nil)}
+    end
+  end
+
+  def handle_event("set_funding_highlight", _, socket), do: {:noreply, socket}
+
+  def handle_event(
+        "validate_funding",
+        %{"funding" => attrs},
+        %{assigns: %{funding_form: %Phoenix.HTML.Form{} = form}} = socket
+      ) do
+    attrs = Map.merge(form.params, Map.take(attrs, Funding.fields()))
+    {:noreply, assign(socket, funding_form: to_form(attrs, as: :funding))}
+  end
+
+  def handle_event(
+        "save_funding",
+        %{"funding" => attrs},
+        %{assigns: %{live_action: action, funding_form: %Phoenix.HTML.Form{} = form}} = socket
+      )
+      when action in [:new_funding, :funding_opportunity] do
+    opportunity = socket.assigns.funding_opportunity
+    attrs = Map.merge(form.params, Map.take(attrs, Funding.fields()))
+
+    case Funding.save(
+           socket.assigns.location,
+           attrs,
+           opportunity && opportunity.id,
+           opportunity && opportunity.token
+         ) do
+      {:ok, saved} ->
+        socket = assign(socket, notice: "Funding opportunity saved.", problem: nil)
+
+        if action == :new_funding do
+          {:noreply, push_patch(socket, to: ~p"/correspondence/funding/#{saved.id}")}
+        else
+          {:noreply,
+           assign(socket,
+             funding_opportunity: saved,
+             funding_form: funding_form(saved),
+             page_title: saved.name
+           )}
+        end
+
+      {:error, message} ->
+        {:noreply,
+         assign(socket, funding_form: to_form(attrs, as: :funding), problem: message, notice: nil)}
+    end
+  end
+
+  def handle_event(
+        "validate_funding_upload",
+        _,
+        %{assigns: %{live_action: :import_funding}} = socket
+      ),
+      do:
+        {:noreply,
+         assign(socket, funding_import_plan: nil, funding_import_result: nil, problem: nil)}
+
+  def handle_event(
+        "preview_funding_import",
+        _,
+        %{assigns: %{live_action: :import_funding}} = socket
+      ) do
+    {completed, pending} = uploaded_entries(socket, :funding)
+
+    result =
+      if length(completed) == 1 && pending == [] &&
+           upload_errors(socket.assigns.uploads.funding) == [] do
+        [result] =
+          consume_uploaded_entries(socket, :funding, fn %{path: path}, _entry ->
+            result =
+              with {:ok, bytes} <- File.read(path),
+                   do: FundingImport.preview(socket.assigns.location, bytes)
+
+            {:ok, result}
+          end)
+
+        result
+      else
+        {:error, "Choose one JSON file and wait for its upload to finish."}
+      end
+
+    case result do
+      {:ok, plan} ->
+        {:noreply,
+         assign(socket, funding_import_plan: plan, funding_import_result: nil, problem: nil)}
+
+      {:error, reason} ->
+        {:noreply,
+         assign(socket,
+           funding_import_plan: nil,
+           funding_import_result: nil,
+           problem: import_problem(reason)
+         )}
+    end
+  end
+
+  def handle_event(
+        "import_funding",
+        _,
+        %{
+          assigns: %{
+            live_action: :import_funding,
+            funding_import_plan: %{opportunities: [_ | _]} = plan
+          }
+        } = socket
+      ) do
+    socket = assign(socket, funding_import_plan: nil)
+
+    case FundingImport.commit(plan) do
+      {:ok, result} ->
+        {:noreply, assign(socket, funding_import_result: result, problem: nil)}
+
+      {:error, message} ->
+        {:noreply, assign(socket, funding_import_result: nil, problem: message)}
+    end
+  end
+
+  def handle_event("import_funding", _, socket), do: {:noreply, socket}
+
+  def handle_event(
+        "export_json",
+        _,
+        %{assigns: %{live_action: action, location: location}} = socket
+      )
+      when action in [:journals, :calendar, :funding] do
+    result =
+      case action do
+        :journals -> Correspondence.export_places_json(location)
+        :calendar -> Calendar.export_events_json(location)
+        :funding -> Funding.export_json(location)
+      end
+
+    {:noreply, assign_json_export(socket, result, nil)}
+  end
+
+  def handle_event(
+        "export_reading_periods",
+        %{"scope" => scope},
+        %{assigns: %{live_action: :calendar, calendar_source: "reading", location: location}} =
+          socket
+      )
+      when scope in ["unconfirmed", "all"] do
+    {scope, label} =
+      if scope == "unconfirmed",
+        do: {:unconfirmed, "Dates to confirm"},
+        else: {:all, "All reading periods"}
+
+    {:noreply,
+     assign_json_export(
+       socket,
+       Correspondence.export_reading_periods_json(location, scope),
+       label
+     )}
+  end
+
+  def handle_event("export_reading_periods", _, socket), do: {:noreply, socket}
+
+  def handle_event("close_json_export", _, socket),
+    do: {:noreply, assign(socket, json_export: nil, json_export_label: nil)}
+
+  def handle_event(
+        "filter_calendar",
+        %{"calendar" => params},
+        %{assigns: %{calendar_source: "reading", calendar_month: month}} = socket
+      ) do
+    filters = %{
+      "month" => Elixir.Calendar.strftime(month, "%Y-%m"),
+      "show" => "reading",
+      "q" => params["q"] || ""
+    }
+
+    filters =
+      if checked?(params["nearby_windows"]),
+        do: Map.put(filters, "nearby_windows", "true"),
+        else: filters
+
+    {:noreply, push_patch(socket, to: ~p"/correspondence/calendar?#{filters}", replace: true)}
+  end
+
   def handle_event("filter_calendar", %{"calendar" => params}, socket) do
     filters = %{
       "month" => Elixir.Calendar.strftime(socket.assigns.calendar_month, "%Y-%m"),
@@ -812,6 +1226,11 @@ defmodule StillWeb.CorrespondenceLive do
     filters =
       if socket.assigns.calendar_selected,
         do: Map.put(filters, "date", Date.to_iso8601(socket.assigns.calendar_selected)),
+        else: filters
+
+    filters =
+      if socket.assigns.calendar_source == "funding",
+        do: Map.put(filters, "show", "funding"),
         else: filters
 
     {:noreply, push_patch(socket, to: ~p"/correspondence/calendar?#{filters}", replace: true)}
@@ -855,7 +1274,8 @@ defmodule StillWeb.CorrespondenceLive do
              "hide_calendar_series",
              "restore_calendar_series"
            ] do
-    event = Enum.find(socket.assigns.calendar_events, &(&1.id == id))
+    event =
+      Enum.find(socket.assigns.calendar_events, &(&1.id == id && !Map.has_key?(&1, :funding_id)))
 
     if event do
       date =
@@ -981,26 +1401,21 @@ defmodule StillWeb.CorrespondenceLive do
     end
   end
 
-  def handle_event("toggle_shortlist", %{"id" => id}, socket) do
+  def handle_event("mark_place", %{"place_id" => id, "impression" => impression}, socket) do
     case Enum.find(socket.assigns.overview.journals, &(&1.id == id)) do
       nil ->
         {:noreply,
          assign(socket,
-           problem: "Reopen Places before changing which places you keep nearby.",
+           problem: "Reopen Places before changing this mark.",
            notice: nil
          )}
 
       journal ->
-        attrs =
-          journal
-          |> Map.take(Map.keys(journal_defaults()))
-          |> Map.put(:shortlisted, !journal.shortlisted)
-
-        case Correspondence.save_journal(
+        case Correspondence.set_place_impression(
                socket.assigns.location,
-               attrs,
                journal.id,
-               journal.token
+               journal.token,
+               impression
              ) do
           {:ok, saved} ->
             journals =
@@ -1012,20 +1427,12 @@ defmodule StillWeb.CorrespondenceLive do
               assign(socket,
                 overview: %{socket.assigns.overview | journals: journals},
                 problem: nil,
-                notice:
-                  if(saved.shortlisted,
-                    do: "Place kept nearby.",
-                    else: "Place no longer kept nearby."
-                  )
+                notice: "Place mark saved."
               )
 
             socket =
               if socket.assigns.journal && socket.assigns.journal.id == id,
-                do:
-                  assign(socket,
-                    journal: saved,
-                    form: Map.put(socket.assigns.form, :shortlisted, saved.shortlisted)
-                  ),
+                do: assign(socket, journal: saved),
                 else: socket
 
             socket =
@@ -1040,6 +1447,12 @@ defmodule StillWeb.CorrespondenceLive do
         end
     end
   end
+
+  def handle_event("view_places", %{"impression" => impression}, socket),
+    do: handle_event("filter_places", %{"places" => %{"nearby" => impression}}, socket)
+
+  def handle_event("view_place_windows", %{"window" => window}, socket),
+    do: handle_event("filter_places", %{"places" => %{"window" => window}}, socket)
 
   def handle_event("filter_places", %{"places" => params}, socket) do
     filters = socket.assigns.places_filters |> Map.merge(params) |> Map.put("page", "1")
@@ -1154,12 +1567,6 @@ defmodule StillWeb.CorrespondenceLive do
      )}
   end
 
-  def handle_event("toggle_palette", _, socket),
-    do: appearance_result(socket, Appearance.set_light(!socket.assigns.correspondence_light?))
-
-  def handle_event("change_correspondence_color", %{"appearance" => %{"color" => color}}, socket),
-    do: appearance_result(socket, Appearance.choose_color(color))
-
   def handle_event("keep_possible_piece", %{"possibility" => %{"piece_id" => id}}, socket) do
     save_possibility(socket, id, true)
   end
@@ -1175,7 +1582,6 @@ defmodule StillWeb.CorrespondenceLive do
 
     attrs = Map.put(attrs, "inactive", (journal && journal.inactive) || false)
     attrs = Map.put(attrs, "verified", checked?(attrs["verified"]))
-    attrs = Map.put(attrs, "shortlisted", checked?(attrs["shortlisted"]))
 
     case Correspondence.save_journal(socket.assigns.location, attrs, id, token) do
       {:ok, saved} ->
@@ -1190,7 +1596,7 @@ defmodule StillWeb.CorrespondenceLive do
   end
 
   def handle_event("refresh_packet_preview", _, socket),
-    do: {:noreply, refresh_packet_preview(socket)}
+    do: {:noreply, socket |> assign(notice: nil) |> refresh_packet_preview()}
 
   def handle_event("save_packet_notes", %{"id" => id, "body" => body, "token" => token}, socket) do
     if socket.assigns.packet && socket.assigns.packet.id == id do
@@ -1339,17 +1745,18 @@ defmodule StillWeb.CorrespondenceLive do
     allowed = id in (form[:piece_ids] || []) or id == form[:cover_letter_piece_id]
 
     if allowed and (is_nil(packet) or packet.status == "preparing") do
-      case Correspondence.save_packet(
+      case Correspondence.save_reviewed_packet(
              socket.assigns.location,
              packet_attrs(form),
              packet && packet.id,
-             packet && packet.token
+             packet && packet.token,
+             reviewed_packet_sources(socket.assigns)
            ) do
         {:ok, saved} ->
           {:noreply, push_navigate(socket, to: ~p"/writing/#{id}/edit?packet=#{saved.id}")}
 
         {:error, message} ->
-          {:noreply, assign(socket, problem: message)}
+          {:noreply, socket |> assign(problem: message) |> refresh_packet_preview()}
       end
     else
       {:noreply,
@@ -1373,7 +1780,13 @@ defmodule StillWeb.CorrespondenceLive do
           else: attrs
       end)
 
-    case Correspondence.save_packet(socket.assigns.location, attrs, id, token) do
+    case Correspondence.save_reviewed_packet(
+           socket.assigns.location,
+           attrs,
+           id,
+           token,
+           reviewed_packet_sources(socket.assigns)
+         ) do
       {:ok, saved} ->
         {:noreply,
          socket
@@ -1382,11 +1795,13 @@ defmodule StillWeb.CorrespondenceLive do
 
       {:error, message} ->
         {:noreply,
-         assign(socket,
+         socket
+         |> assign(
            form: Map.merge(socket.assigns.form, packet_form_changes(attrs)),
            problem: message,
            notice: nil
-         )}
+         )
+         |> refresh_packet_preview()}
     end
   end
 
@@ -1398,6 +1813,7 @@ defmodule StillWeb.CorrespondenceLive do
     {:noreply,
      assign(socket,
        form: Map.put(socket.assigns.form, :piece_ids, ids),
+       notice: nil,
        overlap:
          overlap_rows(
            socket.assigns.location,
@@ -1422,6 +1838,7 @@ defmodule StillWeb.CorrespondenceLive do
     {:noreply,
      assign(socket,
        form: Map.put(socket.assigns.form, :piece_ids, moved),
+       notice: nil,
        overlap:
          overlap_rows(
            socket.assigns.location,
@@ -1452,6 +1869,7 @@ defmodule StillWeb.CorrespondenceLive do
      assign(socket,
        form: Map.put(form, :journal_id, journal_id),
        journal: journal,
+       notice: nil,
        overlap:
          overlap_rows(
            socket.assigns.location,
@@ -1488,7 +1906,8 @@ defmodule StillWeb.CorrespondenceLive do
              |> push_patch(to: ~p"/correspondence/packets/#{sent.id}")}
 
           {:error, message} ->
-            {:noreply, assign(socket, problem: message, notice: nil)}
+            {:noreply,
+             socket |> assign(problem: message, notice: nil) |> refresh_packet_preview()}
         end
     end
   end
@@ -1619,6 +2038,20 @@ defmodule StillWeb.CorrespondenceLive do
       else: attrs
   end
 
+  defp reviewed_packet_sources(assigns) do
+    %{
+      piece_tokens: Map.new(assigns.packet_preview, &{&1.id, Map.get(&1, :token)}),
+      cover_letter_piece_token:
+        assigns.cover_letter_preview && Map.get(assigns.cover_letter_preview, :token)
+    }
+  end
+
+  defp assign_json_export(socket, {:ok, json}, label),
+    do: assign(socket, json_export: json, json_export_label: label, problem: nil)
+
+  defp assign_json_export(socket, {:error, message}, _label),
+    do: assign(socket, json_export: nil, json_export_label: nil, problem: message)
+
   defp import_problem(reason) when is_binary(reason), do: reason
   defp import_problem(_), do: "The uploaded file could not be read. Choose it again."
 
@@ -1689,7 +2122,7 @@ defmodule StillWeb.CorrespondenceLive do
       response_expectation: "",
       notes: "",
       inactive: false,
-      shortlisted: false,
+      impression: "unmarked",
       verified: false
     }
 
@@ -1740,17 +2173,6 @@ defmodule StillWeb.CorrespondenceLive do
 
   defp packet_destination(defaults, _overview, _params), do: defaults
 
-  defp appearance_result(socket, {:ok, appearance}),
-    do:
-      {:noreply,
-       assign(socket,
-         correspondence_light?: appearance.light?,
-         correspondence_color: appearance.color
-       )}
-
-  defp appearance_result(socket, {:error, _}),
-    do: {:noreply, put_flash(socket, :error, "Could not remember the correspondence color.")}
-
   defp title_for(:home), do: "Correspondence"
   defp title_for(:collection), do: "Works"
   defp title_for(:import_journals), do: "Import Places"
@@ -1780,220 +2202,179 @@ defmodule StillWeb.CorrespondenceLive do
 
   @impl true
   def render(assigns) do
+    assigns = assign(assigns, :funding_section?, assigns.live_action in @funding_actions)
+
     ~H"""
-    <Layouts.app flash={@flash} active="correspondence" file_exports correspondence>
-      <div
-        class={"correspondence-room corr-workspace #{if @correspondence_light?, do: "is-light", else: ""}"}
-        data-color={@correspondence_color}
+    <CorrespondenceWorkspace.workspace
+      flash={@flash}
+      appearance_light?={@correspondence_light?}
+      appearance_color={@correspondence_color}
+      live_action={@live_action}
+      places_path={places_path(@places_filters)}
+      funding_section?={@funding_section?}
+      problem={@problem}
+      notice={@notice}
+      next_target={@next_target}
+      related_tasks={@related_tasks}
+    >
+      <CorrespondenceHome.home
+        :if={@live_action == :home && @location.configured && @location.available}
+        icons={@place_icons}
+        overview={@overview}
+        planning={@planning}
+        upcoming_events={@upcoming_events}
+        events_problem={@events_problem}
+      />
+
+      <section
+        :if={@funding_section? && @location.configured && @location.available}
+        class="corr-page"
       >
-        <header class="corr-header">
-          <div class="corr-brand">
-            <.link patch={~p"/correspondence"}>Correspondence<span>.</span></.link>
-          </div>
-          <nav aria-label="Correspondence">
-            <.link
-              patch={~p"/correspondence"}
-              aria-current={if @live_action == :home, do: "page"}
-              class={if @live_action == :home, do: "active", else: nil}
-            >Home</.link>
-            <.link
-              patch={~p"/correspondence/writing"}
-              aria-current={if @live_action in [:collection, :piece], do: "page"}
-              class={if @live_action in [:collection, :piece], do: "active", else: nil}
-            >Works</.link>
-            <.link
-              patch={places_path(@places_filters)}
-              aria-current={
-                if @live_action in [:journals, :journal, :new_journal, :import_journals], do: "page"
-              }
-              class={
-                if @live_action in [:journals, :journal, :new_journal, :import_journals],
-                  do: "active",
-                  else: nil
-              }
-            >Places</.link>
-            <.link
-              patch={~p"/correspondence/packets"}
-              aria-current={if @live_action in [:packets, :packet, :new_packet], do: "page"}
-              class={if @live_action in [:packets, :packet, :new_packet], do: "active", else: nil}
-            >Packets</.link>
-            <.link
-              patch={~p"/correspondence/calendar"}
-              aria-current={
-                if @live_action in [
-                     :calendar,
-                     :import_calendar,
-                     :new_calendar_event,
-                     :edit_calendar_event
-                   ],
-                   do: "page"
-              }
-              class={
-                if @live_action in [
-                     :calendar,
-                     :import_calendar,
-                     :new_calendar_event,
-                     :edit_calendar_event
-                   ], do: "active", else: nil
-              }
-            >Calendar</.link>
-          </nav>
-          <div class="corr-header-actions">
-            <details class="corr-popover corr-appearance">
-              <summary aria-label="Correspondence appearance" title="Appearance">
-                {if @correspondence_light?, do: "☀", else: "☾"}
-              </summary>
-              <div class="corr-popover-panel">
-                <button
-                  type="button"
-                  phx-click="toggle_palette"
-                  class="corr-theme"
-                  aria-pressed={to_string(@correspondence_light?)}
-                >{if @correspondence_light?, do: "Use dark appearance", else: "Use light appearance"}</button>
-                <form id="correspondence-color-form" phx-change="change_correspondence_color">
-                  <label for="correspondence-color">Color</label>
-                  <select id="correspondence-color" name="appearance[color]">
-                    <option
-                      :for={{label, color} <- Appearance.choices()}
-                      value={color}
-                      selected={color == @correspondence_color}
-                    >
-                      {label}
-                    </option>
-                  </select>
-                </form>
-              </div>
-            </details>
-            <.link id="back-to-still" navigate={~p"/"} class="corr-return">Back to Still ↗</.link>
-          </div>
-        </header>
+        <CorrespondenceFunding.directory
+          :if={@live_action == :funding}
+          opportunities={@funding_opportunities}
+          filters={@funding_filters}
+          today={@funding_today}
+          json_export={@json_export}
+        />
+        <CorrespondenceFunding.applications
+          :if={@live_action == :funding_applications}
+          applications={@funding_applications}
+          filter={@funding_application_filter}
+        />
+        <CorrespondenceFunding.editor
+          :if={@live_action in [:new_funding, :funding_opportunity] && @funding_form}
+          opportunity={@funding_opportunity}
+          applications={@funding_applications}
+          form={@funding_form}
+          today={@funding_today}
+        />
+        <CorrespondenceFunding.import_page
+          :if={@live_action == :import_funding}
+          upload={@uploads.funding}
+          plan={@funding_import_plan}
+          result={@funding_import_result}
+        />
+      </section>
 
-        <div :if={@problem} class="corr-message error" role="alert">
-          {@problem}<.link navigate={~p"/storage"}>Storage &amp; Backups</.link>
-        </div>
-        <div :if={@notice} class="corr-message" role="status">{@notice}</div>
+      <section
+        :if={@live_action == :calendar && @location.configured && @location.available}
+        class="corr-page"
+      >
+        <CorrespondenceCalendar.page
+          events={calendar_occurrences(assigns)}
+          tasks={@calendar_tasks}
+          today={@calendar_today}
+          month={@calendar_month}
+          selected_date={@calendar_selected}
+          query={@calendar_query}
+          include_cancelled={@calendar_cancelled}
+          include_hidden={@calendar_hidden}
+          view={@calendar_view}
+          range={@calendar_range}
+          page={@calendar_page}
+          source={@calendar_source}
+          nearby_windows={@calendar_nearby_windows}
+          reading_periods={@reading_periods}
+          reading_periods_problem={@reading_periods_problem}
+          json_export={@json_export}
+          json_export_label={@json_export_label}
+        />
+      </section>
+      <section
+        :if={@live_action == :import_calendar && @location.configured && @location.available}
+        class="corr-page"
+      >
+        <StillWeb.CalendarImport.page
+          upload={@uploads.events}
+          plan={@calendar_import_plan}
+          result={@calendar_import_result}
+        />
+      </section>
 
-        <CorrespondenceHome.home
-          :if={@live_action == :home && @location.configured && @location.available}
+      <section
+        :if={
+          @live_action in [:new_calendar_event, :edit_calendar_event] && @location.configured &&
+            @location.available && @calendar_event_form != %{}
+        }
+        class="corr-page"
+      >
+        <StillWeb.CalendarEventEditor.page form={@calendar_event_form} event={@calendar_event} />
+      </section>
+
+      <section
+        :if={@live_action == :collection && @location.configured && @location.available}
+        class="corr-page"
+      >
+        <CorrespondenceDirectories.works works={@works_directory} />
+      </section>
+
+      <CorrespondenceWork.detail
+        :if={@live_action == :piece && @piece}
+        piece={@piece}
+        submission_focus={@submission_focus}
+        places={Correspondence.places_to_consider(@overview.journals, @piece)}
+        revisions={@revisions}
+        history={@history}
+        proof_sources={@proof_sources}
+        comparison={@comparison}
+        proof_problem={@proof_problem}
+        proof_plain={@proof_plain}
+      />
+      <section
+        :if={@live_action == :journals && @location.configured && @location.available}
+        class="corr-page"
+      >
+        <CorrespondencePlaces.directory
+          directory={@places_directory}
           icons={@place_icons}
-          overview={@overview}
-          upcoming_events={@upcoming_events}
-          events_problem={@events_problem}
+          json_export={@json_export}
         />
-
-        <section
-          :if={@live_action == :calendar && @location.configured && @location.available}
-          class="corr-page"
-        >
-          <CorrespondenceCalendar.page
-            events={calendar_occurrences(assigns)}
-            today={@calendar_today}
-            month={@calendar_month}
-            selected_date={@calendar_selected}
-            query={@calendar_query}
-            include_cancelled={@calendar_cancelled}
-            include_hidden={@calendar_hidden}
-            view={@calendar_view}
-            range={@calendar_range}
-            page={@calendar_page}
-          />
-        </section>
-        <section
-          :if={@live_action == :import_calendar && @location.configured && @location.available}
-          class="corr-page"
-        >
-          <StillWeb.CalendarImport.page
-            upload={@uploads.events}
-            plan={@calendar_import_plan}
-            result={@calendar_import_result}
-          />
-        </section>
-
-        <section
-          :if={
-            @live_action in [:new_calendar_event, :edit_calendar_event] && @location.configured &&
-              @location.available && @calendar_event_form != %{}
-          }
-          class="corr-page"
-        >
-          <StillWeb.CalendarEventEditor.page form={@calendar_event_form} event={@calendar_event} />
-        </section>
-
-        <section
-          :if={@live_action == :collection && @location.configured && @location.available}
-          class="corr-page"
-        >
-          <CorrespondenceDirectories.works works={@works_directory} />
-        </section>
-
-        <CorrespondenceWork.detail
-          :if={@live_action == :piece && @piece}
-          piece={@piece}
-          submission_focus={@submission_focus}
-          places={Correspondence.places_to_consider(@overview.journals, @piece)}
-          revisions={@revisions}
-          history={@history}
-          proof_sources={@proof_sources}
-          comparison={@comparison}
-          proof_problem={@proof_problem}
-          proof_plain={@proof_plain}
+      </section>
+      <section
+        :if={@live_action == :import_journals && @location.configured && @location.available}
+        class="corr-page"
+      >
+        <CorrespondenceImport.page
+          upload={@uploads.places}
+          plan={@import_plan}
+          result={@import_result}
         />
-        <section
-          :if={@live_action == :journals && @location.configured && @location.available}
-          class="corr-page"
-        >
-          <CorrespondencePlaces.directory directory={@places_directory} icons={@place_icons} />
-        </section>
-        <section
-          :if={@live_action == :import_journals && @location.configured && @location.available}
-          class="corr-page"
-        >
-          <CorrespondenceImport.page
-            upload={@uploads.places}
-            plan={@import_plan}
-            result={@import_result}
-          />
-        </section>
-        <section :if={@live_action == :journal && @journal} class="corr-page">
-          <CorrespondencePlaces.details
-            directory_path={places_path(@places_filters)}
-            icon={Map.get(@place_icons, @journal.id)}
-            journal={@journal}
-            packets={@journal_packets}
-            pieces={@overview.pieces}
-            form={@form}
-          />
-        </section>
-        <section
-          :if={@live_action == :new_journal && @location.configured && @location.available}
-          class="corr-page"
-        >
-          <CorrespondencePlaces.editor form={@form} />
-        </section>
+      </section>
+      <section :if={@live_action == :journal && @journal} class="corr-page">
+        <CorrespondencePlaces.details
+          directory_path={places_path(@places_filters)}
+          icon={Map.get(@place_icons, @journal.id)}
+          journal={@journal}
+          packets={@journal_packets}
+          pieces={@overview.pieces}
+          form={@form}
+        />
+      </section>
+      <section
+        :if={@live_action == :new_journal && @location.configured && @location.available}
+        class="corr-page"
+      >
+        <CorrespondencePlaces.editor form={@form} />
+      </section>
 
-        <section
-          :if={@live_action == :packets && @location.configured && @location.available}
-          class="corr-page"
-        >
-          <CorrespondenceDirectories.packets packets={@packets_directory} />
-        </section>
+      <section
+        :if={@live_action == :packets && @location.configured && @location.available}
+        class="corr-page"
+      >
+        <CorrespondenceDirectories.packets packets={@packets_directory} />
+      </section>
 
-        <section
-          :if={@live_action in [:new_packet, :packet] && (@packet || @live_action == :new_packet)}
-          class="corr-page editorial-packet-page"
-        >
-          <div class="corr-breadcrumb">
-            <.link patch={~p"/correspondence/packets"}>← Packets</.link>
-          </div>
-          <div class="corr-page-heading">
+      <section
+        :if={@live_action in [:new_packet, :packet] && (@packet || @live_action == :new_packet)}
+        class="corr-page editorial-packet-page"
+      >
+        <div class="corr-breadcrumb">
+          <.link patch={~p"/correspondence/packets"}>← Packets</.link>
+        </div>
+        <div class="corr-page-heading">
+          <div class="corr-packet-heading-copy">
             <h1>{if @packet, do: @packet.title, else: "New packet"}</h1>
-            <button
-              :if={@packet}
-              type="button"
-              id="duplicate-packet"
-              phx-click="duplicate_packet"
-              class="corr-text-link"
-            >Duplicate packet</button>
             <p :if={@packet} class="corr-meta">
               {if Map.get(@packet, :snapshot),
                 do: @packet.snapshot.journal_name,
@@ -2002,468 +2383,513 @@ defmodule StillWeb.CorrespondenceLive do
               )} {plural(length(@packet.piece_ids), "poem", "poems")} · {packet_status_label(@packet)}
             </p>
           </div>
-          <div class={"corr-packet-grid #{if @packet && Map.get(@packet, :snapshot), do: "is-sent", else: ""}"}>
-            <section
+          <button
+            :if={!@packet || @packet.status == "preparing"}
+            type="submit"
+            form="packet-form"
+            id="packet-save"
+            class={[
+              "corr-button corr-packet-save",
+              packet_needs_save?(@form, @packet, @packet_preview, @cover_letter_preview) &&
+                "has-changes"
+            ]}
+            disabled={!packet_needs_save?(@form, @packet, @packet_preview, @cover_letter_preview)}
+            phx-disable-with="Saving…"
+          >{cond do
+            is_nil(@packet) ->
+              "Save packet"
+
+            packet_needs_save?(@form, @packet, @packet_preview, @cover_letter_preview) ->
+              "Save changes"
+
+            true ->
+              "Packet saved"
+          end}</button>
+        </div>
+        <div class={"corr-packet-grid #{if @packet && Map.get(@packet, :snapshot), do: "is-sent", else: ""}"}>
+          <section
+            :if={!@packet || @packet.status == "preparing"}
+            class="editorial-packet-library"
+            aria-label="Choose writing"
+          >
+            <div class="corr-section-heading">
+              <h2>The pieces</h2><.link
+                :if={!@packet || @packet.status == "preparing"}
+                patch={~p"/correspondence/writing"}
+                class="corr-text-link"
+              >Choose from Works →</.link>
+            </div>
+            <form
+              id="packet-writing-search"
+              phx-change="packet_search"
+              class="corr-search editorial-packet-search"
+              aria-label="Search packet writing"
+            >
+              <input
+                name="search"
+                value={@packet_search}
+                aria-label="Find writing for this packet"
+                placeholder="Find a title or line…"
+              />
+            </form>
+            <p class="corr-meta">Choose current saved writing. Its order is yours to arrange.</p>
+            <% placements = Correspondence.packet_placements(@overview, @packet && @packet.id) %>
+            <div
               :if={!@packet || @packet.status == "preparing"}
-              class="editorial-packet-library"
-              aria-label="Choose writing"
+              class="corr-piece-select"
+              tabindex="0"
+              aria-label="Saved writing to choose from"
+            >
+              <article
+                :for={piece <- filtered_pieces(@overview.pieces, @packet_search)}
+                id={"packet-choice-#{piece.id}"}
+                class="corr-select-row"
+              >
+                <div>
+                  <.link patch={~p"/correspondence/writing/#{piece.id}"} class="corr-work-title">{title(
+                    piece
+                  )}</.link><p>{opening(piece.body)}</p>
+                  <ul
+                    :if={Map.has_key?(placements, piece.id)}
+                    class="packet-piece-placements"
+                    aria-label="Other packets"
+                  >
+                    <li :for={placement <- placements[piece.id]}>
+                      <strong class={
+                        if placement.status in ["In preparation", "Awaiting reply"],
+                          do: "packet-placement-active"
+                      }>
+                        {placement.status}
+                      </strong>
+                      <span>{placement.destination}</span>
+                      <span>{placement.title}</span>
+                    </li>
+                  </ul>
+                </div><button
+                  type="button"
+                  phx-click="toggle_piece"
+                  phx-value-id={piece.id}
+                  class={if piece.id in (@form[:piece_ids] || []), do: "selected", else: nil}
+                >{if piece.id in (@form[:piece_ids] || []), do: "Added ✓", else: "Add +"}</button>
+              </article>
+            </div>
+            <p :if={filtered_pieces(@overview.pieces, @packet_search) == []} class="corr-empty-side">
+              No marked works match. Mark a piece in Write or try another search.
+            </p>
+          </section>
+          <section class="editorial-packet-manuscript" aria-label="Packet manuscript">
+            <div
+              :if={!@packet || @packet.status == "preparing"}
+              class="corr-section-heading ordered"
+            >
+              <h2>In this order</h2><span>{length(@form[:piece_ids] || [])} {plural(
+                length(@form[:piece_ids] || []),
+                "piece",
+                "pieces"
+              )}</span>
+            </div>
+            <div :if={!@packet || @packet.status == "preparing"} class="corr-ordered">
+              <div
+                :for={{id, index} <- Enum.with_index(@form[:piece_ids] || [], 1)}
+                class="corr-ordered-row"
+              >
+                <span>{String.pad_leading(to_string(index), 2, "0")}</span><strong>{piece_name(
+                  @overview.pieces,
+                  id
+                )}</strong><button
+                  type="button"
+                  phx-click="move_piece"
+                  phx-value-id={id}
+                  phx-value-direction="up"
+                  aria-label="Move up"
+                >↑</button><button
+                  type="button"
+                  phx-click="move_piece"
+                  phx-value-id={id}
+                  phx-value-direction="down"
+                  aria-label="Move down"
+                >↓</button><button
+                  type="button"
+                  phx-click="toggle_piece"
+                  phx-value-id={id}
+                  aria-label="Remove"
+                >×</button>
+              </div><p :if={(@form[:piece_ids] || []) == []} class="corr-empty">
+                Add a saved piece to begin.
+              </p>
+            </div>
+            <div
+              :if={!@packet || @packet.status == "preparing"}
+              id="packet-preview"
+              class="editorial-packet-preview"
             >
               <div class="corr-section-heading">
-                <h2>The pieces</h2><.link
-                  :if={!@packet || @packet.status == "preparing"}
-                  patch={~p"/correspondence/writing"}
-                  class="corr-text-link"
-                >Choose from Works →</.link>
-              </div>
-              <form
-                id="packet-writing-search"
-                phx-change="packet_search"
-                class="corr-search editorial-packet-search"
-                aria-label="Search packet writing"
-              >
-                <input
-                  name="search"
-                  value={@packet_search}
-                  aria-label="Find writing for this packet"
-                  placeholder="Find a title or line…"
-                />
-              </form>
-              <p class="corr-meta">Choose current saved writing. Its order is yours to arrange.</p>
-              <div
-                :if={!@packet || @packet.status == "preparing"}
-                class="corr-piece-select"
-                tabindex="0"
-                aria-label="Saved writing to choose from"
-              >
-                <article
-                  :for={piece <- filtered_pieces(@overview.pieces, @packet_search)}
-                  class="corr-select-row"
-                >
-                  <div>
-                    <.link patch={~p"/correspondence/writing/#{piece.id}"} class="corr-work-title">{title(
-                      piece
-                    )}</.link><p>{opening(piece.body)}</p>
-                  </div><button
-                    type="button"
-                    phx-click="toggle_piece"
-                    phx-value-id={piece.id}
-                    class={if piece.id in (@form[:piece_ids] || []), do: "selected", else: nil}
-                  >{if piece.id in (@form[:piece_ids] || []), do: "Added ✓", else: "Add +"}</button>
-                </article>
-              </div>
-              <p :if={filtered_pieces(@overview.pieces, @packet_search) == []} class="corr-empty-side">
-                No marked works match. Mark a piece in Write or try another search.
-              </p>
-            </section>
-            <section class="editorial-packet-manuscript" aria-label="Packet manuscript">
-              <div
-                :if={!@packet || @packet.status == "preparing"}
-                class="corr-section-heading ordered"
-              >
-                <h2>In this order</h2><span>{length(@form[:piece_ids] || [])} {plural(
-                  length(@form[:piece_ids] || []),
-                  "piece",
-                  "pieces"
-                )}</span>
-              </div>
-              <div :if={!@packet || @packet.status == "preparing"} class="corr-ordered">
-                <div
-                  :for={{id, index} <- Enum.with_index(@form[:piece_ids] || [], 1)}
-                  class="corr-ordered-row"
-                >
-                  <span>{String.pad_leading(to_string(index), 2, "0")}</span><strong>{piece_name(
-                    @overview.pieces,
-                    id
-                  )}</strong><button
-                    type="button"
-                    phx-click="move_piece"
-                    phx-value-id={id}
-                    phx-value-direction="up"
-                    aria-label="Move up"
-                  >↑</button><button
-                    type="button"
-                    phx-click="move_piece"
-                    phx-value-id={id}
-                    phx-value-direction="down"
-                    aria-label="Move down"
-                  >↓</button><button
-                    type="button"
-                    phx-click="toggle_piece"
-                    phx-value-id={id}
-                    aria-label="Remove"
-                  >×</button>
-                </div><p :if={(@form[:piece_ids] || []) == []} class="corr-empty">
-                  Add a saved piece to begin.
-                </p>
-              </div>
-              <div
-                :if={!@packet || @packet.status == "preparing"}
-                id="packet-preview"
-                class="editorial-packet-preview"
-              >
-                <div class="corr-section-heading">
-                  <h2>The manuscript</h2><button
-                    type="button"
-                    phx-click="refresh_packet_preview"
-                    class="corr-small-link"
-                  >Refresh saved text</button>
-                </div>
-                <p :if={@packet_preview_problem} class="corr-message error" role="alert">
-                  {@packet_preview_problem}
-                </p>
-                <article
-                  :for={piece <- @packet_preview}
-                  class="editorial-packet-sheet"
-                >
-                  <pre>{manuscript_text(piece)}</pre>
-                  <div class="packet-sheet-actions">
-                    <button
-                      type="button"
-                      phx-click="edit_packet_piece"
-                      phx-value-id={piece.id}
-                      class="corr-small-link"
-                    >Edit</button><.link
-                      patch={~p"/correspondence/writing/#{piece.id}"}
-                      class="corr-small-link"
-                    >Work &amp; history →</.link>
-                  </div>
-                </article>
-                <p :if={(@form[:piece_ids] || []) == []} class="corr-empty-side">
-                  The selected work will appear here, in manuscript order.
-                </p>
-              </div>
-              <div :if={@packet && Map.get(@packet, :snapshot)} class="corr-snapshot">
-                <span class="corr-kicker">SUBMITTED VERSION · {date(@packet.snapshot.date)}</span><p>
-                  This packet holds its own copy of the text it carried. Later revisions to the saved writing do not change it.
-                </p>
-                <details :for={sent_piece <- @packet.snapshot.pieces} class="corr-version" open>
-                  <summary>Read “{sent_piece.title}” exactly as sent</summary><pre>{sent_piece.body}</pre>
-                  <.link
-                    patch={~p"/correspondence/writing/#{sent_piece.id}"}
-                    class="corr-small-link"
-                  >Open current work and history →</.link>
-                </details>
-                <.link
-                  href={~p"/correspondence/packets/#{@packet.id}/export/txt"}
-                  class="corr-text-link"
-                >Download plain text →</.link><span> · </span><.link
-                  href={~p"/correspondence/packets/#{@packet.id}/export/docx"}
-                  class="corr-text-link"
-                >Download DOCX</.link>
-              </div>
-            </section><aside class="corr-destination-panel">
-              <h2>Packet details</h2>
-              <.form
-                :if={!@packet || @packet.status == "preparing"}
-                id="packet-form"
-                for={%{}}
-                as={:packet}
-                phx-submit="save_packet"
-                phx-change="set_packet_journal"
-                class="corr-packet-form"
-              >
-                <label>Packet title<input
-                  name="packet[title]"
-                  value={value(@form, :title, "Untitled packet")}
-                /></label>
-                <label>Destination · optional while preparing<select name="packet[journal_id]"><option value="">
-                  Choose later
-                </option><option
-                  :for={
-                    journal <-
-                      Enum.filter(
-                        @overview.journals,
-                        &(Correspondence.active_journal?(&1) || &1.id == value(@form, :journal_id))
-                      )
-                  }
-                  value={journal.id}
-                  disabled={journal.inactive}
-                  selected={value(@form, :journal_id) == journal.id}
-                >
-                  {journal.name}{if journal.inactive, do: " (inactive)", else: ""}
-                </option></select></label>
-                <p :if={@journal} class="corr-guideline">
-                  <b>{policy_label(@journal.simultaneous_policy)}</b><br />{value(
-                    @journal,
-                    :guidelines
-                  )}<br /><span :if={!checked?(@journal.verified)}>Personal notes · not verified</span><span :if={
-                    checked?(@journal.verified)
-                  }>Marked source-checked by you</span>
-                </p>
-                <.link patch={~p"/correspondence/journals/new"} class="corr-small-link">Add a place you saved →</.link>
-                <label :if={!@packet}>Submission notes<textarea
-                  name="packet[preparation_notes]"
-                  rows="10"
-                >{value(@form, :preparation_notes)}</textarea></label>
-                <section class="packet-cover-letter" aria-label="Cover letter">
-                  <h3>Cover letter</h3>
-                  <button type="button" phx-click="choose_cover_letter" class="corr-small-link">Choose saved writing…</button>
-                  <label :if={
-                    @cover_letter_choices != [] || value(@form, :cover_letter_piece_id) != ""
-                  }>
-                    Saved writing
-                    <select id="packet-cover-letter" name="packet[cover_letter_piece_id]">
-                      <option value="">Use the draft below</option>
-                      <option
-                        :if={
-                          value(@form, :cover_letter_piece_id) != "" &&
-                            !Enum.any?(
-                              @cover_letter_choices,
-                              &(&1.id == value(@form, :cover_letter_piece_id))
-                            )
-                        }
-                        value={value(@form, :cover_letter_piece_id)}
-                        selected
-                      >
-                        {if @cover_letter_preview,
-                          do: @cover_letter_preview.title,
-                          else: "Linked writing unavailable"}
-                      </option>
-                      <option
-                        :for={piece <- @cover_letter_choices}
-                        value={piece.id}
-                        selected={value(@form, :cover_letter_piece_id) == piece.id}
-                      >
-                        {title(piece)} · {piece.relative_path}
-                      </option>
-                    </select>
-                  </label>
-                  <p class="corr-meta">
-                    Saved writing can be a scratch page. It doesn't need to be marked for Correspondence.
-                  </p>
-                  <p :if={@cover_letter_problem} class="corr-message error" role="alert">
-                    {@cover_letter_problem}
-                  </p>
-                  <div :if={@cover_letter_preview} id="packet-letter-preview">
-                    <pre>{@cover_letter_preview.body}</pre>
-                    <StillWeb.CopyText.copy_text
-                      id="copy-packet-cover-letter"
-                      body={@cover_letter_preview.body}
-                      title_in_body={true}
-                    />
-                    <button
-                      type="button"
-                      phx-click="edit_packet_piece"
-                      phx-value-id={value(@form, :cover_letter_piece_id)}
-                      class="corr-small-link"
-                    >Edit cover letter</button>
-                  </div>
-                  <label :if={value(@form, :cover_letter_piece_id) == ""}>Or write a draft here<textarea
-                    name="packet[cover_letter]"
-                    rows="6"
-                  >{value(@form, :cover_letter)}</textarea></label>
-                </section>
-                <button type="submit" class="corr-button">{if @packet,
-                  do: "Save changes",
-                  else: "Save packet"} <span>→</span></button>
-              </.form>
-              <div :if={@packet && Map.get(@packet, :snapshot)} class="corr-journal-detail">
-                <span class="corr-kicker">DESTINATION</span>
-                <p>
-                  <strong>{@packet.snapshot.journal_name}</strong>
-                </p>
-                <p :if={@journal && @journal.guidelines}>{@journal.guidelines}</p>
-                <p :if={@journal && @journal.simultaneous_policy}>
-                  <b>{policy_label(@journal.simultaneous_policy)}</b>
-                </p>
-                <p :if={@journal && valid_web_url?(@journal.submission_url)}>
-                  Actual submission page:
-                  <a href={@journal.submission_url} target="_blank" rel="noopener noreferrer">Open journal submission page ↗</a>
-                </p>
-                <p :if={@journal && !valid_web_url?(@journal.submission_url)}>
-                  No submission URL is saved for this place.
-                </p>
-                <p :if={!@journal}>The saved journal details are unavailable.</p>
-              </div>
-              <div :if={@packet && @packet.status != "preparing"} class="corr-readonly-packet">
-                <span class="corr-kicker">COVER LETTER AS SENT</span><pre>{value(@packet, :cover_letter, "No cover letter recorded.")}</pre>
-                <StillWeb.CopyText.copy_text
-                  :if={@packet.cover_letter not in [nil, ""]}
-                  id="copy-sent-cover-letter"
-                  body={@packet.cover_letter}
-                  title_in_body={true}
-                />
-                <div class="corr-packet-timeline">
-                  <h3>Its journey</h3><article
-                    :for={event <- Enum.reverse(@packet.events || [])}
-                    class="corr-event"
-                  >
-                    <span>{event_label(event)} · {date(event.date)}</span><p :if={event.note}>
-                      {event.note}
-                    </p>
-                  </article>
-                </div>
-              </div>
-              <p :if={
-                (!@packet || @packet.status == "preparing") && @journal &&
-                  valid_web_url?(@journal.submission_url)
-              }>
-                <a
-                  href={@journal.submission_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="corr-small-link"
-                >Open submission page ↗</a>
-              </p>
-              <section :if={@packet} class="corr-packet-export" aria-label="Export packet">
-                <h2>Submission copy</h2>
-                <p class="corr-meta">
-                  A clean manuscript, one poem starting on each page. Cover letters and private notes stay here.
-                </p>
-                <button
+                <h2>The manuscript</h2><button
                   type="button"
-                  class="corr-button"
-                  phx-click="export_packet_pdf"
-                  disabled={@pdf_exporting? || packet_unsaved?(@form, @packet)}
-                >
-                  {if @pdf_exporting?, do: "Preparing PDF…", else: "Save as PDF"}
-                </button>
-                <p :if={@packet_export_notice} role="status" class="corr-meta">
-                  {@packet_export_notice}
-                </p>
-                <button
-                  :if={@last_packet_export}
-                  type="button"
+                  phx-click="refresh_packet_preview"
                   class="corr-small-link"
-                  phx-click="reveal_packet_export"
-                >Show PDF in Finder</button>
-              </section>
+                >Refresh saved text</button>
+              </div>
               <p
                 :if={
                   @packet && packet_review_needed?(@packet, @packet_preview, @cover_letter_preview)
                 }
                 class="corr-unsaved-note"
                 id="packet-review-needed"
+                role="status"
               >
-                Saved writing has changed. Review the manuscript and cover letter, then Save changes before exporting or marking it sent.
+                Saved writing has changed: {packet_changed_names(
+                  @packet,
+                  @packet_preview,
+                  @cover_letter_preview
+                )}.
+                Review the current manuscript and cover letter, then choose Save changes at the top of this packet before marking it sent.
               </p>
-              <p :if={@packet && packet_unsaved?(@form, @packet)} class="corr-unsaved-note">
-                This packet has unsaved changes. Save it before exporting or marking it sent.
+              <p :if={@packet_preview_problem} class="corr-message error" role="alert">
+                {@packet_preview_problem}
               </p>
-              <p :if={!@packet} class="corr-unsaved-note">
-                Save this packet draft to keep the selected pieces, their order, and your notes.
-              </p>
-              <div
-                :if={@packet && !Map.get(@packet, :snapshot) && !packet_unsaved?(@form, @packet)}
-                class="corr-snapshot"
+              <article
+                :for={piece <- @packet_preview}
+                class="editorial-packet-sheet"
               >
-                <span class="corr-kicker">REVIEW THE MANUSCRIPT</span><p>
-                  Export the prepared packet to read it as a submission copy.
-                </p><.link
-                  href={~p"/correspondence/packets/#{@packet.id}/export/txt"}
-                  class="corr-text-link"
-                >Download plain text →</.link><span> · </span><.link
-                  href={~p"/correspondence/packets/#{@packet.id}/export/docx"}
-                  class="corr-text-link"
-                >Download DOCX</.link>
-              </div>
-              <div :if={@overlap != []} class="corr-overlap" role="note">
-                <b>{if @packet && @packet.accepted_piece_ids != [],
-                  do: "Review other outstanding submissions",
-                  else: "Some pieces are already away."}</b>
-                <p :if={@packet && @packet.accepted_piece_ids != []}>
-                  Accepted work may need withdrawal elsewhere. Still has not contacted anyone.
-                </p><p :for={item <- @overlap}>
-                  {piece_name(@overview.pieces, item.piece_id)} is with {overlap_journal_name(item)}. Check that journal’s simultaneous-submission policy before proceeding.
-                </p>
-              </div>
-              <form
-                :if={@packet && @packet.status == "preparing"}
-                phx-submit="submit_packet"
-                class="corr-send-form"
-              >
-                <label>Submission date<input type="date" name="date" value={today()} required /></label><button
-                  class="corr-button"
-                  type="submit"
-                >Mark as sent <span>→</span></button><small>This records the packet here. It does not contact the journal.</small>
-              </form>
-              <div :if={@packet && @packet.status == "submitted"} class="corr-response">
-                <form phx-submit="set_status">
-                  <button type="submit" name="status" value="awaiting" class="corr-text-link">Mark as awaiting response →</button>
-                </form>
-              </div>
-              <div :if={@packet && @packet.status == "awaiting"} class="corr-response">
-                <form phx-submit="set_status">
-                  <button type="submit" name="status" value="submitted" class="corr-text-link">Return to submitted →</button><button
-                    type="submit"
-                    name="status"
-                    value="withdrawn"
-                    class="corr-text-link"
-                  >Mark withdrawn →</button>
-                </form>
-              </div>
-              <div :if={@packet && response_open?(@packet)} class="corr-response">
-                <div class="corr-kicker">RECORD A REPLY</div><.form
-                  id="response-form"
-                  for={%{}}
-                  as={:response}
-                  phx-submit="record_response"
-                >
-                  <label>Reply<select name="response[status]"><option value="declined">
-                    Returned with thanks
-                  </option><option value="accepted">Accepted</option><option value="withdrawn">
-                    Withdrawn
-                  </option></select></label><label>Date<input
-                    type="date"
-                    name="response[date]"
-                    value={today()}
-                  /></label><label>Notes<textarea
-                    name="response[notes]"
-                    rows="3"
-                    placeholder="A note to help future you remember"
-                  ></textarea></label>
-                  <div class="corr-accepted-list">
-                    <span class="corr-kicker">IF ACCEPTED, WHICH PIECES?</span><input
-                      type="hidden"
-                      name="response[accepted_piece_ids][]"
-                      value=""
-                    /><label :for={id <- response_piece_ids(@packet)} class="corr-check"><input
-                      type="checkbox"
-                      name="response[accepted_piece_ids][]"
-                      value={id}
-                      checked
-                    /> {piece_name(@overview.pieces, id)}</label>
-                  </div>
-                  <button type="submit" class="corr-text-link">Record reply →</button>
-                </.form>
-              </div>
-            </aside>
-            <section
-              :if={@packet && @packet_notes}
-              class="corr-submission-notes"
-              aria-label="Submission notes"
+                <pre>{manuscript_text(piece)}</pre>
+                <div class="packet-sheet-actions">
+                  <button
+                    type="button"
+                    phx-click="edit_packet_piece"
+                    phx-value-id={piece.id}
+                    class="corr-small-link"
+                  >Edit</button><.link
+                    patch={~p"/correspondence/writing/#{piece.id}"}
+                    class="corr-small-link"
+                  >Work &amp; history →</.link>
+                </div>
+              </article>
+              <p :if={(@form[:piece_ids] || []) == []} class="corr-empty-side">
+                The selected work will appear here, in manuscript order.
+              </p>
+            </div>
+            <div :if={@packet && Map.get(@packet, :snapshot)} class="corr-snapshot">
+              <span class="corr-kicker">SUBMITTED VERSION · {date(@packet.snapshot.date)}</span><p>
+                This packet holds its own copy of the text it carried. Later revisions to the saved writing do not change it.
+              </p>
+              <details :for={sent_piece <- @packet.snapshot.pieces} class="corr-version" open>
+                <summary>Read “{sent_piece.title}” exactly as sent</summary><pre>{sent_piece.body}</pre>
+                <.link
+                  patch={~p"/correspondence/writing/#{sent_piece.id}"}
+                  class="corr-small-link"
+                >Open current work and history →</.link>
+              </details>
+              <.link
+                href={~p"/correspondence/packets/#{@packet.id}/export/txt"}
+                class="corr-text-link"
+              >Download plain text →</.link><span> · </span><.link
+                href={~p"/correspondence/packets/#{@packet.id}/export/docx"}
+                class="corr-text-link"
+              >Download DOCX</.link>
+            </div>
+          </section><aside class="corr-destination-panel">
+            <h2>Packet details</h2>
+            <.form
+              :if={!@packet || @packet.status == "preparing"}
+              id="packet-form"
+              for={%{}}
+              as={:packet}
+              phx-submit="save_packet"
+              phx-change="set_packet_journal"
+              class="corr-packet-form"
             >
-              <h2>Submission notes</h2>
-              <p class="corr-meta">
-                Your private notes, editable even after sending. These stay out of the manuscript and PDF.
-              </p>
-              <div
-                id={"packet-notes-#{@packet.id}"}
-                phx-update="ignore"
-                data-packet-notes
+              <label>Packet title<input
+                name="packet[title]"
+                value={value(@form, :title, "Untitled packet")}
+              /></label>
+              <label>Destination · optional while preparing<select name="packet[journal_id]"><option value="">
+                Choose later
+              </option><option
+                :for={
+                  journal <-
+                    Enum.filter(
+                      @overview.journals,
+                      &(Correspondence.active_journal?(&1) || &1.id == value(@form, :journal_id))
+                    )
+                }
+                value={journal.id}
+                disabled={journal.inactive}
+                selected={value(@form, :journal_id) == journal.id}
               >
-                <label for="packet-notes-body" class="sr-only">Submission notes</label>
-                <textarea
-                  id="packet-notes-body"
-                  rows="12"
-                  phx-hook="PacketNotes"
-                  data-packet-id={@packet.id}
-                  data-scope={@location.scope}
-                  data-token={@packet_notes.token || ""}
-                  data-persisted={@packet_notes.body}
-                >{@packet_notes.body}</textarea>
-                <p data-notes-status role="status" class="corr-meta">Saved notes</p>
-                <button type="button" data-notes-save class="corr-button">Save notes</button>
-                <button type="button" data-notes-restore class="corr-small-link" hidden>Restore local notes</button>
+                {journal.name}{if journal.inactive, do: " (inactive)", else: ""}
+              </option></select></label>
+              <p :if={@journal} class="corr-guideline">
+                <b>{policy_label(@journal.simultaneous_policy)}</b><br />{value(
+                  @journal,
+                  :guidelines
+                )}<br /><span :if={!checked?(@journal.verified)}>Personal notes · not verified</span><span :if={
+                  checked?(@journal.verified)
+                }>Marked source-checked by you</span>
+              </p>
+              <.link patch={~p"/correspondence/journals/new"} class="corr-small-link">Add a place you saved →</.link>
+              <label :if={!@packet}>Submission notes<textarea
+                name="packet[preparation_notes]"
+                rows="10"
+              >{value(@form, :preparation_notes)}</textarea></label>
+              <section class="packet-cover-letter" aria-label="Cover letter">
+                <h3>Cover letter</h3>
+                <button type="button" phx-click="choose_cover_letter" class="corr-small-link">Choose saved writing…</button>
+                <label :if={@cover_letter_choices != [] || value(@form, :cover_letter_piece_id) != ""}>
+                  Saved writing
+                  <select id="packet-cover-letter" name="packet[cover_letter_piece_id]">
+                    <option value="">Use the draft below</option>
+                    <option
+                      :if={
+                        value(@form, :cover_letter_piece_id) != "" &&
+                          !Enum.any?(
+                            @cover_letter_choices,
+                            &(&1.id == value(@form, :cover_letter_piece_id))
+                          )
+                      }
+                      value={value(@form, :cover_letter_piece_id)}
+                      selected
+                    >
+                      {if @cover_letter_preview,
+                        do: @cover_letter_preview.title,
+                        else: "Linked writing unavailable"}
+                    </option>
+                    <option
+                      :for={piece <- @cover_letter_choices}
+                      value={piece.id}
+                      selected={value(@form, :cover_letter_piece_id) == piece.id}
+                    >
+                      {title(piece)} · {piece.relative_path}
+                    </option>
+                  </select>
+                </label>
+                <p class="corr-meta">
+                  Saved writing can be a scratch page. It doesn't need to be marked for Correspondence.
+                </p>
+                <p :if={@cover_letter_problem} class="corr-message error" role="alert">
+                  {@cover_letter_problem}
+                </p>
+                <div :if={@cover_letter_preview} id="packet-letter-preview">
+                  <pre>{@cover_letter_preview.body}</pre>
+                  <StillWeb.CopyText.copy_text
+                    id="copy-packet-cover-letter"
+                    body={@cover_letter_preview.body}
+                    title_in_body={true}
+                  />
+                  <button
+                    type="button"
+                    phx-click="edit_packet_piece"
+                    phx-value-id={value(@form, :cover_letter_piece_id)}
+                    class="corr-small-link"
+                  >Edit cover letter</button>
+                </div>
+                <label :if={value(@form, :cover_letter_piece_id) == ""}>Or write a draft here<textarea
+                  name="packet[cover_letter]"
+                  rows="6"
+                >{value(@form, :cover_letter)}</textarea></label>
+              </section>
+            </.form>
+            <div :if={@packet && Map.get(@packet, :snapshot)} class="corr-journal-detail">
+              <span class="corr-kicker">DESTINATION</span>
+              <p>
+                <strong>{@packet.snapshot.journal_name}</strong>
+              </p>
+              <p :if={@journal && @journal.guidelines}>{@journal.guidelines}</p>
+              <p :if={@journal && @journal.simultaneous_policy}>
+                <b>{policy_label(@journal.simultaneous_policy)}</b>
+              </p>
+              <p :if={@journal && valid_web_url?(@journal.submission_url)}>
+                Actual submission page:
+                <a href={@journal.submission_url} target="_blank" rel="noopener noreferrer">Open journal submission page ↗</a>
+              </p>
+              <p :if={@journal && !valid_web_url?(@journal.submission_url)}>
+                No submission URL is saved for this place.
+              </p>
+              <p :if={!@journal}>The saved journal details are unavailable.</p>
+            </div>
+            <div :if={@packet && @packet.status != "preparing"} class="corr-readonly-packet">
+              <span class="corr-kicker">COVER LETTER AS SENT</span><pre>{value(@packet, :cover_letter, "No cover letter recorded.")}</pre>
+              <StillWeb.CopyText.copy_text
+                :if={@packet.cover_letter not in [nil, ""]}
+                id="copy-sent-cover-letter"
+                body={@packet.cover_letter}
+                title_in_body={true}
+              />
+              <div class="corr-packet-timeline">
+                <h3>Its journey</h3><article
+                  :for={event <- Enum.reverse(@packet.events || [])}
+                  class="corr-event"
+                >
+                  <span>{event_label(event)} · {date(event.date)}</span><p :if={event.note}>
+                    {event.note}
+                  </p>
+                </article>
               </div>
+            </div>
+            <p :if={
+              (!@packet || @packet.status == "preparing") && @journal &&
+                valid_web_url?(@journal.submission_url)
+            }>
+              <a
+                href={@journal.submission_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="corr-small-link"
+              >Open submission page ↗</a>
+            </p>
+            <section :if={@packet} class="corr-packet-export" aria-label="Export packet">
+              <h2>Submission copy</h2>
+              <p class="corr-meta">
+                A clean manuscript, one poem starting on each page. Cover letters and private notes stay here.
+              </p>
+              <button
+                type="button"
+                class="corr-button"
+                phx-click="export_packet_pdf"
+                disabled={@pdf_exporting? || packet_unsaved?(@form, @packet)}
+              >
+                {if @pdf_exporting?, do: "Preparing PDF…", else: "Save as PDF"}
+              </button>
+              <p :if={@packet_export_notice} role="status" class="corr-meta">
+                {@packet_export_notice}
+              </p>
+              <button
+                :if={@last_packet_export}
+                type="button"
+                class="corr-small-link"
+                phx-click="reveal_packet_export"
+              >Show PDF in Finder</button>
             </section>
-          </div>
-        </section>
-        <footer :if={@location && @location.configured && @location.available} class="corr-footer">
-          <span>STILL · A ROOM FOR WRITING</span><span>Correspondence keeps the words close as they travel.</span><span>Saved in your collection</span>
-        </footer>
-      </div>
-    </Layouts.app>
+            <p :if={@packet && packet_unsaved?(@form, @packet)} class="corr-unsaved-note">
+              This packet has unsaved changes. Save it before exporting or marking it sent.
+            </p>
+            <p :if={!@packet} class="corr-unsaved-note">
+              Save this packet draft to keep the selected pieces, their order, and your notes.
+            </p>
+            <div
+              :if={@packet && !Map.get(@packet, :snapshot) && !packet_unsaved?(@form, @packet)}
+              class="corr-snapshot"
+            >
+              <span class="corr-kicker">REVIEW THE MANUSCRIPT</span><p>
+                Export the prepared packet to read it as a submission copy.
+              </p><.link
+                href={~p"/correspondence/packets/#{@packet.id}/export/txt"}
+                class="corr-text-link"
+              >Download plain text →</.link><span> · </span><.link
+                href={~p"/correspondence/packets/#{@packet.id}/export/docx"}
+                class="corr-text-link"
+              >Download DOCX</.link>
+            </div>
+            <div :if={@overlap != []} class="corr-overlap" role="note">
+              <b>{if @packet && @packet.accepted_piece_ids != [],
+                do: "Review other outstanding submissions",
+                else: "Some pieces are already away."}</b>
+              <p :if={@packet && @packet.accepted_piece_ids != []}>
+                Accepted work may need withdrawal elsewhere. Still has not contacted anyone.
+              </p><p :for={item <- @overlap}>
+                {piece_name(@overview.pieces, item.piece_id)} is with {overlap_journal_name(item)}. Check that journal’s simultaneous-submission policy before proceeding.
+              </p>
+            </div>
+            <form
+              :if={@packet && @packet.status == "preparing"}
+              phx-submit="submit_packet"
+              class="corr-send-form"
+            >
+              <label>Submission date<input type="date" name="date" value={today()} required /></label><button
+                class="corr-button"
+                type="submit"
+              >Mark as sent <span>→</span></button><small>This records the packet here. It does not contact the journal.</small>
+            </form>
+            <div :if={@packet && @packet.status == "submitted"} class="corr-response">
+              <form phx-submit="set_status">
+                <button type="submit" name="status" value="awaiting" class="corr-text-link">Mark as awaiting response →</button>
+              </form>
+            </div>
+            <div :if={@packet && @packet.status == "awaiting"} class="corr-response">
+              <form phx-submit="set_status">
+                <button type="submit" name="status" value="submitted" class="corr-text-link">Return to submitted →</button><button
+                  type="submit"
+                  name="status"
+                  value="withdrawn"
+                  class="corr-text-link"
+                >Mark withdrawn →</button>
+              </form>
+            </div>
+            <button
+              :if={@packet}
+              type="button"
+              id="duplicate-packet"
+              phx-click="duplicate_packet"
+              class="corr-text-link"
+            >Duplicate for another submission</button>
+            <div :if={@packet && response_open?(@packet)} class="corr-response">
+              <div class="corr-kicker">RECORD A REPLY</div><.form
+                id="response-form"
+                for={%{}}
+                as={:response}
+                phx-submit="record_response"
+              >
+                <label>Reply<select name="response[status]"><option value="declined">
+                  Returned with thanks
+                </option><option value="accepted">Accepted</option><option value="withdrawn">
+                  Withdrawn
+                </option></select></label><label>Date<input
+                  type="date"
+                  name="response[date]"
+                  value={today()}
+                /></label><label>Notes<textarea
+                  name="response[notes]"
+                  rows="3"
+                  placeholder="A note to help future you remember"
+                ></textarea></label>
+                <div class="corr-accepted-list">
+                  <span class="corr-kicker">IF ACCEPTED, WHICH PIECES?</span><input
+                    type="hidden"
+                    name="response[accepted_piece_ids][]"
+                    value=""
+                  /><label :for={id <- response_piece_ids(@packet)} class="corr-check"><input
+                    type="checkbox"
+                    name="response[accepted_piece_ids][]"
+                    value={id}
+                    checked
+                  /> {piece_name(@overview.pieces, id)}</label>
+                </div>
+                <button type="submit" class="corr-text-link">Record reply →</button>
+              </.form>
+            </div>
+          </aside>
+          <section
+            :if={@packet && @packet_notes}
+            class="corr-submission-notes"
+            aria-label="Submission notes"
+          >
+            <h2>Submission notes</h2>
+            <p class="corr-meta">
+              Your private notes, editable even after sending. These stay out of the manuscript and PDF.
+            </p>
+            <div
+              id={"packet-notes-#{@packet.id}"}
+              phx-update="ignore"
+              data-packet-notes
+            >
+              <label for="packet-notes-body" class="sr-only">Submission notes</label>
+              <textarea
+                id="packet-notes-body"
+                rows="12"
+                phx-hook="PacketNotes"
+                data-packet-id={@packet.id}
+                data-scope={@location.scope}
+                data-token={@packet_notes.token || ""}
+                data-persisted={@packet_notes.body}
+              >{@packet_notes.body}</textarea>
+              <p data-notes-status role="status" class="corr-meta">Saved notes</p>
+              <button type="button" data-notes-save class="corr-button">Save notes</button>
+              <button type="button" data-notes-restore class="corr-small-link" hidden>Restore local notes</button>
+            </div>
+          </section>
+        </div>
+      </section>
+    </CorrespondenceWorkspace.workspace>
     """
   end
 
@@ -2518,6 +2944,25 @@ defmodule StillWeb.CorrespondenceLive do
   end
 
   defp packet_review_needed?(_, _, _), do: false
+
+  defp packet_needs_save?(_form, nil, _pieces, _letter), do: true
+
+  defp packet_needs_save?(form, packet, pieces, letter),
+    do: packet_unsaved?(form, packet) or packet_review_needed?(packet, pieces, letter)
+
+  defp packet_changed_names(packet, pieces, letter) do
+    names =
+      pieces
+      |> Enum.filter(&(Map.get(packet.piece_tokens, &1.id) != &1.token))
+      |> Enum.map(&title/1)
+
+    names =
+      if packet.cover_letter_piece_id && letter && packet.cover_letter_piece_token != letter.token,
+        do: names ++ ["cover letter"],
+        else: names
+
+    Enum.join(names, ", ")
+  end
 
   defp date(nil), do: "date not recorded"
 

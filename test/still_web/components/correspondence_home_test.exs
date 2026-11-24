@@ -9,7 +9,7 @@ defmodule StillWeb.CorrespondenceHomeTest do
     html = render_home(%{pieces: [], journals: [], packets: []})
 
     assert html =~ ~s(id="correspondence-home")
-    assert html =~ "Home"
+    assert html =~ ~s(id="home-heading">Correspondence</h1>)
     assert html =~ "Preparing"
     assert html =~ "Awaiting replies"
     assert html =~ "Recent responses"

@@ -2,8 +2,9 @@ defmodule StillWeb.CorrespondenceAppearanceTest do
   use StillWeb.ConnCase
   import Phoenix.LiveViewTest
 
-  alias Still.{Storage, Writing}
+  alias Still.Storage
   alias Still.Correspondence.Appearance
+  alias Still.Writing.Appearance, as: WritingAppearance
 
   @moduletag :tmp_dir
 
@@ -30,31 +31,46 @@ defmodule StillWeb.CorrespondenceAppearanceTest do
     path = Path.join(folder, "A page")
     bytes = "Exact words\r\n\n\t  A line stays here.\n"
     File.write!(path, bytes)
-    {:ok, _} = Writing.set_room_light(214)
+    {:ok, _} = WritingAppearance.set_color("forest")
 
     {:ok, view, _} = live(conn, ~p"/correspondence")
     assert has_element?(view, ".correspondence-room[data-color=graphite]:not(.is-light)")
 
-    for color <- ~w(blue forest plum) do
+    assert has_element?(view, "#correspondence-color option[value=sepia]", "Sepia")
+
+    for color <- ~w(blue forest plum graphite sepia) do
       view
       |> form("#correspondence-color-form", appearance: %{color: color})
       |> render_change()
 
+      assert has_element?(view, ".correspondence-frame[data-color=#{color}]")
       assert has_element?(view, ".correspondence-room[data-color=#{color}]:not(.is-light)")
       assert has_element?(view, "#correspondence-color option[value=#{color}][selected]")
     end
 
     view |> element(".corr-theme") |> render_click()
-    assert Appearance.current() == %{color: "plum", light?: true}
+    assert Appearance.current() == %{color: "sepia", light?: true}
+    assert has_element?(view, ".correspondence-frame[data-color=light]")
+
+    {:ok, writing, _} = live(conn, ~p"/pages")
+    assert has_element?(writing, ".writing-frame[data-color=forest]")
+    writing |> element("#light-toggle") |> render_click()
+
+    writing
+    |> form("#room-light-form", appearance: %{color: "plum"})
+    |> render_change()
+
+    assert has_element?(writing, ".writing-frame[data-color=plum]")
+    assert Appearance.current() == %{color: "sepia", light?: true}
 
     {:ok, reopened, _} = live(conn, ~p"/correspondence/journals")
-    assert has_element?(reopened, ".correspondence-room[data-color=plum].is-light")
+    assert has_element?(reopened, ".correspondence-room[data-color=sepia].is-light")
     reopened |> element(".corr-theme") |> render_click()
-    assert has_element?(reopened, ".correspondence-room[data-color=plum]:not(.is-light)")
+    assert has_element?(reopened, ".correspondence-room[data-color=sepia]:not(.is-light)")
 
     assert {:error, :invalid_color} = Appearance.choose_color("unknown")
-    assert Appearance.current() == %{color: "plum", light?: false}
-    assert Writing.room_light() == 214
+    assert Appearance.current() == %{color: "sepia", light?: false}
+    assert WritingAppearance.color() == "plum"
     assert File.read!(path) == bytes
   end
 end

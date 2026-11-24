@@ -142,7 +142,11 @@ defmodule StillWeb.PlaceImportLiveTest do
     assert render(stale) =~ "This record changed on disk"
     assert {:ok, kept} = Correspondence.journal(location, journal.id)
     assert kept.possible_piece_ids == [other.id]
-    render_click(element(place, "button[phx-click=toggle_shortlist]"))
+
+    render_change(element(place, "#place-mark-#{journal.id}"), %{
+      place_id: journal.id,
+      impression: "nearby"
+    })
 
     render_submit(element(place, "#journal-form"), %{
       journal: %{
@@ -221,7 +225,7 @@ defmodule StillWeb.PlaceImportLiveTest do
       }
     })
 
-    render_async(place)
+    render_async(place, 1_000)
     assert_received {:icon_fetch, "https://images.example/new.png"}
     assert {:ok, updated} = Correspondence.journal(location, journal.id)
     assert updated.description == "An edited short blurb"

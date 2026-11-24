@@ -2,6 +2,7 @@ defmodule StillWeb.CalendarLiveTest do
   use StillWeb.ConnCase
   import Phoenix.LiveViewTest
   alias Still.{Storage, Repo, LocalRecord}
+  alias Still.Correspondence
   alias Still.Correspondence.{Calendar, CalendarImport}
   import Ecto.Query
   @moduletag :tmp_dir
@@ -46,7 +47,7 @@ defmodule StillWeb.CalendarLiveTest do
 
     assert has_element?(
              view,
-             "#calendar-filters .corr-calendar-actions a[href='/correspondence/calendar/events/new']",
+             "#calendar-filters .corr-calendar-new-event[href='/correspondence/calendar/events/new']",
              "Add event"
            )
 
@@ -105,6 +106,306 @@ defmodule StillWeb.CalendarLiveTest do
     assert revised.title == "My revised reading"
     assert revised.recurrence == nil
     assert revised.external_id == event.external_id
+  end
+
+  test "Reading periods timeline spans a month and keeps the Nearby filter across navigation", %{
+    conn: conn,
+    location: location
+  } do
+    today = NaiveDateTime.local_now() |> NaiveDateTime.to_date()
+    month = Date.beginning_of_month(today)
+    next_month = Date.add(Date.end_of_month(month), 1)
+    span_start = Date.add(month, -4)
+    span_end = Date.add(next_month, 4)
+
+    for {name, opens, closes, nearby} <- [
+          {"Nearby Journal", today, Date.add(today, 7), true},
+          {"Month-spanning Journal", span_start, span_end, false},
+          {"Past Journal", Date.add(month, -20), Date.add(month, -1), false},
+          {"Future Journal", Date.add(next_month, 2), Date.add(next_month, 8), false}
+        ] do
+      assert {:ok, _} =
+               Correspondence.save_journal(location, %{
+                 name: name,
+                 shortlisted: nearby,
+                 submission_window: %{
+                   "mode" => "dates",
+                   "opens" => Date.to_iso8601(opens),
+                   "closes" => Date.to_iso8601(closes)
+                 }
+               })
+    end
+
+    assert {:ok, _} =
+             Correspondence.save_journal(location, %{
+               name: "Year-round Journal",
+               submission_window: %{"mode" => "always"}
+             })
+
+    assert {:ok, _} =
+             Correspondence.save_journal(location, %{
+               name: "Unconfirmed Journal",
+               windows: "Dates to confirm"
+             })
+
+    month_param = Elixir.Calendar.strftime(month, "%Y-%m")
+    {:ok, view, _} = live(conn, "/correspondence/calendar?month=#{month_param}")
+
+    assert has_element?(view, "nav[aria-label='Calendar content'] a", "Reading periods")
+    render_click(element(view, "nav[aria-label='Calendar content'] a", "Reading periods"))
+
+    assert has_element?(view, "#reading-periods-timeline")
+    assert has_element?(view, "#reading-periods-timeline li.reading-period-row", "Nearby Journal")
+
+    assert has_element?(
+             view,
+             "#reading-periods-timeline li.reading-period-row",
+             "Month-spanning Journal"
+           )
+
+    assert has_element?(
+             view,
+             ".reading-period-dates",
+             Elixir.Calendar.strftime(span_start, "%b %-d")
+           )
+
+    assert has_element?(
+             view,
+             ".reading-period-dates",
+             Elixir.Calendar.strftime(span_end, "%b %-d")
+           )
+
+    assert has_element?(view, ".reading-period-range.continues-before.continues-after")
+    assert has_element?(view, "#reading-periods-timeline", "Open today")
+    assert has_element?(view, "#reading-periods-timeline .reading-period-today")
+    refute has_element?(view, "#reading-periods-timeline li.reading-period-row", "Past Journal")
+    refute has_element?(view, "#reading-periods-timeline li.reading-period-row", "Future Journal")
+    refute has_element?(view, ".corr-calendar-grid")
+    refute has_element?(view, "#calendar-agenda-events")
+
+    assert has_element?(view, "#reading-periods-year-round", "Open year-round")
+    assert has_element?(view, "#reading-periods-year-round a", "Year-round Journal")
+    assert has_element?(view, "#reading-periods-unconfirmed", "Dates to confirm")
+    assert has_element?(view, "#reading-periods-unconfirmed a", "Unconfirmed Journal")
+
+    filters = element(view, "#calendar-filters")
+    render_change(filters, %{"calendar" => %{"nearby_windows" => "true"}})
+    assert has_element?(view, "#reading-periods-timeline li.reading-period-row", "Nearby Journal")
+
+    refute has_element?(
+             view,
+             "#reading-periods-timeline li.reading-period-row",
+             "Month-spanning Journal"
+           )
+
+    render_click(element(view, "a[aria-label='Next month']"))
+    assert has_element?(view, "#calendar-filters input[name='calendar[nearby_windows]'][checked]")
+    assert has_element?(view, "a[aria-label='Previous month'][href*='nearby_windows=true']")
+    refute has_element?(view, "#reading-periods-timeline .reading-period-today")
+    refute has_element?(view, ".reading-period-row", "Future Journal")
+    render_change(filters, %{"calendar" => %{"nearby_windows" => "false"}})
+    assert has_element?(view, ".reading-period-row", "Future Journal")
+
+    render_click(element(view, "nav[aria-label='Calendar content'] a", "Events"))
+    refute has_element?(view, "#reading-periods-timeline")
+    assert has_element?(view, ".corr-calendar-grid")
+    assert has_element?(view, "#calendar-agenda-events")
+
+    render_click(element(view, "nav[aria-label='Calendar content'] a", "Funding"))
+    refute has_element?(view, "#reading-periods-timeline")
+
+    assert has_element?(
+             view,
+             "nav[aria-label='Calendar content'] a[aria-current='page']",
+             "Funding"
+           )
+  end
+
+  test "Reading periods search and exports cover the active directory", %{
+    conn: conn,
+    location: location
+  } do
+    today = NaiveDateTime.local_now() |> NaiveDateTime.to_date()
+    outside_month = Date.add(Date.end_of_month(today), 20)
+
+    assert {:ok, _} =
+             Correspondence.save_journal(location, %{
+               name: "Amber Review",
+               website: "https://amber.example/journal",
+               submission_url: "https://amber.example/submit",
+               windows: "Amber window note",
+               submission_window: %{
+                 "mode" => "dates",
+                 "opens" => Date.to_iso8601(outside_month),
+                 "closes" => Date.to_iso8601(Date.add(outside_month, 8))
+               },
+               notes: "Private planning note"
+             })
+
+    assert {:ok, _} =
+             Correspondence.save_journal(location, %{
+               name: "Blue Review",
+               windows: "Blue anthology window",
+               submission_window: %{"mode" => "always"}
+             })
+
+    assert {:ok, _} =
+             Correspondence.save_journal(location, %{
+               name: "Dates to Confirm",
+               windows: "Confirm by email",
+               submission_window: nil
+             })
+
+    assert {:ok, _} =
+             Correspondence.save_journal(location, %{
+               name: "Inactive Review",
+               inactive: true,
+               submission_window: %{"mode" => "always"}
+             })
+
+    month = Elixir.Calendar.strftime(today, "%Y-%m")
+    {:ok, view, _} = live(conn, "/correspondence/calendar?month=#{month}")
+    render_click(element(view, "nav[aria-label='Calendar content'] a", "Reading periods"))
+
+    assert has_element?(
+             view,
+             "#calendar-filters input[type='search'][name='calendar[q]'][placeholder='Search reading periods']"
+           )
+
+    assert has_element?(view, "#calendar-filters input[name='calendar[nearby_windows]']")
+    assert has_element?(view, "#correspondence-calendar[data-source='reading']")
+
+    filters = element(view, "#calendar-filters")
+    render_change(filters, %{"calendar" => %{"q" => "Confirm by email"}})
+    assert has_element?(view, "#reading-periods-unconfirmed a", "Dates to Confirm")
+    refute has_element?(view, "#reading-periods-year-round a", "Blue Review")
+    render_change(filters, %{"calendar" => %{"q" => "amber.example/submit"}})
+    refute has_element?(view, ".reading-period-row", "Amber Review")
+    render_click(element(view, "a[aria-label='Next month']"))
+
+    assert has_element?(
+             view,
+             "#calendar-filters input[name='calendar[q]'][value='amber.example/submit']"
+           )
+
+    assert has_element?(view, "#reading-periods-timeline li.reading-period-row", "Amber Review")
+    render_change(filters, %{"calendar" => %{"q" => "Amber window note"}})
+    assert has_element?(view, "#reading-periods-timeline li.reading-period-row", "Amber Review")
+    render_change(filters, %{"calendar" => %{"q" => "Blue anthology window"}})
+    assert has_element?(view, "#reading-periods-year-round a", "Blue Review")
+
+    render_change(filters, %{"calendar" => %{"q" => "Amber", "nearby_windows" => "true"}})
+    refute has_element?(view, "#reading-periods-timeline li.reading-period-row", "Amber Review")
+    render_click(element(view, "a[aria-label='Next month']"))
+    assert has_element?(view, "#correspondence-calendar[data-source='reading']")
+    assert has_element?(view, "#calendar-filters input[name='calendar[q]'][value='Amber']")
+    assert has_element?(view, "#calendar-filters input[name='calendar[nearby_windows]'][checked]")
+    assert has_element?(view, "a[aria-label='Previous month'][href*='nearby_windows=true']")
+
+    unconfirmed =
+      view
+      |> element(".corr-calendar-actions button", "Export dates to confirm")
+      |> render_click()
+      |> exported_json()
+
+    assert has_element?(view, "#correspondence-export-json")
+    assert has_element?(view, "button", "Copy JSON")
+    assert Enum.map(unconfirmed, & &1["name"]) == ["Dates to Confirm"]
+    assert hd(unconfirmed)["windows"] == "Confirm by email"
+    assert hd(unconfirmed)["submission_window"] == nil
+    refute String.contains?(Jason.encode!(unconfirmed), "Private planning note")
+
+    render_click(element(view, "button[phx-click='close_json_export']"))
+
+    all =
+      view
+      |> element(".corr-calendar-actions button", "Export all reading periods")
+      |> render_click()
+      |> exported_json()
+
+    assert Enum.map(all, & &1["name"]) == ["Amber Review", "Blue Review", "Dates to Confirm"]
+    amber = Enum.find(all, &(&1["name"] == "Amber Review"))
+    blue = Enum.find(all, &(&1["name"] == "Blue Review"))
+    assert amber["website"] == "https://amber.example/journal"
+    assert amber["submission_url"] == "https://amber.example/submit"
+    assert amber["windows"] == "Amber window note"
+
+    assert amber["submission_window"] == %{
+             "mode" => "dates",
+             "opens" => Date.to_iso8601(outside_month),
+             "closes" => Date.to_iso8601(Date.add(outside_month, 8))
+           }
+
+    assert blue["submission_window"] == %{"mode" => "always"}
+    refute String.contains?(Jason.encode!(all), "Private planning note")
+
+    render_click(element(view, "nav[aria-label='Calendar content'] a", "Events"))
+    assert has_element?(view, ".corr-calendar-grid")
+    refute has_element?(view, "#correspondence-export-json")
+    refute has_element?(view, "button", "Export all reading periods")
+    render_click(element(view, "nav[aria-label='Calendar content'] a", "Funding"))
+
+    assert has_element?(
+             view,
+             "nav[aria-label='Calendar content'] a[aria-current='page']",
+             "Funding"
+           )
+  end
+
+  defp exported_json(html) do
+    html
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query("#correspondence-export-json")
+    |> LazyHTML.text()
+    |> Jason.decode!()
+  end
+
+  test "Calendar JSON keeps one record per series and includes events outside the current view",
+       %{
+         conn: conn,
+         location: location
+       } do
+    {:ok, series} =
+      Calendar.save(location, %{
+        external_id: "monthly-reading",
+        title: "Monthly reading",
+        date: "2026-08-17",
+        recurrence: %{"frequency" => "monthly", "interval" => 1},
+        notes: "Bring a poem.\nSign up at the door."
+      })
+
+    assert {:ok, _} = Calendar.set_hidden(location, series.id, series.token, true)
+
+    assert {:ok, _} =
+             Calendar.save(location, %{
+               external_id: "other-reading",
+               title: "Other reading",
+               date: "2026-11-17"
+             })
+
+    {:ok, view, _} = live(conn, ~p"/correspondence/calendar?month=2026-11&q=Other")
+    refute has_element?(view, ".corr-calendar-day-event", "Monthly reading")
+    rendered = render_click(element(view, ".corr-calendar-actions button", "Export JSON"))
+
+    json =
+      rendered
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#correspondence-export-json")
+      |> LazyHTML.text()
+
+    assert [
+             %{
+               "external_id" => "monthly-reading",
+               "date" => "2026-08-17",
+               "recurrence" => %{"frequency" => "monthly"},
+               "notes" => "Bring a poem.\nSign up at the door.",
+               "hidden" => true
+             } = monthly,
+             %{"external_id" => "other-reading"}
+           ] = Jason.decode!(json)
+
+    refute Map.has_key?(monthly, "id")
+    refute Map.has_key?(monthly, "token")
   end
 
   test "one repeated date or whole series can be hidden and restored through the list", %{

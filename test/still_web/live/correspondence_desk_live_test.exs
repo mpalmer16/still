@@ -3,6 +3,7 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
   import Phoenix.LiveViewTest
 
   alias Still.{Correspondence, Poems, Storage}
+  alias Still.Correspondence.Funding
 
   @moduletag :tmp_dir
 
@@ -51,6 +52,53 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
     assert Correspondence.packet(location, sent.id) == packet_before
   end
 
+  test "planning horizon and monitoring work from Correspondence Home", %{
+    conn: conn,
+    location: location
+  } do
+    deadline = Still.Next.today() |> Date.add(45) |> Date.to_iso8601()
+    base = %{"funder" => "Synthetic Foundation", "kind" => "grant"}
+
+    assert {:ok, pursued} =
+             Funding.save(
+               location,
+               Map.merge(base, %{
+                 "name" => "Pursued grant",
+                 "priority" => "pursue",
+                 "deadline" => deadline
+               })
+             )
+
+    assert {:ok, monitored} =
+             Funding.save(
+               location,
+               Map.merge(base, %{
+                 "name" => "Monitored grant",
+                 "priority" => "monitor",
+                 "anticipated_window" => "Next spring"
+               })
+             )
+
+    {:ok, home, _} = live(conn, "/correspondence")
+    pursued_link = "#correspondence-planning a[href='/correspondence/funding/#{pursued.id}']"
+    monitored_link = "#correspondence-planning a[href='/correspondence/funding/#{monitored.id}']"
+
+    assert has_element?(home, pursued_link, pursued.name)
+    refute has_element?(home, monitored_link)
+
+    home |> element(".corr-planning-controls a", "30 days") |> render_click()
+    assert has_element?(home, ".corr-planning-controls a[aria-current='true']", "30 days")
+    refute has_element?(home, pursued_link)
+
+    home |> element(".corr-planning-controls a", "Show monitored") |> render_click()
+    assert has_element?(home, monitored_link, monitored.name)
+    assert has_element?(home, "#correspondence-planning article", "Next spring")
+    refute has_element?(home, pursued_link)
+
+    home |> element(monitored_link) |> render_click()
+    assert_patch(home, "/correspondence/funding/#{monitored.id}")
+  end
+
   test "shortlisting a journal is a persisted marker in the Places directory", %{
     conn: conn,
     location: location
@@ -59,15 +107,22 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
     other = save_journal(location, "Unshortlisted Journal")
 
     {:ok, places, _} = live(conn, "/correspondence/journals")
-    render_click(element(places, "[phx-click='toggle_shortlist'][phx-value-id='#{journal.id}']"))
+
+    render_change(element(places, "#place-mark-#{journal.id}"), %{
+      place_id: journal.id,
+      impression: "nearby"
+    })
 
     assert {:ok, %{shortlisted: true}} = Correspondence.journal(location, journal.id)
     assert {:ok, %{shortlisted: false}} = Correspondence.journal(location, other.id)
 
-    assert has_element?(places, "#place-row-#{journal.id} .places-nearby[aria-pressed='true']")
-    assert has_element?(places, "#place-row-#{other.id} .places-nearby[aria-pressed='false']")
+    assert has_element?(places, "#place-row-#{journal.id} option[value='nearby'][selected]")
+    assert has_element?(places, "#place-row-#{other.id} option[value='unmarked'][selected]")
 
-    render_click(element(places, "[phx-click='toggle_shortlist'][phx-value-id='#{journal.id}']"))
+    render_change(element(places, "#place-mark-#{journal.id}"), %{
+      place_id: journal.id,
+      impression: "unmarked"
+    })
 
     assert {:ok, %{shortlisted: false}} = Correspondence.journal(location, journal.id)
   end
@@ -83,7 +138,11 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
       "journal" => %{"name" => journal.name, "notes" => "Unsaved editorial notes"}
     })
 
-    render_click(element(view, "[phx-click='toggle_shortlist'][phx-value-id='#{journal.id}']"))
+    render_change(element(view, "#place-mark-#{journal.id}"), %{
+      place_id: journal.id,
+      impression: "nearby"
+    })
+
     assert has_element?(view, "textarea[name='journal[notes]']", "Unsaved editorial notes")
     assert {:ok, saved} = Correspondence.journal(location, journal.id)
     assert saved.shortlisted
@@ -114,7 +173,11 @@ defmodule StillWeb.CorrespondenceDeskLiveTest do
         saved.token
       )
 
-    render_click(element(view, "[phx-click='toggle_shortlist'][phx-value-id='#{journal.id}']"))
+    render_change(element(view, "#place-mark-#{journal.id}"), %{
+      place_id: journal.id,
+      impression: "maybe"
+    })
+
     assert has_element?(view, "[role='alert']", "changed on disk")
     assert Correspondence.journal(location, journal.id) == {:ok, external}
     assert has_element?(view, "textarea[name='journal[notes]']", "Unsaved editorial notes")

@@ -247,6 +247,7 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
     var window: NSWindow!
     var webView: WKWebView!
     var backend: Backend?
+    private var nextMenu: NextMenuController?
     private var openingRoom = false
     private var choosingFolder = false
     private var closeInProgress = false
@@ -311,6 +312,12 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
             throw error
         }
         backend = room
+        nextMenu = NextMenuController(
+            fetch: { try await room.storageRequest("GET", path: "/native/next-items") },
+            openNext: { [weak self] in self?.openNext() },
+            openTask: { [weak self] id in self?.openNext(id: id) }
+        )
+        nextMenu?.isVisible = UserDefaults.standard.bool(forKey: "Still.showNextMenu")
         let status = try? await room.storageStatus()
         let profile = status?.folder.map { WritingLocation.profile(for: URL(fileURLWithPath: $0, isDirectory: true)) } ?? room.profile
         webView = makeWebView(profile: profile)
@@ -683,7 +690,7 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
         guard let address = navigationAction.request.url,
               CorrespondenceNavigationPolicy.isLocalRoom(address, port: backend?.port ?? -1),
-              CorrespondenceNavigationPolicy.isManuscriptExport(address) else {
+              CorrespondenceNavigationPolicy.isAllowedDownload(address) else {
             download.cancel(nil)
             return
         }
@@ -693,7 +700,7 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
         guard let address = navigationResponse.response.url,
               CorrespondenceNavigationPolicy.isLocalRoom(address, port: backend?.port ?? -1),
-              CorrespondenceNavigationPolicy.isManuscriptExport(address) else {
+              CorrespondenceNavigationPolicy.isAllowedDownload(address) else {
             download.cancel(nil)
             return
         }
@@ -704,8 +711,9 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
                   suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
         guard let window else { completionHandler(nil); return }
         let panel = NSSavePanel()
-        panel.title = "Save manuscript"
-        panel.message = "Choose where to save this manuscript."
+        let isSchema = response.url.map(CorrespondenceNavigationPolicy.isJSONSchemaDownload) ?? false
+        panel.title = isSchema ? "Save JSON schema" : "Save manuscript"
+        panel.message = isSchema ? "Choose where to save this JSON schema." : "Choose where to save this manuscript."
         panel.prompt = "Save"
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
@@ -853,8 +861,9 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
               CorrespondenceNavigationPolicy.isLocalRoom(frameURL, port: backend?.port ?? -1)
         else { completionHandler(nil); return }
         let panel = NSOpenPanel()
-        panel.title = "Import Places"
-        panel.message = "Choose a JSON file to review. No places are added until you confirm in Still."
+        let importCopy = CorrespondenceNavigationPolicy.importPanelCopy(for: frameURL)
+        panel.title = importCopy.title
+        panel.message = importCopy.message
         panel.allowedContentTypes = [.json]
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
@@ -906,6 +915,18 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
             if !quitting {
                 webView.load(URLRequest(url: URL(string: path, relativeTo: room.url)!.absoluteURL))
             }
+        }
+    }
+
+    private func openNext(id: String? = nil) {
+        guard !quitting else { return }
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        if let id, let taskID = UUID(uuidString: id) {
+            navigate(to: "/correspondence/next?edit=\(taskID.uuidString.lowercased())")
+        } else {
+            navigate(to: "/correspondence/next")
         }
     }
 
@@ -1119,10 +1140,13 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         spelling.addItem(withTitle: "Check Spelling", action: #selector(NSTextView.checkSpelling(_:)), keyEquivalent: ";")
         spelling.addItem(.separator())
         spelling.addItem(withTitle: "Check Spelling While Typing", action: #selector(NSTextView.toggleContinuousSpellChecking(_:)), keyEquivalent: "")
-        let viewItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
+        let viewItem = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
         bar.addItem(viewItem)
         let view = NSMenu(title: "Window")
         viewItem.submenu = view
+        let nextToggle = view.addItem(withTitle: "Show Next in Menu Bar", action: #selector(toggleNextMenu(_:)), keyEquivalent: "")
+        nextToggle.target = self
+        nextToggle.state = UserDefaults.standard.bool(forKey: "Still.showNextMenu") ? .on : .off
         view.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         view.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         let full = view.addItem(withTitle: "Enter Full Screen", action: #selector(fullscreen(_:)), keyEquivalent: "f")
@@ -1130,6 +1154,13 @@ final class StillApplication: NSObject, NSApplicationDelegate, NSWindowDelegate,
         full.target = self
         NSApp.mainMenu = bar
         NSApp.windowsMenu = view
+    }
+
+    @objc private func toggleNextMenu(_ sender: NSMenuItem) {
+        let show = sender.state != .on
+        sender.state = show ? .on : .off
+        UserDefaults.standard.set(show, forKey: "Still.showNextMenu")
+        nextMenu?.isVisible = show
     }
 }
 

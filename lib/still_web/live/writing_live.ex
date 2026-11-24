@@ -1407,7 +1407,7 @@ defmodule StillWeb.WritingLive do
     <Layouts.app
       flash={@flash}
       active={if @notebook, do: "notebooks", else: if(@editing, do: "write", else: "saved")}
-      room_light={@room_light}
+      room_color={@room_color}
       light_open={@light_open}
       room_letters={@room_letters}
       letters_open={@letters_open}

@@ -6,10 +6,10 @@ Historical Lists remain in SQLite and never become submission candidates.
 
 ## Everyday use
 
-Open **Correspondence** from Still's navigation. It has its own Home, Works,
-Places, and Packets navigation, with **Back to Still** returning to writing. The
+Open **Correspondence** from Still's navigation. Use Home, Works, Places,
+Funding, Packets, Calendar, and **Next**. **Back to Still** returns to writing. The
 sun/moon menu holds the light appearance and remembered dark color choices:
-Graphite, Night blue, Forest, or Plum. These affect Correspondence only.
+Graphite, Sepia, Night blue, Forest, or Plum. These affect Correspondence only.
 Choose the collection folder in **Storage & Backups** that holds your saved writing.
 Without an available folder, Correspondence explains what is missing and stores
 no authoritative records elsewhere.
@@ -47,6 +47,9 @@ status, and sorted by notebook sequence, title, or packet activity. It shows
 participation across packets, so a newer preparation or rejection cannot hide
 an existing submission or acceptance. Open a work for its current text,
 earlier versions, and exact sent copies.
+
+Column headers stay visible while you scroll Correspondence tables. In narrow
+windows, you can scroll the table sideways to see the remaining columns.
 
 Packets can be searched by title, destination, their contents, latest saved private
 notes, cover letters, and recorded replies, filtered by
@@ -254,6 +257,111 @@ There are no new collection formats or migrations.
 Use the disposable Correspondence preview described above to check this workflow;
 it leaves the installed app and personal collection untouched.
 
+## Next
+
+Open **Correspondence → Next** to search the item table, switch between Open,
+Today, Upcoming, and History, and sort by title, plan date, or deadline. The quick
+**Add item** field at the top saves a title immediately. Choose **Add with details**
+to include notes or dates. Use **Add to Next** from a saved work,
+place, packet, funding opportunity, or calendar event to keep a link to it. Open
+linked items from the record, or follow the source link from Next.
+
+**Plan for** is when you want to work on something. **Deadline** is when it is
+due. A plan stays visible in **Today** after its date passes. A missed deadline
+is marked overdue. Use **Upcoming** to see future dates or **Open** to find all
+unfinished items, including undated ones. **History** lets you reopen completed
+or archived items. Saved changes to a title or notes leave an earlier copy.
+
+## Calendar views and funding
+
+The Calendar opens to **Events**. Select a day to see its agenda and any plans or
+deadlines from Next. Use the arrows to move between days. **Add to Next** starts
+an item with the selected day as its plan date. Choose **Funding** for application openings and
+deadlines or **Reading periods** for journal submission windows. Events and Funding
+can also use **List**. Reading periods shows the full date range for each journal whose
+window overlaps the selected month. The timeline clips its bars to the month while
+keeping the exact opening and closing dates visible. It marks today's position when
+viewing the current month and groups **Open year-round** and **Dates to confirm**
+below the dated journals. **Nearby only** filters all three groups and stays active
+when moving between months.
+
+Use **Search reading periods** to find journals by name, link, or recorded submission
+dates and wording. The search carries across months. In the **Calendar menu**, choose
+**Export dates to confirm** to collect journals that need a date check, or **Export all
+reading periods** for every active journal. Both exports cover the full collection.
+The JSON includes journal names, saved website and submission links, and recorded
+reading-period details. Use **Copy JSON** to share the result.
+
+Funding is a searchable table of grants, fellowships, residencies, prizes,
+scholarships, and other opportunities. Use the star beside a name to highlight
+it in the table and on the Funding calendar. Select the star again to clear the
+highlight. Filter by kind or deadline. Upcoming
+deadlines appear first. Dated openings and deadlines appear in the Funding
+calendar, with one deadline entry when both fall on the same day. Still displays
+the published time and time zone. Use **Export JSON** to copy the saved funding
+records, including notes.
+
+### Planning on Home
+
+Planning opens to 90 days and gives the next 30 days their own section. Use
+**Pursue** on a funding record to include it. Add a **Start preparing** date when
+the work needs to start ahead of the deadline. Link a Next item to a funding
+opportunity, journal, or packet to bring a specific preparation step into the
+same view. Draft packets appear under **Work on now** with their journal’s
+saved reading dates. Journals kept nearby appear in the planning horizon. Use
+**Show monitored** to include monitored funding and older stars without a priority.
+An anticipated funding window is displayed
+as wording, with confirmed dates still coming from the published date fields.
+
+### Funding applications
+
+Choose **Prepare application** on an opportunity row to start a draft. Switch
+from **Opportunities** to **Applications** to see drafts, submissions, decisions,
+and awards together. Use **Submitted** for a list of everything you sent,
+including completed applications.
+
+Start with an empty draft or add the editable requirements from a project grant,
+writing fellowship, or residency template. Add a requirement
+for each answer or material, select saved writings for the work sample, and
+arrange them in submission order. Use **Add to Next** on the saved application
+for steps you want to schedule. Drafts appear in **Work on now**. You can set a
+draft aside and resume it from the opportunity later.
+
+Save the draft and choose **Review materials** to check the answers and work
+sample. Copy the text you need for the funder's own application form. After
+sending it, choose **Mark submitted** to preserve the reviewed materials and
+record the submission date and any confirmation. If the selected writing
+changes during review, reopen the review before confirming. For an older
+application with missing materials, choose the partial record option.
+
+Correspondence Home lists funding applications awaiting a decision. Open one
+to record its outcome, date, any amount awarded, and the response. **Copy to new
+application** starts a separate draft for the same opportunity or a later cycle,
+using the saved answers and links to the current writing.
+
+### Funding JSON import
+
+Funding accepts a reviewed local JSON file. The [funding import schema](funding-import.schema.json)
+is JSON Schema draft 2020-12 and defines a top-level array of up to 200 opportunities
+in a file up to 1 MB. The import screen offers the schema as a download and a
+copyable JSON example.
+Each row requires `name`, `funder`, and `kind`. Optional fields include `cycle`,
+`amount`, `eligibility`, `description`, `opens_on`, `deadline`, `deadline_time`,
+`timezone`, `application_url`, `source_url`, `checked_on`, `notes`, and `highlighted`.
+Planning fields are `priority`, `eligibility_status`, `benefit`, `prepare_on`,
+`fee`, `travel`, `effort`, `fit`, and `anticipated_window`.
+Dates use YYYY-MM-DD. A deadline time uses 24-hour HH:MM and must be supplied with
+the source timezone label and deadline date. Links must be HTTP or HTTPS addresses
+without embedded credentials. Unknown fields are rejected. Empty or unknown details
+should be omitted; dates must not be invented.
+
+Use official funder sources to check current eligibility, amounts, and dates. Record
+the source in `source_url` and the date you checked in `checked_on`. Use `highlighted`
+sparingly and explain why an opportunity merits a closer look in `notes`. Still
+normalizes case, Unicode, and whitespace in the name, funder, and optional cycle.
+The preview shows matching and repeated rows. Confirming the import only adds new
+opportunities and preserves the records you already have.
+
 ## Calendar event import
 
 The Calendar can accept a local JSON event list. Use the field guide on its import page
@@ -287,7 +395,7 @@ locally. Still does not fetch the listed links, contact venues, or send event
 information elsewhere.
 
 
-Switch between **Calendar** and **List**. The month grid opens an agenda for a
+In Events, switch between **Calendar** and **List**. The month grid opens an agenda for a
 selected date; **All upcoming dates** returns to the coming-up list. **Add event**
 opens a local event form. **Edit** changes the saved event or recurring series.
 The event directory shows one row per series, with its next visible occurrence,
@@ -304,11 +412,9 @@ is a display label, and Still does not convert times between zones. Monthly date
 that do not exist and non-leap-year February 29 repeats are skipped without drifting.
 
 Correspondence uses the available window width with a small margin. Calendar weeks
-run Sunday through Saturday. Its compact toolbar brings together the view switch,
-month navigation, Today and search. **Calendar menu** contains Add event, Import
-calendar events, visibility filters and the list's date-range choice. The month
-and event list fill the available window height; the event list scrolls beneath
-its separate heading.
+run Sunday through Saturday. The toolbar offers Month and List where available,
+month navigation, Today, and search. The Calendar menu contains actions for the
+selected view. Lists scroll beneath their own headings.
 Home shows the next four visible event dates, including recurring dates and
 events already in progress, beside packet activity on wide screens. Hidden and
 cancelled events stay out of this summary. Open an event title to see its date

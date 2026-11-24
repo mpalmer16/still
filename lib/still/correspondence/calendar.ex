@@ -1,6 +1,7 @@
 defmodule Still.Correspondence.Calendar do
   @moduledoc "Collection-scoped local calendar events for Correspondence."
   alias Still.{LocalRecord, Repo, Storage}
+  alias Still.Correspondence.{Funding, Recurrence}
   alias Still.Writing.CollectionLock
   import Ecto.Query
 
@@ -22,6 +23,46 @@ defmodule Still.Correspondence.Calendar do
     end
   end
 
+  @doc "Projects dates from their funding records into the calendar."
+  def funding_entries(location) do
+    with {:ok, opportunities} <- Funding.list(location) do
+      {:ok, Enum.flat_map(opportunities, &funding_dates/1)}
+    end
+  end
+
+  defp funding_dates(opportunity) do
+    [
+      {:opening, opportunity.opens_on, "Opens", "funding_opening"},
+      {:deadline, opportunity.deadline, "Deadline", "funding_deadline"}
+    ]
+    |> Enum.reject(fn {kind, date, _, _} ->
+      is_nil(date) or (kind == :opening and date == opportunity.deadline)
+    end)
+    |> Enum.map(fn {kind, date, label, category} ->
+      %{
+        id: "funding-#{opportunity.id}-#{kind}",
+        funding_id: opportunity.id,
+        highlighted: opportunity.highlighted,
+        title: "#{opportunity.name} · #{label}",
+        date: date,
+        category: category,
+        venue: opportunity.funder,
+        start_time: if(kind == :deadline, do: opportunity.deadline_time),
+        timezone: if(kind == :deadline, do: opportunity.timezone),
+        recurrence: nil
+      }
+    end)
+  end
+
+  @doc "Exports saved events and recurring series independently of the current calendar view."
+  def export_events_json(location) do
+    fields = Enum.map(@fields, &String.to_existing_atom/1)
+
+    with {:ok, events} <- list(location) do
+      events |> Enum.map(&Map.take(&1, fields)) |> Jason.encode()
+    end
+  end
+
   @doc "Returns the earliest visible calendar occurrences, including events already in progress."
   def upcoming(location, today, limit \\ 4)
 
@@ -30,7 +71,7 @@ defmodule Still.Correspondence.Calendar do
     with {:ok, events} <- list(location) do
       last = Date.add(today, 366)
 
-      in_window = Still.Correspondence.Recurrence.occurrences(events, today, last)
+      in_window = Recurrence.occurrences(events, today, last)
 
       beyond_window =
         events
@@ -39,7 +80,7 @@ defmodule Still.Correspondence.Calendar do
         end)
         |> Enum.flat_map(fn event ->
           date = Date.from_iso8601!(event.date)
-          Still.Correspondence.Recurrence.occurrences([event], date, date)
+          Recurrence.occurrences([event], date, date)
         end)
 
       visible =

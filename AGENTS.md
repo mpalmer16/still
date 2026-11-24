@@ -3,8 +3,8 @@
 ## Development leadership
 
 - Act as lead developer: own the design, architecture, integration, review, and final verification. Keep the writer's intended experience central when choosing implementation details.
-- Use Luna subagents (`gpt-6-luna`) as needed for bounded implementation, investigation, test, or review tasks. Give each agent a clear scope, relevant context, file ownership when editing, and an expected result. Delegate independent work when useful; keep tightly coupled architectural decisions with the lead.
-- Review agent findings and changes before integrating them. Avoid overlapping edits, unnecessary delegation for trivial tasks, and silent substitution of another subagent model if Luna is unavailable.
+- Work solo by default. Do not spawn, delegate to, or manage other agents unless the user explicitly asks for it.
+- The user's preferred setup for now is Sol 6.2 with Light reasoning. Use the model and reasoning level selected in the chat.
 
 ## Product and implementation
 

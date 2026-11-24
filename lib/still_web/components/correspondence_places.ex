@@ -5,6 +5,7 @@ defmodule StillWeb.CorrespondencePlaces do
 
   attr :directory, :map, required: true
   attr :icons, :map, default: %{}
+  attr :json_export, :string, default: nil
 
   def directory(assigns) do
     ~H"""
@@ -13,122 +14,154 @@ defmodule StillWeb.CorrespondencePlaces do
       class="editorial-place-directory corr-directory"
       aria-labelledby="places-heading"
     >
-      <header class="editorial-place-intro corr-directory-heading">
+      <header class="corr-directory-heading">
         <h1 id="places-heading">Places</h1>
-        <details class="corr-popover corr-directory-actions">
-          <summary>Places menu <span aria-hidden="true">⌄</span></summary>
+        <details class="corr-popover places-menu">
+          <summary aria-label="Places menu">
+            Places menu <span aria-hidden="true">⌄</span>
+          </summary>
           <div class="corr-popover-panel">
             <.link patch={~p"/correspondence/journals/new"}>Add a place</.link>
             <.link patch={~p"/correspondence/journals/import"}>Import Places</.link>
+            <button type="button" class="corr-menu-action" phx-click="export_json">Export JSON</button>
           </div>
         </details>
       </header>
-
-      <.form
-        for={%{}}
-        id="places-filters"
-        class="places-filters corr-directory-toolbar"
-        phx-change="filter_places"
-        phx-submit="filter_places"
-      >
-        <div class="places-search corr-directory-search">
-          <label for="places-query" class="sr-only">Search places</label>
-          <input
-            id="places-query"
-            type="search"
-            name="places[q]"
-            value={@directory.filters["q"]}
-            placeholder="Name, keywords, or notes"
-            phx-debounce="250"
-            autocomplete="off"
-          />
-        </div>
-        <details class="corr-popover corr-directory-filters">
-          <summary>
-            Filters
-            <span :if={active_filter_count(@directory.filters) > 0} class="corr-filter-count">{active_filter_count(
-              @directory.filters
-            )}</span> <span aria-hidden="true">⌄</span>
-          </summary>
-          <div class="corr-popover-panel places-filter-row">
-            <.directory_filter
-              id="places-status"
-              label="Status"
-              name="status"
-              value={@directory.filters["status"]}
-              options={[
-                {"Active places", "active"},
-                {"All places", "all"},
-                {"Inactive places", "inactive"}
-              ]}
-            />
-            <.directory_filter
-              id="places-nearby"
-              label="Kept nearby"
-              name="nearby"
-              value={@directory.filters["nearby"]}
-              options={[{"All", "all"}, {"Kept nearby", "nearby"}, {"Not kept nearby", "not_nearby"}]}
-            />
-            <.directory_filter
-              id="places-reach"
-              label="Reach · your impression"
-              name="reach"
-              value={@directory.filters["reach"]}
-              options={[
-                {"Any reach", "all"},
-                {"Approachable", "approachable"},
-                {"A stretch", "stretch"},
-                {"A long shot", "long_shot"},
-                {"Unknown", "unknown"}
-              ]}
-            />
-            <.directory_filter
-              id="places-simultaneous"
-              label="Simultaneous submissions"
-              name="simultaneous"
-              value={@directory.filters["simultaneous"]}
-              options={[
-                {"Any policy", "all"},
-                {"Allowed", "allowed"},
-                {"Not allowed", "not_allowed"},
-                {"Unknown", "unknown"}
-              ]}
-            />
-            <.directory_filter
-              id="places-history"
-              label="Submission history"
-              name="history"
-              value={@directory.filters["history"]}
-              options={[
-                {"Any history", "all"},
-                {"Never sent", "never_sent"},
-                {"Awaiting reply", "awaiting"},
-                {"Sent before", "sent"}
-              ]}
+      <div class="places-toolbar">
+        <.form
+          for={%{}}
+          id="places-filters"
+          class="places-filters"
+          phx-change="filter_places"
+          phx-submit="filter_places"
+        >
+          <div class="places-search corr-directory-search">
+            <label for="places-query" class="sr-only">Search places</label>
+            <input
+              id="places-query"
+              type="search"
+              name="places[q]"
+              value={@directory.filters["q"]}
+              placeholder="Search places"
+              phx-debounce="250"
+              autocomplete="off"
             />
           </div>
-        </details>
-        <.link id="reset-places" patch={~p"/correspondence/journals"} class="corr-text-link">Reset</.link>
-      </.form>
+          <details class="corr-popover corr-directory-filters">
+            <summary>
+              Filters
+              <span :if={active_filter_count(@directory.filters) > 0} class="corr-filter-count">{active_filter_count(
+                @directory.filters
+              )}</span> <span aria-hidden="true">⌄</span>
+            </summary>
+            <div class="corr-popover-panel places-filter-row">
+              <div class="places-compact-views">
+                <.directory_filter
+                  id="places-mark-view"
+                  label="Your mark"
+                  name="nearby"
+                  value={@directory.filters["nearby"]}
+                  options={place_views(@directory.filters["nearby"])}
+                />
+                <.directory_filter
+                  id="places-window-view"
+                  label="Submission window"
+                  name="window"
+                  value={@directory.filters["window"]}
+                  options={window_views()}
+                />
+              </div>
+              <.directory_filter
+                id="places-status"
+                label="Status"
+                name="status"
+                value={@directory.filters["status"]}
+                options={[
+                  {"Active places", "active"},
+                  {"All places", "all"},
+                  {"Inactive places", "inactive"}
+                ]}
+              />
+              <.directory_filter
+                id="places-reach"
+                label="Reach · your impression"
+                name="reach"
+                value={@directory.filters["reach"]}
+                options={[
+                  {"Any reach", "all"},
+                  {"Approachable", "approachable"},
+                  {"A stretch", "stretch"},
+                  {"A long shot", "long_shot"},
+                  {"Unknown", "unknown"}
+                ]}
+              />
+              <.directory_filter
+                id="places-simultaneous"
+                label="Simultaneous submissions"
+                name="simultaneous"
+                value={@directory.filters["simultaneous"]}
+                options={[
+                  {"Any policy", "all"},
+                  {"Allowed", "allowed"},
+                  {"Not allowed", "not_allowed"},
+                  {"Unknown", "unknown"}
+                ]}
+              />
+              <.directory_filter
+                id="places-history"
+                label="Submission history"
+                name="history"
+                value={@directory.filters["history"]}
+                options={[
+                  {"Any history", "all"},
+                  {"Never sent", "never_sent"},
+                  {"Awaiting reply", "awaiting"},
+                  {"Sent before", "sent"}
+                ]}
+              />
+            </div>
+          </details>
+          <div class="places-views" role="group" aria-label="Filter places by your mark">
+            <button
+              :for={{label, impression} <- place_views(@directory.filters["nearby"])}
+              type="button"
+              phx-click="view_places"
+              phx-value-impression={impression}
+              aria-pressed={to_string(impression == @directory.filters["nearby"])}
+            >{label}</button>
+          </div>
+          <div class="places-views" role="group" aria-label="Filter places by submission window">
+            <button
+              :for={{label, window} <- window_views()}
+              type="button"
+              phx-click="view_place_windows"
+              phx-value-window={window}
+              aria-pressed={to_string(window == @directory.filters["window"])}
+            >{label}</button>
+          </div>
+          <.link id="reset-places" patch={~p"/correspondence/journals"} class="corr-text-link">Reset</.link>
+        </.form>
+        <p
+          id="places-result-count"
+          class="places-result-count corr-result-count"
+          role="status"
+          aria-live="polite"
+        >
+          <%= if @directory.matched > 0 do %>
+            {(@directory.page - 1) * @directory.per_page + 1}–{(@directory.page - 1) *
+              @directory.per_page + length(@directory.rows)} of {@directory.matched} {if @directory.matched ==
+                                                                                           1,
+                                                                                         do: "place",
+                                                                                         else:
+                                                                                           "places"}
+          <% else %>
+            No places match this view
+          <% end %>
+          <span> · {@directory.total} total</span>
+        </p>
+      </div>
 
-      <p
-        id="places-result-count"
-        class="places-result-count corr-result-count"
-        role="status"
-        aria-live="polite"
-      >
-        <%= if @directory.matched > 0 do %>
-          {(@directory.page - 1) * @directory.per_page + 1}–{(@directory.page - 1) *
-            @directory.per_page + length(@directory.rows)} of {@directory.matched} {if @directory.matched ==
-                                                                                         1,
-                                                                                       do: "place",
-                                                                                       else: "places"}
-        <% else %>
-          No places match this view
-        <% end %>
-        <span> · {@directory.total} total</span>
-      </p>
-
+      <StillWeb.CorrespondenceExport.panel json={@json_export} label="Places" />
       <div
         :if={@directory.rows != []}
         class="places-table-scroll corr-table-scroll"
@@ -146,6 +179,7 @@ defmodule StillWeb.CorrespondencePlaces do
                 filters={@directory.filters}
                 class="places-col-name"
               />
+              <th scope="col" class="places-col-mark">Your mark</th>
               <.sort_header
                 field="reach"
                 label="Reach"
@@ -165,7 +199,6 @@ defmodule StillWeb.CorrespondencePlaces do
                 filters={@directory.filters}
                 class="places-col-history"
               />
-              <th scope="col" class="places-col-nearby">Keep nearby</th>
             </tr>
           </thead>
           <tbody>
@@ -175,22 +208,27 @@ defmodule StillWeb.CorrespondencePlaces do
                   <.icon journal={row.journal} src={Map.get(@icons, row.journal.id)} />
                   <.link patch={~p"/correspondence/journals/#{row.journal.id}"} class="places-name">{row.journal.name}</.link>
                 </div>
+                <p :if={has_text?(row.journal.notes)} class="places-notes">
+                  {first_note_line(row.journal.notes)}
+                </p>
                 <span :if={truthy?(value(row.journal, :verified))} class="places-state">Source checked by you</span>
                 <span :if={!Correspondence.active_journal?(row.journal)} class="places-state">Inactive</span>
                 <p :if={has_text?(value(row.journal, :description))} class="places-description">
                   {excerpt(value(row.journal, :description), 150)}
                 </p>
-                <p :if={has_text?(row.journal.notes)} class="places-notes">
-                  <span>Notes:</span> {excerpt(row.journal.notes, 150)}
-                </p>
                 <p :if={has_text?(value(row.journal, :keywords))} class="places-secondary">
                   {excerpt(value(row.journal, :keywords), 100)}
                 </p>
               </td>
+              <td><.place_mark journal={row.journal} /></td>
               <td>{Correspondence.reach_label(value(row.journal, :reach))}</td>
               <td>{policy(row.journal.simultaneous_policy)}</td>
               <td>
-                <div>{known_or_unknown(row.journal.windows)}</div>
+                <div :if={row.window_status == :open} class="places-window-open">Open today</div>
+                <div>{window_label(row.journal)}</div>
+                <p :if={has_text?(row.journal.windows)} class="places-secondary">
+                  {row.journal.windows}
+                </p>
                 <p :if={has_text?(row.journal.fee)} class="places-secondary">
                   Fee: {excerpt(row.journal.fee, 90)}
                 </p>
@@ -213,17 +251,6 @@ defmodule StillWeb.CorrespondencePlaces do
                 <p :if={row.packet_count > 0} class="places-secondary">
                   {row.packet_count} {if row.packet_count == 1, do: "packet", else: "packets"}
                 </p>
-              </td>
-              <td>
-                <button
-                  type="button"
-                  class="places-nearby"
-                  phx-click="toggle_shortlist"
-                  phx-value-id={row.journal.id}
-                  aria-label={"#{if truthy?(row.journal.shortlisted), do: "Stop keeping", else: "Keep"} #{row.journal.name} nearby"}
-                  aria-pressed={to_string(truthy?(row.journal.shortlisted))}
-                  phx-disable-with="Saving…"
-                >{if truthy?(row.journal.shortlisted), do: "Kept nearby", else: "Keep nearby"}</button>
               </td>
             </tr>
           </tbody>
@@ -260,6 +287,51 @@ defmodule StillWeb.CorrespondencePlaces do
     """
   end
 
+  defp place_views(filter) do
+    marks = Enum.reject(Correspondence.place_impressions(), &(elem(&1, 1) == "unmarked"))
+    views = [{"All places", "all"} | marks]
+    if filter == "not_nearby", do: views ++ [{"Not nearby", "not_nearby"}], else: views
+  end
+
+  defp window_views, do: [{"Any window", "all"}, {"Open today", "open"}, {"Check first", "check"}]
+
+  attr :journal, :map, required: true
+
+  defp place_mark(assigns) do
+    ~H"""
+    <form id={"place-mark-#{@journal.id}"} phx-change="mark_place" class="places-mark">
+      <input type="hidden" name="place_id" value={@journal.id} />
+      <select name="impression" aria-label={"Your mark for #{@journal.name}"}>
+        <option
+          :for={{label, impression} <- Correspondence.place_impressions()}
+          value={impression}
+          selected={impression == @journal.impression}
+        >
+          {label}
+        </option>
+      </select>
+    </form>
+    """
+  end
+
+  defp first_note_line(notes) do
+    [line | _] = String.split(String.trim_leading(notes), ~r/\R/u, parts: 2)
+    String.trim_trailing(line)
+  end
+
+  defp window_label(journal) do
+    case value(journal, :submission_window) do
+      %{"mode" => "always"} ->
+        "Always open"
+
+      %{"mode" => "dates", "opens" => opens, "closes" => closes} ->
+        "#{display_date(opens)}–#{display_date(closes)}"
+
+      _ ->
+        "Check first"
+    end
+  end
+
   attr :id, :string, required: true
   attr :label, :string, required: true
   attr :name, :string, required: true
@@ -292,7 +364,7 @@ defmodule StillWeb.CorrespondencePlaces do
         :sort_label,
         case assigns.field do
           "last_sent" -> "Sort by last sent date"
-          "window" -> "Sort by recorded submission window text"
+          "window" -> "Sort by submission window"
           _ -> "Sort by " <> assigns.label
         end
       )
@@ -368,13 +440,7 @@ defmodule StillWeb.CorrespondencePlaces do
             {value(@journal, :description)}
           </p>
         </div>
-        <button
-          type="button"
-          class="corr-text-link corr-desk-action"
-          phx-click="toggle_shortlist"
-          phx-value-id={@journal.id}
-          aria-pressed={to_string(truthy?(@journal.shortlisted))}
-        >{if truthy?(@journal.shortlisted), do: "Stop keeping nearby", else: "Keep nearby"}</button>
+        <.place_mark journal={@journal} />
       </header>
 
       <div class="corr-place-status">
@@ -519,7 +585,10 @@ defmodule StillWeb.CorrespondencePlaces do
               </dd>
             </div>
             <div>
-              <dt>Window</dt><dd>{known_or_unknown(@journal.windows)}</dd>
+              <dt>Submission window</dt><dd>
+                {window_label(@journal)}
+                <p :if={has_text?(@journal.windows)}>{@journal.windows}</p>
+              </dd>
             </div>
             <div>
               <dt>Fee</dt><dd>{known_or_unknown(@journal.fee)}</dd>
@@ -575,6 +644,8 @@ defmodule StillWeb.CorrespondencePlaces do
   attr :form, :map, required: true
 
   defp editor_form(assigns) do
+    assigns = assign(assigns, :window, value(assigns.form, :submission_window, %{}))
+
     ~H"""
     <.form
       id="journal-form"
@@ -642,10 +713,37 @@ defmodule StillWeb.CorrespondencePlaces do
             name="journal[guidelines]"
             rows="5"
           >{value(@form, :guidelines)}</textarea></label>
-          <label>Reading or submission windows<input
+          <label>Submission window<select name="journal[submission_window][mode]">
+            <option
+              :for={
+                {label, mode} <- [
+                  {"Check first", "check"},
+                  {"Exact dates", "dates"},
+                  {"Always open", "always"}
+                ]
+              }
+              value={mode}
+              selected={Map.get(@window, "mode", "check") == mode}
+            >
+              {label}
+            </option>
+          </select></label>
+          <label>Window notes<input
             name="journal[windows]"
             value={value(@form, :windows)}
-            placeholder="Unknown if not recorded"
+            placeholder="For example, closes early if the cap is reached"
+          /></label>
+          <label :if={@window["mode"] == "dates"}>Opens on<input
+            name="journal[submission_window][opens]"
+            type="date"
+            value={@window["opens"]}
+            required
+          /></label>
+          <label :if={@window["mode"] == "dates"}>Closes on (inclusive)<input
+            name="journal[submission_window][closes]"
+            type="date"
+            value={@window["closes"]}
+            required
           /></label>
           <label>Fee<input
             name="journal[fee]"
@@ -711,13 +809,15 @@ defmodule StillWeb.CorrespondencePlaces do
             value="true"
             checked={truthy?(value(@form, :verified))}
           /> I checked these details at the publication’s own source</label>
-          <label><input
-            type="checkbox"
-            name="journal[shortlisted]"
-            value="true"
-            checked={truthy?(value(@form, :shortlisted))}
-          /> Keep nearby
-          <span class="corr-meta">A personal marker for places you’d like to return to.</span></label>
+          <label :if={!@journal}>Your mark<select name="journal[impression]">
+            <option
+              :for={{label, impression} <- Correspondence.place_impressions()}
+              value={impression}
+              selected={impression == value(@form, :impression, "unmarked")}
+            >
+              {label}
+            </option>
+          </select></label>
         </div>
       </div>
       <div class="editorial-place-form-actions">
@@ -805,6 +905,7 @@ defmodule StillWeb.CorrespondencePlaces do
       [
         {"status", "active"},
         {"nearby", "all"},
+        {"window", "all"},
         {"reach", "all"},
         {"simultaneous", "all"},
         {"history", "all"}

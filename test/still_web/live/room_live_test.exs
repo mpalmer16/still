@@ -3,7 +3,7 @@ defmodule StillWeb.RoomLiveTest do
   import Phoenix.LiveViewTest
 
   alias Still.{Repo, Writing}
-  alias Still.Writing.Entry
+  alias Still.Writing.{Appearance, Entry}
 
   @tag :tmp_dir
   test "the writing menu keeps controls off the page and returns focus without changing words", %{
@@ -37,7 +37,15 @@ defmodule StillWeb.RoomLiveTest do
     assert has_element?(view, "#room-content[inert][aria-hidden=true]")
     assert_push_event(view, "room-focus", %{id: "writing-menu-close", clear_return: true})
     view |> element("#light-toggle") |> render_click()
-    assert has_element?(view, "#room-light-form")
+    assert has_element?(view, "#writing-menu #room-light-form select#room-color")
+    assert_push_event(view, "room-focus", %{id: "room-color"})
+
+    view
+    |> form("#room-light-form", appearance: %{color: "sepia"})
+    |> render_change()
+
+    assert has_element?(view, ".writing-frame[data-color=sepia]")
+    assert has_element?(view, "#room-content[inert] #file-writing-body")
     assert has_element?(view, "#writing-menu:not([hidden])")
     view |> element("#writing-menu-close") |> render_click()
     assert has_element?(view, "#writing-menu[hidden]")
@@ -112,40 +120,65 @@ defmodule StillWeb.RoomLiveTest do
     assert {:ok, []} = Still.Writing.Files.revisions(location, piece.id)
   end
 
-  test "changing the light persists across pages without changing writing", %{conn: conn} do
+  test "changing the color persists across writing, Find, Saved writing, and notebooks", %{
+    conn: conn
+  } do
     body = "A line / another line\n\tand its branch"
     {:ok, entry} = Writing.save_entry(nil, body)
     {:ok, view, _html} = live(conn, ~p"/")
 
-    view |> element("#light-toggle") |> render_click()
-    assert has_element?(view, "#room-light-angle[value='38']")
+    assert has_element?(view, ".writing-frame[data-color=graphite]")
+    view |> element("#light-toggle", "Color") |> render_click()
+    assert has_element?(view, "select#room-color option[value=graphite][selected]", "Graphite")
+    refute has_element?(view, "#room-light-form input[type=range]")
 
-    view
-    |> element("#room-light-form")
-    |> render_change(%{"light" => %{"angle" => "214"}})
+    for {color, label} <- [
+          {"sepia", "Sepia"},
+          {"blue", "Night blue"},
+          {"forest", "Forest"},
+          {"plum", "Plum"},
+          {"light", "Light"}
+        ] do
+      assert has_element?(view, "#room-color option[value=#{color}]", label)
 
-    assert Writing.room_light() == 214
+      view
+      |> form("#room-light-form", appearance: %{color: color})
+      |> render_change()
+
+      assert has_element?(view, ".writing-frame[data-color=#{color}]")
+      assert has_element?(view, "#room-color option[value=#{color}][selected]")
+    end
+
+    assert Appearance.color() == "light"
     assert Writing.get_entry!(entry.id).body == body
     assert Writing.list_versions(entry) == []
     assert has_element?(view, "#file-writing-form textarea")
 
     {:ok, found, _html} = live(conn, ~p"/pages")
     found |> element("#light-toggle") |> render_click()
-    assert has_element?(found, "#room-light-angle[value='214']")
+    assert has_element?(found, "#room-color option[value=light][selected]")
+
+    {:ok, saved, _html} = live(conn, ~p"/writing")
+    assert has_element?(saved, ".writing-frame[data-color=light]")
+
+    {:ok, notebooks, _html} = live(conn, ~p"/notebooks")
+    assert has_element?(notebooks, ".writing-frame[data-color=light]")
   end
 
-  test "invalid light values leave the light and current words intact", %{conn: conn} do
+  test "invalid color values leave the chosen color and current words intact", %{conn: conn} do
     {:ok, entry} = Writing.save_entry(nil, "The words already here")
+    {:ok, _} = Appearance.set_color("sepia")
     {:ok, view, _html} = live(conn, ~p"/")
     view |> element("#light-toggle") |> render_click()
 
-    render_change(view, "change_light", %{"light" => %{"angle" => "bright"}})
-    render_change(view, "change_light", %{"light" => %{}})
+    render_change(view, "change_room_color", %{"appearance" => %{"color" => "bright"}})
+    render_change(view, "change_room_color", %{"appearance" => %{}})
 
-    assert Writing.room_light() == 38
+    assert Appearance.color() == "sepia"
+    assert has_element?(view, ".writing-frame[data-color=sepia]")
+    assert has_element?(view, "#room-color option[value=sepia][selected]")
     assert Writing.get_entry!(entry.id).body == "The words already here"
     assert Writing.list_versions(entry) == []
-    assert has_element?(view, "#room-light-angle[value='38']")
   end
 
   test "letters persist through writing, Before and Find without changing the words", %{
@@ -154,7 +187,7 @@ defmodule StillWeb.RoomLiveTest do
     body = "A line / another line\n\tand its branch"
     {:ok, entry} = Writing.save_entry(nil, body)
     old = before("letters", "Early Notebooks/Lists 3", "These:Letters:", "Untouched before")
-    {:ok, 214} = Writing.set_room_light(214)
+    {:ok, _} = Appearance.set_color("forest")
     {:ok, view, _html} = live(conn, ~p"/")
 
     view |> element("#letters-toggle") |> render_click()
@@ -167,7 +200,7 @@ defmodule StillWeb.RoomLiveTest do
 
     assert_push_event(view, "letters-changed", %{size: 23})
     assert Writing.room_letters() == 23
-    assert Writing.room_light() == 214
+    assert Appearance.color() == "forest"
     assert has_element?(view, ".site-frame[style*='--letters: 0.23']")
     assert has_element?(view, "#file-writing-body")
 
@@ -176,6 +209,7 @@ defmodule StillWeb.RoomLiveTest do
     assert has_element?(view, "#file-writing-body")
 
     {:ok, read, _html} = live(conn, ~p"/w/#{old.id}")
+    assert has_element?(read, ".writing-frame[data-color=forest]")
     assert has_element?(read, ".site-frame[style*='--letters: 0.23']")
     read |> element("#letters-toggle") |> render_click()
     assert has_element?(read, "#room-letters-size[value='23']")
@@ -190,9 +224,10 @@ defmodule StillWeb.RoomLiveTest do
     assert Writing.list_versions(old) == []
   end
 
-  test "letters, light and place each open alone and invalid size leaves the room intact", %{
-    conn: conn
-  } do
+  test "Letters, Color and the room map open separately and invalid size leaves the room intact",
+       %{
+         conn: conn
+       } do
     {:ok, entry} = Writing.save_entry(nil, "The words already here")
     {:ok, view, _html} = live(conn, ~p"/")
     view |> element("#light-toggle") |> render_click()
@@ -207,7 +242,7 @@ defmodule StillWeb.RoomLiveTest do
 
     render_change(view, "change_letters", %{"letters" => %{}})
     assert Writing.room_letters() == 50
-    assert Writing.room_light() == 38
+    assert Appearance.color() == "graphite"
     assert has_element?(view, "#room-letters-size[value='50']")
     assert has_element?(view, ".site-frame[style*='--letters: 0.5']")
 

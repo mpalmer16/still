@@ -22,10 +22,13 @@ fresh again. The machine-local cursor records only the page identity and whether
 it is unfinished; the words remain in the existing editor recovery store until Save.
 
 **Menu**, at the bottom right while writing, keeps Save, New, Scratch, Copy,
-Saved writing, Read and the file details together with Light, Letters, Page width
+Saved writing, Read and the file details together with Color, Letters, Page width
 and **Explore the room**. The controls stay tucked away until you open it. Close
 the menu or press Escape to return to the same place in your writing. Cmd/Ctrl+S
 still saves directly without opening the menu.
+
+**Color** offers Graphite, Sepia, Night blue, Forest, Plum, and Light. The writing
+side starts in Graphite and remembers your choice across its pages.
 
 **Save & start next**, also in Menu, saves the page and opens a blank one in the
 same notebook and section. Cmd/Ctrl+Shift+Enter does the same. The next page shows
@@ -181,7 +184,7 @@ remember it for later. For an older List, Still keeps a saved copy for submissio
 while leaving the original in place. The marker can be removed from Wander or
 from the piece’s Correspondence page.
 
-**Light**, **Letters**, the room map, notebook order, **Find**, **Wander** and
+**Color**, **Letters**, the room map, notebook order, **Find**, **Wander** and
 **Back where I was** retain the historical reading experience. Find searches
 the SQLite collection, including earlier words when requested. Saved new writing
 is a separate shelf reached from Write or Find, with no writing categories. Native
@@ -465,9 +468,8 @@ consistent searchable tables. Prepare a packet before choosing a destination,
 rearrange its poems, edit the original writing with a direct return to the packet,
 and attach an unmarked scratch page as a linked cover letter. Duplicate a packet
 for a later send while keeping the original record intact.
-Graphite is the default dark color; Night blue, Forest, and Plum are available.
-The sun/moon menu holds appearance choices. Still remembers the dark color and optional Light appearance across
-visits to Correspondence. The writing room keeps its own light.
+The sun/moon menu holds the same palettes as the writing side. Still remembers
+each side’s appearance choice separately.
 
 See [the Correspondence guide](correspondence.md) for the workflow, portable
 record layout, recovery boundaries, and a disposable synthetic preview. The preview

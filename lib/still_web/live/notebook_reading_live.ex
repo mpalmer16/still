@@ -259,7 +259,7 @@ defmodule StillWeb.NotebookReadingLive do
     <Layouts.app
       flash={@flash}
       active="notebooks"
-      room_light={@room_light}
+      room_color={@room_color}
       room_width={@room_width}
       light_open={@light_open}
       room_letters={@room_letters}

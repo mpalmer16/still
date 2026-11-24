@@ -18,6 +18,8 @@ defmodule StillWeb.Router do
     pipe_through :browser
 
     get "/threads", RetiredFeatureController, :index
+    get "/next", NextController, :redirect_old_path
+    get "/correspondence/funding/schema", FundingSchemaController, :show
 
     live_session :room, on_mount: [{StillWeb.Room, :default}] do
       live "/", WritingLive, :now
@@ -31,12 +33,24 @@ defmodule StillWeb.Router do
       live "/notebooks/read/:id", NotebookReadingLive, :read
       live "/storage", StorageLive, :index
       live "/correspondence", CorrespondenceLive, :home
+      live "/correspondence/next", NextLive, :next
       live "/correspondence/writing", CorrespondenceLive, :collection
       live "/correspondence/writing/:id", CorrespondenceLive, :piece
       live "/correspondence/journals", CorrespondenceLive, :journals
       live "/correspondence/journals/new", CorrespondenceLive, :new_journal
       live "/correspondence/journals/import", CorrespondenceLive, :import_journals
       live "/correspondence/journals/:id", CorrespondenceLive, :journal
+      live "/correspondence/funding", CorrespondenceLive, :funding
+      live "/correspondence/funding/applications", CorrespondenceLive, :funding_applications
+      live "/correspondence/funding/new", CorrespondenceLive, :new_funding
+      live "/correspondence/funding/import", CorrespondenceLive, :import_funding
+
+      live "/correspondence/funding/applications/new/:opportunity_id",
+           FundingApplicationLive,
+           :new
+
+      live "/correspondence/funding/applications/:id", FundingApplicationLive, :show
+      live "/correspondence/funding/:id", CorrespondenceLive, :funding_opportunity
       live "/correspondence/calendar", CorrespondenceLive, :calendar
       live "/correspondence/calendar/import", CorrespondenceLive, :import_calendar
       live "/correspondence/calendar/events/new", CorrespondenceLive, :new_calendar_event
@@ -63,6 +77,7 @@ defmodule StillWeb.Router do
     pipe_through :api
 
     get "/storage", NativeStorageController, :show
+    get "/next-items", NativeStorageController, :next_items
     put "/storage", NativeStorageController, :update
     delete "/storage", NativeStorageController, :delete
     post "/backup", NativeStorageController, :backup

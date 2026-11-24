@@ -45,7 +45,12 @@ defmodule StillWeb.PlacesDirectoryLiveTest do
     {:ok, view, _} = live(conn, path)
     assert has_element?(view, "#place-row-#{matched.id}", "Willow Review")
     refute has_element?(view, "#place-row-#{near_miss.id}")
-    assert has_element?(view, "#places-nearby option[value='nearby'][selected]")
+
+    assert has_element?(
+             view,
+             ".places-views button[phx-value-impression='nearby'][aria-pressed='true']"
+           )
+
     assert has_element?(view, "#places-reach option[value='long_shot'][selected]")
     assert has_element?(view, "#places-simultaneous option[value='not_allowed'][selected]")
     assert has_element?(view, "#places-history option[value='awaiting'][selected]")
@@ -83,7 +88,12 @@ defmodule StillWeb.PlacesDirectoryLiveTest do
     render_click(element(view, ".editorial-place-back"))
     assert has_element?(view, "#place-row-#{place.id}")
     assert has_element?(view, "#places-query[value='Archive']")
-    assert has_element?(view, "#places-nearby option[value='nearby'][selected]")
+
+    assert has_element?(
+             view,
+             ".places-views button[phx-value-impression='nearby'][aria-pressed='true']"
+           )
+
     assert has_element?(view, "#places-result-count", "41–41 of 41 places")
 
     {:ok, reopened, _} = live(conn, path)
@@ -106,7 +116,11 @@ defmodule StillWeb.PlacesDirectoryLiveTest do
     assert_patch(view, ~p"/correspondence/journals?nearby=nearby&q=Open")
     assert has_element?(view, "#place-row-#{place.id}")
     assert has_element?(view, "#places-query[value='Open']")
-    assert has_element?(view, "#places-nearby option[value='nearby'][selected]")
+
+    assert has_element?(
+             view,
+             ".places-views button[phx-value-impression='nearby'][aria-pressed='true']"
+           )
   end
 
   test "sorting updates the aria state and keeps deterministic name ordering", %{
@@ -212,21 +226,45 @@ defmodule StillWeb.PlacesDirectoryLiveTest do
     refute has_element?(empty, ".editorial-place-empty-note")
   end
 
-  test "nearby toggle removes a row from the active nearby filter without clearing it", %{
+  test "marking a nearby place Maybe or Pass keeps its research and moves it between views", %{
     conn: conn,
     location: location
   } do
-    place = journal!(location, %{name: "Nearby Review", shortlisted: true})
-    path = ~p"/correspondence/journals?nearby=nearby"
-    {:ok, view, _} = live(conn, path)
-    assert has_element?(view, "#place-row-#{place.id}")
+    notes = "They publish spare poems.\r\nReread the winter issue."
+    place = journal!(location, %{name: "Nearby Review", shortlisted: true, notes: notes})
+    other = journal!(location, %{name: "Unmarked Review"})
+    {:ok, view, _} = live(conn, ~p"/correspondence/journals?q=Review")
+    mark_form = "#place-mark-#{place.id}"
+    assert has_element?(view, "#{mark_form} option[value='nearby'][selected]")
+    assert has_element?(view, "#place-row-#{other.id} option[value='unmarked'][selected]")
+    assert has_element?(view, "#place-row-#{place.id} .places-notes", "They publish spare poems.")
+    refute has_element?(view, "#place-row-#{place.id} .places-notes", "Reread the winter issue.")
 
-    render_click(element(view, "#place-row-#{place.id} button[phx-click=toggle_shortlist]"))
-    refute has_element?(view, "#place-row-#{place.id}")
-    assert has_element?(view, "#places-nearby option[value='nearby'][selected]")
-    assert has_element?(view, "#places-result-count", "No places match this view")
-    assert {:ok, updated} = Correspondence.journal(location, place.id)
-    refute updated.shortlisted
+    render_click(element(view, ".places-views button", "Nearby"))
+    assert_patch(view, ~p"/correspondence/journals?nearby=nearby&q=Review")
+    assert row_ids(view) == [place.id]
+
+    render_change(element(view, mark_form), %{"place_id" => place.id, "impression" => "maybe"})
+    assert row_ids(view) == []
+    assert has_element?(view, ".places-views button[aria-pressed='true']", "Nearby")
+
+    render_click(element(view, ".places-views button", "Maybe"))
+    assert row_ids(view) == [place.id]
+    assert has_element?(view, "#{mark_form} option[value='maybe'][selected]")
+    render_change(element(view, mark_form), %{"place_id" => place.id, "impression" => "pass"})
+    assert row_ids(view) == []
+
+    render_click(element(view, ".places-views button", "Pass for now"))
+    assert row_ids(view) == [place.id]
+
+    assert {:ok, %{impression: "pass", shortlisted: false, notes: ^notes}} =
+             Correspondence.journal(location, place.id)
+
+    render_change(element(view, mark_form), %{"place_id" => place.id, "impression" => "unmarked"})
+    assert row_ids(view) == []
+    render_click(element(view, ".places-views button", "All places"))
+    assert row_ids(view) == [place.id, other.id]
+    assert has_element?(view, "#{mark_form} option[value='unmarked'][selected]")
   end
 
   test "reconnecting an unavailable folder reloads the directory instead of keeping an empty view",
@@ -242,6 +280,116 @@ defmodule StillWeb.PlacesDirectoryLiveTest do
     File.rename!(away, location.folder)
     render_patch(view, ~p"/correspondence/journals?q=Review")
     assert has_element?(view, "#place-row-#{place.id}")
+  end
+
+  test "Open today includes the closing date and Check first keeps free-text windows", %{
+    conn: conn,
+    location: location
+  } do
+    today = NaiveDateTime.local_now() |> NaiveDateTime.to_date()
+    yesterday = today |> Date.add(-1) |> Date.to_iso8601()
+    tomorrow = today |> Date.add(1) |> Date.to_iso8601()
+    date = Date.to_iso8601(today)
+
+    uncertain =
+      journal!(location, %{
+        name: "Uncertain Review",
+        windows: "Open until the cap is reached",
+        shortlisted: true
+      })
+
+    ongoing =
+      journal!(location, %{
+        name: "Ongoing Review",
+        submission_window: %{"mode" => "always"}
+      })
+
+    journal!(location, %{
+      name: "Future Review",
+      submission_window: %{"mode" => "dates", "opens" => tomorrow, "closes" => tomorrow}
+    })
+
+    {:ok, directory, _} = live(conn, ~p"/correspondence/journals")
+    render_click(element(directory, ".places-views button", "Open today"))
+    assert row_ids(directory) == [ongoing.id]
+    render_click(element(directory, ".places-views button", "Check first"))
+    assert row_ids(directory) == [uncertain.id]
+    assert has_element?(directory, "#place-row-#{uncertain.id}", uncertain.windows)
+
+    render_click(element(directory, ".places-name", uncertain.name))
+    editor = element(directory, "#journal-form")
+    bad_window = %{"mode" => "dates", "opens" => tomorrow, "closes" => yesterday}
+
+    render_submit(editor, %{
+      "journal" => %{"name" => uncertain.name, "submission_window" => bad_window}
+    })
+
+    assert has_element?(directory, "[role='alert']", "close on or after it opens")
+    assert {:ok, %{submission_window: nil}} = Correspondence.journal(location, uncertain.id)
+
+    window = %{"mode" => "dates", "opens" => yesterday, "closes" => date}
+
+    render_submit(editor, %{
+      "journal" => %{
+        "name" => uncertain.name,
+        "windows" => uncertain.windows,
+        "submission_window" => window
+      }
+    })
+
+    assert {:ok, %{submission_window: ^window, shortlisted: true}} =
+             Correspondence.journal(location, uncertain.id)
+
+    render_click(element(directory, ".editorial-place-back"))
+    assert row_ids(directory) == []
+    render_click(element(directory, ".places-views button", "Open today"))
+    assert row_ids(directory) == [ongoing.id, uncertain.id]
+    render_click(element(directory, ".places-views button", "Nearby"))
+    assert row_ids(directory) == [uncertain.id]
+  end
+
+  test "Places JSON includes saved records outside the current filter", %{
+    conn: conn,
+    location: location
+  } do
+    notes = "</textarea><script>Recent issue</script>\nKeep this line."
+
+    journal!(location, %{
+      name: "Alder Review",
+      impression: "nearby",
+      submission_window: %{"mode" => "always"},
+      notes: notes
+    })
+
+    journal!(location, %{name: "Window Review", inactive: true})
+    {:ok, view, _} = live(conn, ~p"/correspondence/journals?nearby=nearby")
+    assert length(row_ids(view)) == 1
+
+    rendered = render_click(element(view, ".places-menu button", "Export JSON"))
+
+    json =
+      rendered
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("#correspondence-export-json")
+      |> LazyHTML.text()
+
+    assert [
+             %{
+               "name" => "Alder Review",
+               "notes" => ^notes,
+               "impression" => "nearby",
+               "submission_window" => %{"mode" => "always"}
+             } = alder,
+             %{"name" => "Window Review", "inactive" => true}
+           ] = Jason.decode!(json)
+
+    refute Map.has_key?(alder, "id")
+    refute Map.has_key?(alder, "possible_piece_ids")
+    refute has_element?(view, "script", "Recent issue")
+
+    render_click(element(view, ".corr-json-export button", "Close"))
+    refute has_element?(view, "#correspondence-export-json")
+    assert length(row_ids(view)) == 1
   end
 
   defp journal!(location, attrs) do

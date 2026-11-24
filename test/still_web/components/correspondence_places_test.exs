@@ -33,10 +33,10 @@ defmodule StillWeb.CorrespondencePlacesTest do
     refute LazyHTML.query(doc, "#place-row-unchecked") |> LazyHTML.text() =~
              "Source checked by you"
 
-    assert html =~ "Kept nearby"
+    assert html =~ "Pass for now"
     assert length(Regex.scan(~r/id="place-row-/, html)) == 2
     assert html =~ ~s(aria-label="Sort by Place")
-    assert html =~ ~s(name="places[nearby]")
+    assert html =~ ~s(aria-label="Filter places by your mark")
     refute html =~ "Not recorded."
     assert html =~ "Unknown"
   end
@@ -131,14 +131,13 @@ defmodule StillWeb.CorrespondencePlacesTest do
     assert length(Regex.scan(~r/class="editorial-place-form-section"/, html)) == 3
 
     for field <-
-          ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes verified shortlisted) do
+          ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes verified impression) do
       assert html =~ "journal[#{field}]"
     end
 
     assert html =~ "Unknown"
     assert html =~ "I checked these details at the publication’s own source"
-    assert html =~ "Keep nearby"
-    assert html =~ "places you’d like to return to"
+    assert html =~ "Unmarked"
   end
 
   defp journal(name, overrides) do
@@ -155,6 +154,7 @@ defmodule StillWeb.CorrespondencePlacesTest do
         simultaneous_policy: "unknown",
         response_expectation: "",
         notes: "",
+        impression: "nearby",
         shortlisted: true,
         verified: false
       },

@@ -4,10 +4,18 @@ defmodule Still.Correspondence do
   immutable database snapshots; historical SQLite Lists are never candidates or modified.
   """
   alias Still.{LocalRecord, Poems, Repo, Storage}
+  alias Still.Correspondence.SubmissionWindows
   alias Still.Writing.{Entry, PoemReferences, Version}
   import Ecto.Query
 
-  @journal_fields ~w(name website submission_url interests guidelines windows fee simultaneous_policy response_expectation notes shortlisted verified inactive keywords reach reach_note possible_piece_ids icon_url description)
+  @journal_fields ~w(name website submission_url interests guidelines windows submission_window fee simultaneous_policy response_expectation notes impression shortlisted verified inactive keywords reach reach_note possible_piece_ids icon_url description)
+  @place_impressions [
+    {"Unmarked", "unmarked"},
+    {"Nearby", "nearby"},
+    {"Maybe", "maybe"},
+    {"Pass for now", "pass"}
+  ]
+  @place_impression_values Enum.map(@place_impressions, &elem(&1, 1))
   @packet_fields ~w(title journal_id piece_ids preparation_notes cover_letter cover_letter_piece_id)
   @statuses ~w(preparing submitted awaiting declined accepted withdrawn)
   @desk_format "still-correspondence-desk"
@@ -240,6 +248,23 @@ defmodule Still.Correspondence do
   def journals(location),
     do: with({:ok, d} <- store(location), do: records(d, :journal))
 
+  @doc "Exports the recorded journal details needed to recheck submission dates."
+  def export_reading_periods_json(location, scope) when scope in [:unconfirmed, :all] do
+    with {:ok, places} <- journals(location), do: SubmissionWindows.export_json(places, scope)
+  end
+
+  @doc "Exports all saved place details without internal identifiers or links to writing."
+  def export_places_json(location) do
+    fields = Enum.map(@journal_fields -- ["possible_piece_ids"], &String.to_existing_atom/1)
+
+    with {:ok, places} <- journals(location) do
+      places
+      |> Enum.sort_by(&String.downcase(&1.name))
+      |> Enum.map(&Map.take(&1, fields))
+      |> Jason.encode()
+    end
+  end
+
   @doc "Reads a bounded, optional icon cache without initializing or changing a collection."
   def read_icon_cache(location, journal) do
     with {:ok, active} <- active_location(location),
@@ -367,6 +392,17 @@ defmodule Still.Correspondence do
 
   def active_journal?(journal), do: !Map.get(journal, :inactive, false)
 
+  def place_impressions, do: @place_impressions
+
+  @doc "Changes a personal mark without overwriting place details from an older view."
+  def set_place_impression(location, id, token, impression) do
+    with {:ok, journal} <- journal(location, id),
+         :ok <- fresh(journal, token) do
+      attrs = Map.take(journal, Enum.map(@journal_fields, &String.to_existing_atom/1))
+      save_journal(location, Map.put(attrs, :impression, impression), id, token)
+    end
+  end
+
   def packet(location, id) do
     with {:ok, d} <- store(location),
          {:ok, p} <- read_record(d, id, :packet),
@@ -429,6 +465,13 @@ defmodule Still.Correspondence do
 
   def save_packet(_, _, _, _), do: invalid("packet")
 
+  @doc "Saves only the manuscript and linked letter versions shown in the packet preview."
+  def save_reviewed_packet(location, attrs, id, token, %{piece_tokens: tokens} = reviewed)
+      when is_map(attrs) and is_map(tokens),
+      do: save_packet_with_sources(location, attrs, id, token, %{}, reviewed)
+
+  def save_reviewed_packet(_, _, _, _, _), do: invalid("packet")
+
   @doc "Starts a packet with the exact saved piece version currently open in the reader."
   def start_packet(location, piece_id, expected_source_token, title)
       when is_binary(piece_id) and is_binary(expected_source_token) do
@@ -444,7 +487,7 @@ defmodule Still.Correspondence do
   def start_packet(_, _, _, _),
     do: {:error, "Reopen this writing before starting a packet."}
 
-  defp save_packet_with_sources(location, attrs, id, token, expected_sources)
+  defp save_packet_with_sources(location, attrs, id, token, expected_sources, reviewed \\ nil)
        when is_map(attrs) and is_map(expected_sources) do
     with {:ok, vals} <- normalize_packet(attrs),
          {:ok, record_id} <- choose_id(id),
@@ -455,6 +498,7 @@ defmodule Still.Correspondence do
          :ok <- maybe_active_destination(j),
          {:ok, pieces} <- current_pieces(location, vals.piece_ids, expected_sources),
          {:ok, letter_token} <- cover_letter_token(location, vals.cover_letter_piece_id),
+         :ok <- preview_matches(reviewed, pieces, letter_token),
          now <- now(),
          rec <-
            Map.merge(vals, %{
@@ -471,6 +515,17 @@ defmodule Still.Correspondence do
            }),
          {:ok, saved} <- write_record(d, rec, :packet, token),
          do: {:ok, saved}
+  end
+
+  defp preview_matches(nil, _pieces, _letter_token), do: :ok
+
+  defp preview_matches(reviewed, pieces, letter_token) do
+    if reviewed.piece_tokens == Map.new(pieces, &{&1.id, &1.token}) and
+         Map.get(reviewed, :cover_letter_piece_token) == letter_token,
+       do: :ok,
+       else:
+         {:error,
+          "Saved writing changed while this packet was open. Review the refreshed manuscript and cover letter, then save the packet again."}
   end
 
   @doc "Adds one current saved piece to a fresh, editable packet draft."
@@ -629,6 +684,42 @@ defmodule Still.Correspondence do
 
   def set_status(_, _, _, _), do: {:error, "That packet status cannot be set directly."}
 
+  def packet_placements(%{packets: packets, journals: journals}, except_id) do
+    destinations = Map.new(journals, &{&1.id, &1.name})
+
+    for packet <- packets, packet.id != except_id, id <- packet.piece_ids do
+      status =
+        case packet.status do
+          "preparing" ->
+            "In preparation"
+
+          "submitted" ->
+            "Awaiting reply"
+
+          "awaiting" ->
+            "Awaiting reply"
+
+          "accepted" ->
+            if id in (packet.accepted_piece_ids || []), do: "Accepted", else: "Awaiting reply"
+
+          "declined" ->
+            "Declined"
+
+          "withdrawn" ->
+            "Withdrawn"
+        end
+
+      destination =
+        case Map.get(packet, :snapshot) do
+          %{journal_name: name} -> name
+          _ -> Map.get(destinations, packet.journal_id, "No destination chosen")
+        end
+
+      {id, %{title: packet.title, destination: destination, status: status}}
+    end
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+  end
+
   def history(location, piece_id) do
     with {:ok, d} <- store(location),
          {:ok, packets} <- records(d, :packet) do
@@ -732,6 +823,7 @@ defmodule Still.Correspondence do
          {:ok, interests} <- optional(v["interests"], "Editorial interests"),
          {:ok, guidelines} <- optional(v["guidelines"], "Guidelines"),
          {:ok, windows} <- optional(v["windows"], "Reading windows"),
+         {:ok, submission_window} <- SubmissionWindows.normalize(v["submission_window"]),
          {:ok, fee} <- optional(v["fee"], "Submission fee"),
          {:ok, simultaneous_policy} <-
            optional(v["simultaneous_policy"], "Simultaneous-submission policy"),
@@ -744,6 +836,7 @@ defmodule Still.Correspondence do
          {:ok, possible_piece_ids} <- possibility_ids(v["possible_piece_ids"]),
          {:ok, verified} <- bool(v["verified"]),
          {:ok, shortlisted} <- bool(v["shortlisted"]),
+         {:ok, impression} <- normalize_place_impression(v["impression"], shortlisted),
          {:ok, inactive} <- bool(v["inactive"]) do
       {:ok,
        %{
@@ -755,6 +848,7 @@ defmodule Still.Correspondence do
          interests: interests,
          guidelines: guidelines,
          windows: windows,
+         submission_window: submission_window,
          fee: fee,
          simultaneous_policy: simultaneous_policy,
          response_expectation: response_expectation,
@@ -764,23 +858,50 @@ defmodule Still.Correspondence do
          reach_note: reach_note,
          possible_piece_ids: possible_piece_ids,
          verified: verified,
-         shortlisted: shortlisted,
+         impression: impression,
+         shortlisted: impression == "nearby",
          inactive: inactive
        }}
     end
   end
 
   defp preserve_optional_place_details(vals, attrs, old) do
+    vals =
+      if old && !supplied?(attrs, :impression) && !supplied?(attrs, :shortlisted),
+        do: %{vals | impression: old.impression, shortlisted: old.shortlisted},
+        else: vals
+
     Enum.reduce(
-      [:inactive, :keywords, :reach, :reach_note, :possible_piece_ids, :icon_url, :description],
+      [
+        :inactive,
+        :keywords,
+        :reach,
+        :reach_note,
+        :possible_piece_ids,
+        :icon_url,
+        :description,
+        :submission_window
+      ],
       vals,
       fn field, acc ->
-        if old && !Map.has_key?(attrs, field) && !Map.has_key?(attrs, Atom.to_string(field)),
+        if old && !supplied?(attrs, field),
           do: Map.put(acc, field, Map.fetch!(old, field)),
           else: acc
       end
     )
   end
+
+  defp supplied?(attrs, field),
+    do: Map.has_key?(attrs, field) or Map.has_key?(attrs, Atom.to_string(field))
+
+  defp normalize_place_impression(nil, shortlisted),
+    do: {:ok, legacy_place_impression(shortlisted)}
+
+  defp normalize_place_impression(mark, _) when mark in @place_impression_values, do: {:ok, mark}
+  defp normalize_place_impression(_, _), do: {:error, "Choose a listed mark for this place."}
+
+  defp legacy_place_impression(true), do: "nearby"
+  defp legacy_place_impression(_), do: "unmarked"
 
   defp possibility_ids(nil), do: {:ok, []}
   defp possibility_ids([]), do: {:ok, []}
@@ -842,7 +963,7 @@ defmodule Still.Correspondence do
 
           {:ok, [_expanded]} ->
             {:error,
-             "The linked cover letter changed after packet preparation. Review the packet again before sending."}
+             "The linked cover letter changed after packet preparation. Review the current letter, then choose Save changes before marking it sent."}
 
           {:error, _} = error ->
             error
@@ -989,7 +1110,8 @@ defmodule Still.Correspondence do
   @doc "The exact expanded current words of an ordered packet selection, before it is saved."
   def manuscript_preview(location, ids) when is_list(ids), do: current_pieces(location, ids)
 
-  defp expand_linked_pieces(pieces, location) do
+  @doc "Expand verified linked writing in an already selected, ordered manuscript."
+  def expand_linked_pieces(pieces, location) do
     Enum.reduce_while(pieces, {:ok, []}, fn piece, {:ok, acc} ->
       references = Enum.filter(PoemReferences.parse(piece.body), &(&1.kind == :reference))
 
@@ -1051,7 +1173,7 @@ defmodule Still.Correspondence do
       do: :ok,
       else:
         {:error,
-         "A selected writing changed after packet preparation. Reopen and review the packet before sending."}
+         "A selected writing changed after packet preparation. Review the current manuscript, then choose Save changes before marking it sent."}
   end
 
   defp valid_snapshot?(raw, packet) do
@@ -1279,6 +1401,7 @@ defmodule Still.Correspondence do
 
     extensions_valid =
       valid_web_url?(r["icon_url"]) and
+        SubmissionWindows.valid?(r["submission_window"]) and
         match?({:ok, _}, optional(r["description"], "Description")) and
         match?({:ok, _}, optional(r["keywords"], "Keywords")) and
         match?({:ok, _}, optional(r["reach_note"], "Reach note")) and
@@ -1294,11 +1417,15 @@ defmodule Still.Correspondence do
       |> Map.put_new("reach", "unknown")
       |> Map.put_new("reach_note", nil)
       |> Map.put_new("possible_piece_ids", [])
+      |> Map.put_new("impression", legacy_place_impression(r["shortlisted"]))
+      |> Map.put_new("submission_window", nil)
 
     if extensions_valid and Enum.all?(fields, &Map.has_key?(r, &1)) and valid_texts and valid_urls and
          is_binary(r["name"]) and
          String.trim(r["name"]) != "" and is_boolean(r["verified"]) and
-         is_boolean(r["shortlisted"]) and is_boolean(Map.get(r, "inactive", false)) and
+         r["impression"] in @place_impression_values and
+         r["shortlisted"] == (r["impression"] == "nearby") and
+         is_boolean(Map.get(r, "inactive", false)) and
          valid_time?(r["created_at"]) and valid_time?(r["updated_at"]) do
       {:ok,
        atomize(Map.put_new(r, "inactive", false), [
@@ -1311,10 +1438,12 @@ defmodule Still.Correspondence do
          :interests,
          :guidelines,
          :windows,
+         :submission_window,
          :fee,
          :simultaneous_policy,
          :response_expectation,
          :notes,
+         :impression,
          :shortlisted,
          :verified,
          :inactive,

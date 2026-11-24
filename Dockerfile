@@ -13,6 +13,7 @@ RUN mix deps.get --only prod && mix deps.compile
 COPY assets ./assets
 COPY lib ./lib
 COPY priv ./priv
+COPY docs/calendar-import.schema.json docs/funding-import.schema.json ./docs/
 RUN mix compile --warnings-as-errors && mix assets.setup && mix assets.deploy && mix release
 
 FROM debian:trixie-slim AS runtime

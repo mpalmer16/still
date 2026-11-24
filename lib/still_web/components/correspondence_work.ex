@@ -67,120 +67,138 @@ defmodule StillWeb.CorrespondenceWork do
           class="corr-history editorial-work-rail"
           aria-label="Manuscript history"
         >
-          <section id="work-places" class="editorial-work-section" aria-labelledby="work-places-title">
+          <section
+            id="work-places"
+            class="editorial-work-panel"
+            aria-labelledby="work-places-title"
+          >
             <h2 id="work-places-title">Places to consider</h2>
             <p :if={@places == []}>
               No connections yet. Add keywords or keep a personal connection from Places.
             </p>
-            <article :for={match <- @places} class="editorial-work-event">
-              <h3>
-                <.link patch={~p"/correspondence/journals/#{match.journal.id}"}>{match.journal.name}</.link>
-              </h3>
-              <p :if={match.keywords != []}>Shares: {Enum.join(match.keywords, ", ")}</p>
-              <p :if={match.manual}>Kept by you as a possibility.</p>
-              <p>Reach: {Correspondence.reach_label(match.journal.reach)}</p>
-              <p :if={match.journal.reach_note not in [nil, ""]}>{match.journal.reach_note}</p>
-            </article>
-            <p :if={@places != []} class="corr-meta">
-              Shared words are starting points for reading. Check the place’s interests and guidelines.
-            </p>
+            <div
+              :if={@places != []}
+              class="editorial-work-place-list"
+              role="region"
+              aria-label="Suggested places"
+              tabindex="0"
+            >
+              <article :for={match <- @places} class="editorial-work-event">
+                <h3>
+                  <.link patch={~p"/correspondence/journals/#{match.journal.id}"}>{match.journal.name}</.link>
+                </h3>
+                <p :if={match.keywords != []}>Shares: {Enum.join(match.keywords, ", ")}</p>
+                <p :if={match.manual}>Kept by you as a possibility.</p>
+                <p>Reach: {Correspondence.reach_label(match.journal.reach)}</p>
+                <p :if={match.journal.reach_note not in [nil, ""]}>{match.journal.reach_note}</p>
+              </article>
+              <p class="corr-meta">
+                Shared words are starting points for reading. Check the place’s interests and guidelines.
+              </p>
+            </div>
             <.link patch={~p"/correspondence/journals"} class="corr-text-link">Browse Places →</.link>
           </section>
-          <section class="editorial-work-section" aria-labelledby="work-correspondence-title">
-            <div class="editorial-work-section-heading">
-              <h2 id="work-correspondence-title">Its correspondence</h2>
-              <span>{length(@history)} {plural(length(@history), "record", "records")}</span>
-            </div>
-            <article
-              :for={row <- @history}
-              id={"piece-history-#{value(row.packet, :id)}"}
-              class="editorial-work-event"
-            >
-              <div class="editorial-work-event-top">
-                <span class={"editorial-work-status status-#{work_status(row.packet, value(@piece, :id))}"}>
-                  {status_label(row.packet, value(@piece, :id))}
-                </span>
-                <span :if={row.snapshot} class="editorial-work-date">
-                  Sent {date(value(value(row.packet, :snapshot), :date))}
-                </span>
-                <span :if={!row.snapshot} class="editorial-work-date">In preparation</span>
+          <div class="editorial-work-panel editorial-work-history">
+            <section class="editorial-work-section" aria-labelledby="work-correspondence-title">
+              <div class="editorial-work-section-heading">
+                <h2 id="work-correspondence-title">Its correspondence</h2>
+                <span>{length(@history)} {plural(length(@history), "record", "records")}</span>
               </div>
-              <h3>
-                <.link patch={~p"/correspondence/packets/#{value(row.packet, :id)}"}>
-                  {journal_name(row)}
-                </.link>
-              </h3>
-              <p class="editorial-work-packet-title">{value(row.packet, :title)}</p>
-              <.link
-                :if={row.journal}
-                patch={~p"/correspondence/journals/#{value(row.journal, :id)}"}
-                class="editorial-work-link"
-              >Journal details <span aria-hidden="true">→</span></.link>
+              <article
+                :for={row <- @history}
+                id={"piece-history-#{value(row.packet, :id)}"}
+                class="editorial-work-event"
+              >
+                <div class="editorial-work-event-top">
+                  <span class={"editorial-work-status status-#{work_status(row.packet, value(@piece, :id))}"}>
+                    {status_label(row.packet, value(@piece, :id))}
+                  </span>
+                  <span :if={row.snapshot} class="editorial-work-date">
+                    Sent {date(value(value(row.packet, :snapshot), :date))}
+                  </span>
+                  <span :if={!row.snapshot} class="editorial-work-date">In preparation</span>
+                </div>
+                <h3>
+                  <.link patch={~p"/correspondence/packets/#{value(row.packet, :id)}"}>
+                    {journal_name(row)}
+                  </.link>
+                </h3>
+                <p class="editorial-work-packet-title">{value(row.packet, :title)}</p>
+                <.link
+                  :if={row.journal}
+                  patch={~p"/correspondence/journals/#{value(row.journal, :id)}"}
+                  class="editorial-work-link"
+                >Journal details <span aria-hidden="true">→</span></.link>
 
-              <div :for={event <- events(row.packet)} class="editorial-work-response">
-                <span class="editorial-work-date">{date(value(event, :date))}</span>
-                <p :if={value(event, :kind) == "response"}>
-                  <strong>{event_label(event)}</strong><span :if={
-                    value(event, :note) not in [nil, ""]
-                  }>
-                    · {value(event, :note)}
-                  </span>
-                  <span :if={accepted_piece?(event, value(@piece, :id))}>
-                    · This piece was accepted.
-                  </span>
-                </p>
-                <p :if={value(event, :kind) == "status"}>
-                  {event_label(event)}
-                </p>
+                <div :for={event <- events(row.packet)} class="editorial-work-response">
+                  <span class="editorial-work-date">{date(value(event, :date))}</span>
+                  <p :if={value(event, :kind) == "response"}>
+                    <strong>{event_label(event)}</strong><span :if={
+                      value(event, :note) not in [nil, ""]
+                    }>
+                      · {value(event, :note)}
+                    </span>
+                    <span :if={accepted_piece?(event, value(@piece, :id))}>
+                      · This piece was accepted.
+                    </span>
+                  </p>
+                  <p :if={value(event, :kind) == "status"}>
+                    {event_label(event)}
+                  </p>
+                </div>
+
+                <.link
+                  :if={Enum.any?(@proof_sources, &(&1.key == "sent:#{value(row.packet, :id)}"))}
+                  id={"compare-sent-#{value(row.packet, :id)}"}
+                  patch={
+                    ~p"/correspondence/writing/#{@piece.id}?compare=#{"sent:#{value(row.packet, :id)}"}"
+                  }
+                  class="editorial-work-link"
+                >Compare with current words <span aria-hidden="true">↗</span></.link>
+                <details :if={row.snapshot} class="editorial-work-snapshot">
+                  <summary>Read the exact version sent</summary>
+                  <pre>{row.snapshot.body}</pre>
+                </details>
+                <.link
+                  :if={value(row.packet, :status) in ["declined", "withdrawn"]}
+                  patch={~p"/correspondence/packets/new?from=#{value(row.packet, :id)}"}
+                  class="editorial-work-link"
+                >Prepare another packet with these pieces <span aria-hidden="true">→</span></.link>
+              </article>
+              <p :if={@history == []} class="editorial-work-empty">
+                This piece has not traveled yet.
+              </p>
+            </section>
+
+            <section class="editorial-work-section" aria-labelledby="work-revisions-title">
+              <div class="editorial-work-section-heading">
+                <h2 id="work-revisions-title">Earlier versions</h2>
+                <span>{length(@revisions)} {plural(
+                  length(@revisions),
+                  "saved revision",
+                  "saved revisions"
+                )}</span>
               </div>
-
-              <.link
-                :if={Enum.any?(@proof_sources, &(&1.key == "sent:#{value(row.packet, :id)}"))}
-                id={"compare-sent-#{value(row.packet, :id)}"}
-                patch={
-                  ~p"/correspondence/writing/#{@piece.id}?compare=#{"sent:#{value(row.packet, :id)}"}"
-                }
-                class="editorial-work-link"
-              >Compare with current words <span aria-hidden="true">↗</span></.link>
-              <details :if={row.snapshot} class="editorial-work-snapshot">
-                <summary>Read the exact version sent</summary>
-                <pre>{row.snapshot.body}</pre>
+              <details :for={revision <- @revisions} class="corr-version editorial-work-version">
+                <summary>
+                  {title(revision)} · revised {date(
+                    value(revision, :updated_at) || value(revision, :created_at)
+                  )}
+                </summary>
+                <pre>{revision.body}</pre>
+                <.link
+                  :if={Enum.any?(@proof_sources, &(&1.key == "saved:#{value(revision, :id)}"))}
+                  patch={
+                    ~p"/correspondence/writing/#{@piece.id}?compare=#{"saved:#{value(revision, :id)}"}"
+                  }
+                  class="editorial-work-link"
+                >Compare with current words <span aria-hidden="true">↗</span></.link>
               </details>
-              <.link
-                :if={value(row.packet, :status) in ["declined", "withdrawn"]}
-                patch={~p"/correspondence/packets/new?from=#{value(row.packet, :id)}"}
-                class="editorial-work-link"
-              >Prepare another packet with these pieces <span aria-hidden="true">→</span></.link>
-            </article>
-            <p :if={@history == []} class="editorial-work-empty">This piece has not traveled yet.</p>
-          </section>
-
-          <section class="editorial-work-section" aria-labelledby="work-revisions-title">
-            <div class="editorial-work-section-heading">
-              <h2 id="work-revisions-title">Earlier versions</h2>
-              <span>{length(@revisions)} {plural(
-                length(@revisions),
-                "saved revision",
-                "saved revisions"
-              )}</span>
-            </div>
-            <details :for={revision <- @revisions} class="corr-version editorial-work-version">
-              <summary>
-                {title(revision)} · revised {date(
-                  value(revision, :updated_at) || value(revision, :created_at)
-                )}
-              </summary>
-              <pre>{revision.body}</pre>
-              <.link
-                :if={Enum.any?(@proof_sources, &(&1.key == "saved:#{value(revision, :id)}"))}
-                patch={
-                  ~p"/correspondence/writing/#{@piece.id}?compare=#{"saved:#{value(revision, :id)}"}"
-                }
-                class="editorial-work-link"
-              >Compare with current words <span aria-hidden="true">↗</span></.link>
-            </details>
-            <p :if={@revisions == []} class="editorial-work-empty">No earlier versions are saved.</p>
-          </section>
+              <p :if={@revisions == []} class="editorial-work-empty">
+                No earlier versions are saved.
+              </p>
+            </section>
+          </div>
         </aside>
       </div>
     </section>

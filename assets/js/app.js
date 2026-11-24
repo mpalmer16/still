@@ -408,7 +408,7 @@ document.addEventListener("keydown", event => {
     event.preventDefault()
     document.querySelector(".site-nav a[href='/pages']")?.click()
   }
-  const field = event.target.closest?.("input, textarea, [contenteditable='true']")
+  const field = event.target.closest?.("input, select, textarea, [contenteditable='true']")
   const roomIsOpen = document.querySelector("#room-close")
   const dialog = document.querySelector("#room-landscape")
   if (event.key === "Tab" && dialog) {

@@ -1012,7 +1012,7 @@ defmodule StillWeb.EntryLive do
           true -> "write"
         end
       }
-      room_light={@room_light}
+      room_color={@room_color}
       room_width={@room_width}
       light_open={@light_open}
       room_letters={@room_letters}

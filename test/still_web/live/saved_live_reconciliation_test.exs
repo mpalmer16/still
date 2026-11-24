@@ -26,6 +26,7 @@ defmodule StillWeb.SavedLiveReconciliationTest do
     File.write!(path, "A complete text file\n\nwith its authored spacing.\n")
 
     {:ok, view, _html} = live(conn, ~p"/writing")
+    assert has_element?(view, "details#file-reconciliation:not([open])")
     assert has_element?(view, "#adopt-text-file")
 
     view
@@ -46,7 +47,7 @@ defmodule StillWeb.SavedLiveReconciliationTest do
     File.rm!(piece.path)
 
     {:ok, view, _html} = live(conn, ~p"/writing")
-    assert has_element?(view, "#file-reconciliation")
+    assert has_element?(view, "details#file-reconciliation[open]")
     assert has_element?(view, "#missing-file-#{piece.id}", piece.relative_path)
   end
 
@@ -101,6 +102,7 @@ defmodule StillWeb.SavedLiveReconciliationTest do
     File.rm!(original)
 
     {:ok, view, _html} = live(conn, ~p"/writing")
+    assert has_element?(view, "details#file-reconciliation[open]")
     assert has_element?(view, "#ambiguous-file-#{piece.id}", "original")
     assert has_element?(view, "#ambiguous-file-#{piece.id} option[value='copied']")
 

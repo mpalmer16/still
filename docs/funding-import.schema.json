@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Still funding opportunities import",
+  "description": "Return a UTF-8 JSON array of up to 200 opportunities in a single .json file, up to 1 MB. Verify dates and eligibility for the current cycle against the funder's official sources. Omit unconfirmed fields. Use the name, funder, and cycle as a consistent identity across research batches. Still skips duplicates so existing records and notes are preserved.",
+  "type": "array",
+  "minItems": 1,
+  "maxItems": 200,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["name", "funder", "kind"],
+    "properties": {
+      "name": {"type": "string", "pattern": "\\S", "maxLength": 300, "description": "Official opportunity name."},
+      "funder": {"type": "string", "pattern": "\\S", "maxLength": 300, "description": "Organization offering the funding."},
+      "kind": {"type": "string", "enum": ["grant", "fellowship", "residency", "prize", "scholarship", "other"]},
+      "cycle": {"type": "string", "maxLength": 5000, "description": "Published round or year, such as Spring 2027. Distinguishes repeat offerings."},
+      "amount": {"type": "string", "maxLength": 5000, "description": "Published amount or range with currency, such as USD 5,000."},
+      "eligibility": {"type": "string", "maxLength": 5000, "description": "Summarize restrictions that matter to a writer, such as geography, career stage, or genre."},
+      "description": {"type": "string", "maxLength": 5000, "description": "Brief description of the opportunity and what it funds."},
+      "opens_on": {"$ref": "#/$defs/date", "description": "Published opening date for this cycle."},
+      "deadline": {"$ref": "#/$defs/date", "description": "Published deadline for this cycle. Use a date on or after opens_on. Omit for rolling or unconfirmed dates and explain in notes if helpful."},
+      "deadline_time": {"type": "string", "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$", "description": "Use HH:MM in 24-hour time as published. Include only when the deadline date and time zone are known."},
+      "timezone": {"type": "string", "pattern": "\\S", "maxLength": 5000, "description": "Time zone from the official source, as published."},
+      "application_url": {"$ref": "#/$defs/link", "description": "Direct application page."},
+      "source_url": {"$ref": "#/$defs/link", "description": "Official page supporting the dates, award amount, and eligibility."},
+      "checked_on": {"$ref": "#/$defs/date", "description": "Date you verified the details against the official source."},
+      "priority": {"enum": ["pursue", "monitor", "pass"]},
+      "eligibility_status": {"enum": ["eligible", "check", "ineligible"]},
+      "benefit": {"enum": ["unrestricted", "restricted", "in_kind", "publication", "development"]},
+      "prepare_on": {"$ref": "#/$defs/date"},
+      "fee": {"type": "string", "maxLength": 5000},
+      "travel": {"type": "string", "maxLength": 5000},
+      "effort": {"type": "string", "maxLength": 5000},
+      "fit": {"type": "string", "maxLength": 5000},
+      "anticipated_window": {"type": "string", "maxLength": 5000},
+      "notes": {"type": "string", "maxLength": 10000},
+      "highlighted": {"type": "boolean", "default": false, "description": "Use true sparingly when eligibility, fit, or a near deadline merits closer attention. Explain the reason briefly in notes."}
+    },
+    "dependentRequired": {
+      "deadline_time": ["deadline", "timezone"],
+      "timezone": ["deadline", "deadline_time"]
+    }
+  },
+  "$defs": {
+    "date": {"type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "link": {"type": "string", "format": "uri", "maxLength": 5000, "pattern": "^https?://[^/@?#\\s]+(?:[/?#]|$)"}
+  }
+}

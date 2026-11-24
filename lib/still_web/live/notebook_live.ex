@@ -170,7 +170,7 @@ defmodule StillWeb.NotebookLive do
     <Layouts.app
       flash={@flash}
       active="notebooks"
-      room_light={@room_light}
+      room_color={@room_color}
       light_open={@light_open}
       room_letters={@room_letters}
       letters_open={@letters_open}
@@ -286,7 +286,6 @@ defmodule StillWeb.NotebookLive do
       <div class="notebook-room">
         <p :if={@problem} class="recovery-note" role="alert">{@problem}</p>
         <div :if={is_nil(@notebook)} class="notebook-heading">
-          <span class="section-whisper">A place for each List</span>
           <h1>Notebooks.</h1>
         </div>
 

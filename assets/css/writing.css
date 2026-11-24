@@ -1,0 +1,320 @@
+.site-frame.writing-frame {
+  --writing-panel: var(--palette-panel);
+  --writing-raised: var(--palette-raised);
+  --writing-line: var(--palette-line);
+  --writing-accent-fill: color-mix(in srgb, var(--warm) 12%, transparent);
+  --writing-shadow: 0 16px 56px rgb(0 0 0 / .25);
+}
+
+.writing-frame .room-light {
+  --place-glow: calc(7% + var(--place-tone, 0) * .3%);
+  background:
+    radial-gradient(ellipse 56% 62% at var(--place-x) var(--place-y), color-mix(in srgb, var(--warm) var(--place-glow), transparent), transparent 83%),
+    radial-gradient(ellipse 64% 48% at 15% 0%, color-mix(in srgb, var(--warm) 4%, transparent), transparent 80%),
+    var(--night);
+}
+
+.writing-frame .site-header { height: 88px; }
+.writing-frame .wordmark { font-size: 36px; }
+.writing-frame .site-nav { flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.writing-frame .site-nav a {
+  min-width: 44px;
+  padding-inline: 13px;
+  border-radius: 99px;
+  font: 500 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  transition: color .2s ease, background-color .2s ease;
+}
+.writing-frame .site-nav .nav-active {
+  color: var(--warm);
+  background: var(--writing-accent-fill);
+}
+.writing-frame .site-nav .nav-active::after { content: none; }
+.writing-frame .site-nav a:hover { color: var(--ink); background: var(--writing-raised); }
+.writing-frame .site-nav a:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+.writing-frame #open-correspondence { margin-inline-start: 8px; border: 1px solid var(--writing-line); }
+
+.writing-frame .room-intro { font-size: 12px; }
+.writing-frame .room-line { width: 20px; height: 2px; border-radius: 99px; }
+.writing-frame .file-page {
+  border-color: var(--writing-line);
+  border-radius: 12px;
+  background: linear-gradient(145deg, var(--palette-paper), var(--night));
+  box-shadow: 0 16px 46px rgb(0 0 0 / .12);
+  transition: border-color .2s ease;
+}
+.writing-frame .file-page:focus-within {
+  border-color: color-mix(in srgb, var(--warm) 34%, transparent);
+}
+.writing-frame .file-page .title-input {
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--writing-line);
+  font-size: calc(24px + var(--letters, .5) * 9px);
+}
+.writing-frame .file-page .title-input::placeholder { font-size: var(--secondary-size); }
+.writing-frame .file-editor { caret-color: var(--warm); }
+.writing-frame .poem-insert { border-color: var(--writing-line); }
+
+.writing-frame .archive-heading,
+.writing-frame .file-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+  margin-bottom: 24px;
+}
+.writing-frame .archive-heading h1,
+.writing-frame .file-heading h1 { margin: 0; }
+.writing-frame .archive-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+.writing-frame #search-collection-problem { flex-basis: 100%; }
+.writing-frame .archive-hint { margin-top: 0; }
+.writing-frame .archive-scopes {
+  gap: 3px 8px;
+  margin: 0 0 20px;
+  padding-block: 6px;
+  border-block: 1px solid var(--writing-line);
+}
+.writing-frame .archive-scopes a { padding-inline: 12px; border-radius: 99px; }
+.writing-frame .archive-scopes a:hover { background: var(--writing-panel); }
+.writing-frame .archive-scopes [aria-current="page"] { background: var(--writing-accent-fill); color: var(--warm); }
+.writing-frame .archive-scopes [aria-current="page"]:not(:focus-visible) { text-decoration: none; }
+.writing-frame .search-form { margin-bottom: 24px; }
+.writing-frame .search-input {
+  min-height: 58px;
+  padding: 12px 16px 12px 47px;
+  border: 1px solid var(--writing-line);
+  border-radius: 12px;
+  background: var(--writing-panel);
+}
+.writing-frame .search-input:focus { border-color: var(--warm); }
+.writing-frame .search-input:focus-visible { box-shadow: 0 0 0 2px var(--writing-accent-fill); }
+.writing-frame[data-color="light"] .search-input::-webkit-search-cancel-button { filter: none; }
+.writing-frame .search-mark {
+  inset: 20px auto auto 19px;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+.writing-frame .search-mark::after {
+  content: "";
+  position: absolute;
+  inset: auto -4px -2px auto;
+  width: 6px;
+  height: 1.5px;
+  border-radius: 99px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+.writing-frame .search-form:focus-within .search-mark { color: var(--warm); }
+.writing-frame .search-hint { margin-bottom: 0; }
+.writing-frame .search-earlier { font-size: 13px; }
+.writing-frame .search-earlier input { margin-inline: 0; width: 16px; height: 16px; }
+.writing-frame .entry-list:has(> .entry-row) {
+  border: 1px solid var(--writing-line);
+  border-radius: 12px;
+  background: var(--writing-panel);
+}
+.writing-frame .entry-row {
+  padding: 19px clamp(16px, 2.5vw, 28px) 21px;
+  border-color: var(--writing-line);
+  transition: background-color .2s ease;
+}
+.writing-frame .entry-row:first-child { border-radius: 11px 11px 0 0; }
+.writing-frame .entry-row:last-child { border-bottom: 0; border-radius: 0 0 11px 11px; }
+.writing-frame .entry-row:only-child { border-radius: 11px; }
+.writing-frame .entry-row:hover { background: var(--writing-raised); }
+.writing-frame .entry-row[aria-current="location"] {
+  outline: none;
+  box-shadow: inset 3px 0 var(--warm);
+  background: var(--writing-accent-fill);
+}
+.writing-frame .entry-row:focus-visible { outline: 2px solid var(--focus-color); outline-offset: -2px; }
+.writing-frame .entry-notebook,
+.writing-frame .earlier-label { color: var(--warm); }
+.writing-frame .entry-excerpt { margin-top: 6px; }
+
+.writing-frame .file-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline: 15px;
+  border: 1px solid var(--writing-line);
+  border-radius: 99px;
+  font: 500 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.writing-frame .file-link:hover { background: var(--writing-accent-fill); }
+.writing-frame .file-shelf { gap: 16px; margin-block: 28px; }
+.writing-frame .file-piece {
+  display: flex;
+  min-height: 118px;
+  padding: 0;
+  border: 1px solid var(--writing-line);
+  border-radius: 12px;
+  background: var(--writing-panel);
+}
+.writing-frame .file-piece > :is(a, div) {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  padding: 16px 20px;
+  border-radius: inherit;
+}
+.writing-frame .file-piece > a:hover { background: var(--writing-raised); }
+.writing-frame .file-piece > a:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+.writing-frame .file-piece-title { overflow-wrap: anywhere; }
+.writing-frame .file-opening { margin-top: 7px; }
+.writing-frame .file-reconciliation {
+  margin-block: 16px 22px;
+  padding-inline: clamp(15px, 2.4vw, 21px);
+  border: 1px solid var(--writing-line);
+  border-radius: 10px;
+  background: var(--writing-panel);
+  color: var(--soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.writing-frame .file-reconciliation[open] { padding-bottom: 12px; }
+.writing-frame .file-reconciliation summary { padding-block: 12px; }
+.writing-frame .file-reconciliation summary::marker { color: var(--warm); }
+.writing-frame .file-collection-note { padding-top: 12px; border-top: 1px solid var(--writing-line); }
+
+.writing-frame .notebook-heading h1 { margin-top: 0; }
+.writing-frame .notebook-heading .section-whisper + h1 { margin-top: 12px; }
+.writing-frame .notebook-names {
+  border: 1px solid var(--writing-line);
+  border-radius: 12px;
+  background: var(--writing-panel);
+}
+.writing-frame .notebook-names li + li { border-top: 1px solid var(--writing-line); }
+.writing-frame .notebook-name { padding: 12px clamp(15px, 2.4vw, 24px); }
+.writing-frame .notebook-names li:first-child a { border-radius: 11px 11px 0 0; }
+.writing-frame .notebook-names li:last-child a { border-radius: 0 0 11px 11px; }
+.writing-frame .notebook-names li:only-child a { border-radius: 11px; }
+.writing-frame .notebook-name:hover { background: var(--writing-raised); }
+.writing-frame .notebook-name:focus-visible { outline: 2px solid var(--focus-color); outline-offset: -2px; }
+.writing-frame .notebook-section { border-top: 1px solid var(--writing-line); padding-top: 16px; }
+.writing-frame .notebook-section-toggle { align-items: center; }
+.writing-frame .notebook-section-toggle::before { color: var(--warm); }
+.writing-frame .notebook-list-number,
+.writing-frame .notebook-piece-number { font-variant-numeric: tabular-nums; }
+.writing-frame #notebook-sidebar {
+  padding: 12px 11px 30px;
+  border: 1px solid var(--writing-line);
+  border-radius: 12px;
+  background: var(--writing-panel);
+}
+.writing-frame #notebook-sidebar > :is(a, h2),
+.writing-frame .notebook-reader-section h3 { margin-inline: 8px; }
+.writing-frame #notebook-sidebar h2 { margin-block: 10px 22px; overflow-wrap: anywhere; }
+.writing-frame .notebook-reader-section a { border-radius: 6px; }
+.writing-frame .notebook-reader-section a:hover { background: var(--writing-raised); }
+.writing-frame .notebook-reader-section a[aria-current="page"] { background: var(--writing-accent-fill); }
+.writing-frame .notebook-piece-number { flex: 0 0 2.25em; overflow-wrap: anywhere; }
+.writing-frame #notebook-content .notebook-toolbar { border-bottom: 1px solid var(--writing-line); }
+.writing-frame :is(.reading-context, .notebook-edit-toolbar) .reader-reference { color: var(--warm); }
+.writing-frame .reading-foot,
+.writing-frame .file-reading-actions { padding-top: 8px; border-top: 1px solid var(--writing-line); }
+.writing-frame .file-history details,
+.writing-frame .version-row,
+.writing-frame .together-room,
+.writing-frame .threshold-room,
+.writing-frame .drift-directions { border-color: var(--writing-line); }
+.writing-frame :is(.echo-door, .beside-room) { border-color: var(--warm); }
+
+.writing-frame .writing-menu-toggle {
+  min-width: 76px;
+  justify-content: center;
+  padding-inline: 15px;
+  border: 1px solid var(--writing-line);
+  border-radius: 99px;
+  background: var(--writing-panel);
+  color: var(--soft);
+  font: 500 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.writing-frame .writing-menu-toggle:hover { background: var(--writing-raised); }
+.writing-frame .file-writing-footer #save-file {
+  padding-inline: 14px;
+  border: 1px solid var(--writing-line);
+  border-radius: 8px;
+  background: var(--writing-accent-fill);
+  color: var(--warm);
+}
+.writing-frame .file-writing-footer #save-file:hover { border-color: var(--warm); }
+.writing-frame :is(.writing-menu, .poem-picker, .reader-packet-dialog, #piece-find-form) {
+  border-color: var(--writing-line);
+  border-radius: 14px;
+  background: var(--writing-raised);
+  box-shadow: var(--writing-shadow);
+}
+.writing-frame :is(.writing-menu-room-controls, .writing-file-actions, .poem-picker-preview, .poem-choice) {
+  border-color: var(--writing-line);
+}
+.writing-frame :is(.poem-choice:hover, .poem-choice-selected) {
+  border-radius: 7px;
+  background: var(--writing-accent-fill);
+}
+.writing-frame :is(.recovery-note, .historical-notice) {
+  border-color: var(--warm);
+  border-radius: 0 8px 8px 0;
+  background: var(--writing-accent-fill);
+}
+.writing-frame .flash {
+  border-color: var(--writing-line);
+  border-radius: 10px;
+  background: var(--writing-raised);
+}
+.writing-frame .storage-room h1 { font: 400 clamp(34px, 5vw, 52px)/1.15 var(--serif); letter-spacing: -.04em; }
+.writing-frame .storage-room section {
+  padding: 16px clamp(15px, 2.6vw, 25px);
+  border: 1px solid var(--writing-line);
+  border-radius: 12px;
+  background: var(--writing-panel);
+}
+.writing-frame .storage-room button {
+  border-color: var(--writing-line);
+  background: var(--writing-raised);
+  color: var(--ink);
+}
+
+@media (max-width: 600px) {
+  .writing-frame .site-header {
+    height: auto;
+    flex-direction: column;
+    gap: 3px;
+    padding-block: 12px 8px;
+  }
+  .writing-frame .site-nav { justify-content: center; }
+  .writing-frame .site-nav a { padding-inline: 7px; font-size: 12px; }
+  .writing-frame #open-correspondence { margin-inline-start: 0; }
+  .writing-frame .wordmark { padding-block: 5px; font-size: 32px; }
+  .writing-frame .archive-scopes { gap: 2px; }
+  .writing-frame .archive-scopes a { padding-inline: 7px; }
+}
+
+@media (max-height: 540px) {
+  .writing-frame :is(.archive-room, .file-library) { padding-top: 24px; }
+  .writing-frame :is(.archive-heading, .file-heading, .search-form) { margin-bottom: 14px; }
+  .writing-frame .archive-scopes { margin-bottom: 13px; }
+  .writing-frame .search-hint { margin-top: 10px; }
+  .writing-frame .file-shelf { margin-block: 18px; }
+}
+
+@media (prefers-contrast: more) {
+  .site-frame.writing-frame { --muted: var(--ink); --soft: var(--ink); --faint: var(--ink); --writing-line: currentColor; }
+  .writing-frame .room-light { background: var(--night); }
+  .writing-frame .file-page :is(.file-editor, .title-input):focus-visible { outline: 2px solid var(--focus-color); }
+}
+
+@media (forced-colors: active) {
+  .writing-frame .entry-row[aria-current="location"],
+  .writing-frame .notebook-reader-section a[aria-current="page"],
+  .writing-frame .site-nav .nav-active { border: 1px solid Highlight; }
+  .writing-frame :is(.entry-row, .notebook-name, .site-nav a, .file-piece > a):focus-visible { outline-color: Highlight; }
+  .writing-frame .file-page .title-input:focus-visible { border-bottom: 2px solid Highlight; }
+  .writing-frame .search-mark::after { background: CanvasText; }
+}

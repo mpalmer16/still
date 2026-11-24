@@ -1,0 +1,86 @@
+/* Both rooms draw from the same colors, selected on the active frame. */
+:root {
+  color-scheme: dark;
+  --palette-bg: #1c1c1e;
+  --palette-panel: #252527;
+  --palette-raised: #2e2e31;
+  --palette-paper: #222224;
+  --palette-field: #1e1e20;
+  --palette-ink: #e7e7e9;
+  --palette-muted: #c4c4ca;
+  --palette-chrome-muted: #bdbdc3;
+  --palette-faint: #adadb6;
+  --palette-line: #48484f;
+  --palette-accent: #a6c4e2;
+  --palette-accent-ink: #182431;
+}
+
+:root:has(.site-frame[data-color="sepia"]) {
+  --palette-bg: #171619;
+  --palette-panel: #201e23;
+  --palette-raised: #29262d;
+  --palette-paper: #231f22;
+  --palette-field: #19181c;
+  --palette-ink: #f4ede8;
+  --palette-muted: #c3b8b4;
+  --palette-chrome-muted: #bdb2ae;
+  --palette-faint: #ad9f9d;
+  --palette-line: #514850;
+  --palette-accent: #ffc194;
+  --palette-accent-ink: #302019;
+}
+
+:root:has(.site-frame[data-color="blue"]) {
+  --palette-bg: #131a26;
+  --palette-panel: #1b2433;
+  --palette-raised: #232f42;
+  --palette-paper: #1c2635;
+  --palette-field: #151d2a;
+  --palette-muted: #b8c3d7;
+  --palette-faint: #a2b0c9;
+  --palette-line: #455773;
+  --palette-accent: #b4cbff;
+  --palette-accent-ink: #172441;
+}
+
+:root:has(.site-frame[data-color="forest"]) {
+  --palette-bg: #141e19;
+  --palette-panel: #1d2a23;
+  --palette-raised: #26372e;
+  --palette-paper: #202c24;
+  --palette-field: #18231d;
+  --palette-muted: #b8c8bb;
+  --palette-faint: #a5baa9;
+  --palette-line: #435d4f;
+  --palette-accent: #b8dfaa;
+  --palette-accent-ink: #21341e;
+}
+
+:root:has(.site-frame[data-color="plum"]) {
+  --palette-bg: #211824;
+  --palette-panel: #2a2030;
+  --palette-raised: #372a40;
+  --palette-paper: #2d2331;
+  --palette-field: #241b28;
+  --palette-muted: #c8bbd0;
+  --palette-faint: #b5a6bf;
+  --palette-line: #5e4c67;
+  --palette-accent: #e3baf2;
+  --palette-accent-ink: #36223e;
+}
+
+:root:has(.site-frame[data-color="light"]) {
+  color-scheme: light;
+  --palette-bg: #f3efea;
+  --palette-panel: #fcf8f3;
+  --palette-raised: #eae1d9;
+  --palette-paper: #fffbf6;
+  --palette-field: #f7f0e9;
+  --palette-ink: #2b2523;
+  --palette-muted: #655854;
+  --palette-chrome-muted: #655854;
+  --palette-faint: #746660;
+  --palette-line: #c8b8ae;
+  --palette-accent: #8d492f;
+  --palette-accent-ink: #fffbf6;
+}

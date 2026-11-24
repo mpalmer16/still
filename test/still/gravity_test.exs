@@ -327,22 +327,21 @@ defmodule Still.GravityTest do
     end
   end
 
-  test "light and the current writing survive wandering without replacing each other" do
+  test "color and the current writing survive wandering without replacing each other" do
     {:ok, now} = Writing.save_entry(nil, "The writing I will return to")
     before = piece("Before:", "another place")
-    assert Writing.room_light() == 38
+    assert Writing.Appearance.color() == "graphite"
     assert Writing.current_writing() == nil
-    assert {:ok, 247} = Writing.set_room_light(247)
+    assert {:ok, "plum"} = Writing.Appearance.set_color("plum")
     assert {:ok, _} = Writing.remember_writing(now)
     Writing.remember_visit(before)
     assert Writing.current_writing().id == now.id
     assert Writing.last_visited().id == before.id
-    assert Writing.room_light() == 247
+    assert Writing.Appearance.color() == "plum"
     assert {:error, :not_now} = Writing.remember_writing(before)
-    assert {:error, :invalid_light} = Writing.set_room_light("bright")
-    assert Writing.room_light() == 247
-    assert {:ok, 0} = Writing.set_room_light(-30)
-    assert {:ok, 360} = Writing.set_room_light(390)
+    assert {:error, :invalid_color} = Writing.Appearance.set_color("bright")
+    assert Writing.Appearance.color() == "plum"
+    assert {:ok, "light"} = Writing.Appearance.set_color("light")
     assert Writing.current_writing().id == now.id
     assert Writing.last_visited().id == before.id
   end
@@ -352,14 +351,14 @@ defmodule Still.GravityTest do
     {:ok, previous} = Writing.save_entry(previous, "The saved writing I left", title: "Saved:")
     before = piece("Beside:", "A source to write beside")
     {:ok, _} = Writing.remember_writing(previous)
-    {:ok, _} = Writing.set_room_light(213)
+    {:ok, _} = Writing.Appearance.set_color("blue")
     {:ok, _} = Writing.remember_visit(before)
     versions = Writing.list_versions(previous)
 
     assert {:ok, _} = Writing.begin_writing(before)
     assert Writing.current_writing() == nil
     assert Writing.current_beside().id == before.id
-    assert Writing.room_light() == 213
+    assert Writing.Appearance.color() == "blue"
     assert Writing.last_visited().id == before.id
     assert Writing.get_entry!(previous.id) == previous
     assert Writing.list_versions(previous) == versions
@@ -370,7 +369,7 @@ defmodule Still.GravityTest do
     assert Writing.current_beside() == nil
     assert Writing.get_entry!(previous.id) == previous
     assert Writing.list_versions(previous) == versions
-    assert Writing.room_light() == 213
+    assert Writing.Appearance.color() == "blue"
     assert Writing.last_visited().id == before.id
 
     assert {:ok, _} = Writing.begin_writing(before)
