@@ -13,6 +13,7 @@ defmodule Still.Correspondence.FundingDirectory do
       |> Enum.filter(&matches_query?(&1, filters["q"]))
       |> Enum.filter(&matches_kind?(&1, filters["kind"]))
       |> Enum.filter(&matches_deadline?(&1, filters["deadline"], today))
+      |> Enum.filter(&(filters["starred"] != "true" or &1[:highlighted] == true))
       |> Enum.sort_by(&deadline_sort_key(&1, today))
 
     matched = length(rows)
@@ -37,6 +38,7 @@ defmodule Still.Correspondence.FundingDirectory do
       "q" => filters |> text("q", "") |> String.trim() |> String.slice(0, 300),
       "kind" => allowed(filters["kind"], kinds),
       "deadline" => allowed(filters["deadline"], @deadline_filters),
+      "starred" => if(filters["starred"] == "true", do: "true", else: "false"),
       "page" => text(filters, "page", "1")
     }
   end

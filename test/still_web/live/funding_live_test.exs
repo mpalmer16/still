@@ -161,6 +161,9 @@ defmodule StillWeb.FundingLiveTest do
         notes: "Keep these application notes."
       })
 
+    {:ok, unstarred} =
+      Funding.save(location, %{name: "Harbour grant", funder: "Arts Council", kind: "grant"})
+
     {:ok, view, _} = live(conn, ~p"/correspondence/funding?#{%{q: "Harbour"}}")
     row = "#funding-row-#{opportunity.id}"
     toggle = "#{row} .funding-highlight-toggle"
@@ -189,12 +192,28 @@ defmodule StillWeb.FundingLiveTest do
              "Harbour fellowship · Deadline"
            )
 
+    unstarred_row = "#funding-row-#{unstarred.id}"
+    assert has_element?(view, unstarred_row)
+
+    render_change(element(view, "#funding-filters"), %{
+      "funding" => %{"q" => "Harbour", "starred" => "true"}
+    })
+
+    assert_patch(view)
+    assert has_element?(view, ~s(input[name="funding[starred]"][checked]))
+    assert has_element?(view, row)
+    refute has_element?(view, unstarred_row)
+
     render_click(element(view, toggle))
     refute_patched(view)
     assert has_element?(view, "#funding-query[value=Harbour]")
-    assert has_element?(view, "#{toggle}[aria-pressed=false]")
-    refute has_element?(view, "#{row}.is-highlighted")
+    refute has_element?(view, row)
     assert {:ok, %{highlighted: false}} = Funding.get(location, opportunity.id)
+
+    render_click(element(view, "#funding-filters a", "Reset"))
+    refute has_element?(view, ~s(input[name="funding[starred]"][checked]))
+    assert has_element?(view, row)
+    assert has_element?(view, unstarred_row)
   end
 
   test "a stale funding row keeps a newer edit and can be highlighted after refresh", %{

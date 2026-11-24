@@ -81,6 +81,14 @@ defmodule StillWeb.CorrespondenceFunding do
               {label}
             </option>
           </select>
+          <label class="funding-starred-filter corr-meta">
+            <input
+              type="checkbox"
+              name="funding[starred]"
+              value="true"
+              checked={@directory.filters["starred"] == "true"}
+            /> Starred only
+          </label>
           <.link patch={~p"/correspondence/funding"} class="corr-text-link">Reset</.link>
         </.form>
         <p class="places-result-count corr-result-count" role="status" aria-live="polite">
@@ -672,7 +680,7 @@ defmodule StillWeb.CorrespondenceFunding do
   def safe_url(_), do: false
 
   defp page_path(filters, page) do
-    params = [q: filters["q"], kind: filters["kind"], deadline: filters["deadline"], page: page]
+    params = filters |> Map.take(~w(q kind deadline starred)) |> Map.put("page", page)
     ~p"/correspondence/funding?#{params}"
   end
 

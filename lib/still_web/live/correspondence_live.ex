@@ -1002,7 +1002,7 @@ defmodule StillWeb.CorrespondenceLive do
         %{"funding" => params},
         %{assigns: %{live_action: :funding}} = socket
       ) do
-    filters = Map.take(params, ~w(q kind deadline))
+    filters = Map.take(params, ~w(q kind deadline starred))
     {:noreply, push_patch(socket, to: ~p"/correspondence/funding?#{filters}", replace: true)}
   end
 

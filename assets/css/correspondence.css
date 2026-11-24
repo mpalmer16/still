@@ -771,6 +771,16 @@
 .packet-piece-placements li { display: grid; gap: 2px; border-top: 1px solid var(--corr-rule); padding: 7px 0; }
 .packet-piece-placements .packet-placement-active { color: var(--corr-accent); }
 
+#funding-directory .places-filters {
+  flex-wrap: wrap;
+}
+
+.funding-starred-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .funding-views {
   display: flex;
   flex-wrap: wrap;
